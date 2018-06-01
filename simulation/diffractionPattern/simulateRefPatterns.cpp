@@ -3,10 +3,11 @@
 
 int main(int argc, char* argv[]) {
 
-  radicalEnums molecule = nitrobenzene;
+  radicalEnums molecule = phenylRadical; //nitrobenzene; //phenoxyRadical;
 
   // Diffraction Pattern
-  uint Nbins = 30;
+  uint NradBins = 30;
+  uint Nbins = 2*NradBins - 1;
   //double maxQ = 11.3*((double)Nbins)/1000.0;
   double maxQ = 11.3;
   double elEnergy = 3.7e6;
@@ -19,7 +20,7 @@ int main(int argc, char* argv[]) {
   double seed = (double)clock();
   int Nmols = 1;
   int index = 0;
-  std::string fileName = "NBZrefDiff";
+  std::string fileName = radicalNames[molecule];
   std::string outputDir = "output/references";
   //string outputDir = "/reg/neh/home/khegazy/simulations/n2o/diffractionPatterns/output";
   if (argc > 1) {
@@ -106,15 +107,13 @@ int main(int argc, char* argv[]) {
   for (auto mc : molMCs) {
     mc->useOrientationMC = false;
     mc->makeMolEnsemble();
-    cout<<"Made molecular ensemble"<<endl;
 
     DIFFRACTIONclass diffP(mc, maxQ, Iebeam, screenDist, elEnergy, Nbins,
         "/reg/neh/home/khegazy/simulations/scatteringAmplitudes/3.7MeV/");
-    cout<<"Declared diffraction class"<<endl;
     
     curLineOuts.clear();
-    curLineOuts = diffP.diffPatternCalc_uniform();
-    cout<<"Made diffraction patterns."<<endl;
+    curLineOuts = diffP.azimuthalAvg_uniform();
+    diffP.diffPatternCalc_uniform();
 
     // fill diffraction patterns
     if (diffPatterns.size() == 0) {
@@ -141,7 +140,7 @@ int main(int argc, char* argv[]) {
       lineOuts["sPattern"]              = curLineOuts[3];
     }
     else {
-      for (uint i=0; i<lineOuts[0].size(); i++) {
+      for (uint i=0; i<lineOuts["diffractionPattern"].size(); i++) {
         lineOuts["diffractionPattern"][i]    += curLineOuts[0][i];
         lineOuts["molDiffractionPattern"][i] += curLineOuts[1][i];
         lineOuts["atmDiffractionPattern"][i] += curLineOuts[2][i];
@@ -154,8 +153,11 @@ int main(int argc, char* argv[]) {
   /////  Plotting and Saving Results  /////
   /////////////////////////////////////////
 
-  std::string prefix = outputDir + "/" + fileName + "_";
-  std::string suffix = "Bins-" + to_string(Nbins) + "_Qmax-" + to_string(maxQ)
+  std::string prefix = outputDir + "/" + radicalNames[molecule] + "_";
+  std::string suffixLO = "Bins-" + to_string(NradBins) + "_Qmax-" + to_string(maxQ)
+                        + "_Ieb-" + to_string(Iebeam) + "_scrnD-"
+                        + to_string(screenDist) + "_elE-" + to_string(elEnergy);
+  std::string suffixDP = "Bins-" + to_string(Nbins) + "_Qmax-" + to_string(maxQ)
                         + "_Ieb-" + to_string(Iebeam) + "_scrnD-"
                         + to_string(screenDist) + "_elE-" + to_string(elEnergy);
 
@@ -168,31 +170,31 @@ int main(int argc, char* argv[]) {
 
 
   delete (TH2F*)plt.printRC(diffPatterns["diffractionPattern"], 
-      prefix + "diffractionPattern_" + suffix, opts, vals);
+      prefix + "diffractionPattern_" + suffixDP, opts, vals);
   delete (TH2F*)plt.printRC(diffPatterns["molDiffractionPattern"], 
-      prefix + "molDiffractionPattern_" + suffix, opts, vals);
+      prefix + "molDiffractionPattern_" + suffixDP, opts, vals);
   delete (TH2F*)plt.printRC(diffPatterns["atmDiffractionPattern"], 
-      prefix + "atmDiffractionPattern_" + suffix, opts, vals);
+      prefix + "atmDiffractionPattern_" + suffixDP, opts, vals);
   delete (TH2F*)plt.printRC(diffPatterns["sPattern"], 
-      prefix + "sPattern_" + suffix, opts, vals);
+      prefix + "sPattern_" + suffixDP, opts, vals);
   delete (TH1F*)plt.print1d(lineOuts["diffractionPattern"], 
-      prefix + "diffractionPatternLineOut_" + suffix, xSpan, lineOutSpan);
+      prefix + "diffractionPatternLineOut_" + suffixLO, xSpan, lineOutSpan);
   delete (TH1F*)plt.print1d(lineOuts["molDiffractionPattern"], 
-      prefix + "molDiffractionPatternLineOut_" + suffix, xSpan, lineOutSpan);
+      prefix + "molDiffractionPatternLineOut_" + suffixLO, xSpan, lineOutSpan);
   delete (TH1F*)plt.print1d(lineOuts["atmDiffractionPattern"], 
-      prefix + "atmDiffractionPatternLineOut_" + suffix, xSpan, lineOutSpan);
+      prefix + "atmDiffractionPatternLineOut_" + suffixLO, xSpan, lineOutSpan);
   delete (TH1F*)plt.print1d(lineOuts["sPattern"], 
-      prefix + "sPatternLineOut_" + suffix, xSpan, lineOutSpan);
+      prefix + "sPatternLineOut_" + suffixLO, xSpan, lineOutSpan);
 
 
-  FILE* otpDp = fopen((prefix + "diffractionPattern_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpAp = fopen((prefix + "atmDiffractionPattern_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpMp = fopen((prefix + "molDiffractionPattern_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpSp = fopen((prefix + "sPattern_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpDpLo = fopen((prefix + "diffractionPatternLineOut_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpMpLo = fopen((prefix + "molDiffractionPatternLineOut_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpApLo = fopen((prefix + "atmDiffractionPatternLineOut_" + suffix + ".dat").c_str(), "wb");
-  FILE* otpSpLo = fopen((prefix + "sPatternLineOut_" + suffix + ".dat").c_str(), "wb");
+  FILE* otpDp = fopen((prefix + "diffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
+  FILE* otpAp = fopen((prefix + "atmDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
+  FILE* otpMp = fopen((prefix + "molDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
+  FILE* otpSp = fopen((prefix + "sPattern_" + suffixDP + ".dat").c_str(), "wb");
+  FILE* otpDpLo = fopen((prefix + "diffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
+  FILE* otpMpLo = fopen((prefix + "molDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
+  FILE* otpApLo = fopen((prefix + "atmDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
+  FILE* otpSpLo = fopen((prefix + "sPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
 
   for (uint ir=0; ir<diffPatterns["diffractionPattern"].size(); ir++) {
     fwrite(&diffPatterns["diffractionPattern"][ir][0], sizeof(double), 
