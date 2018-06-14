@@ -1,10 +1,20 @@
-#include "alignRuns.h" 
+#include "alignRuns.h"
+#include "../simulation/diffractionPattern/simulations.h"
+#include <TLegend.h>
 
 
 using namespace std;
 
 
 int main(int argc, char* argv[]) {
+
+  /////  Flags  /////
+  bool compareFinalStates = true;
+
+
+
+  /////  Compare <t0 and simulation  /////
+  //std::pair<double, double> t0SimCompTimes = {
 
   if (argc<2) {
     cerr<<"ERROR: Missing input arguments, must run code ./analysis.exe 'fileList.txt' !!!"<<endl;
@@ -19,25 +29,19 @@ int main(int argc, char* argv[]) {
 
 
   ///// Load environment and get the number of events /////
+
   uint64_t Nentries;
   Nentries = analysis.setupEnvironment();  // Alter this function as needed for specific setup
 
   cout.setf(ios::scientific);
+  
 
-  double qMax = 11.3;
+  /////  Setting up variables  /////
+
+  double maxQ = 9.726264; //11.3;
   int NradBins = 30;
   std::vector<double> atmDiff(NradBins);
-  FILE* atmFile = fopen("../simulation/diffractionPattern/output/references/NBZrefDiff_atmDiffractionPatternLineOut_Bins-30_Qmax-11.300000_Ieb-5.000000_scrnD-4.000000_elE-3700000.000000.dat", "rb");
-  fread(&atmDiff[0], sizeof(double), atmDiff.size(), atmFile);
-  fclose(atmFile);
  
-
-
-  /////  Flags  /////
-  bool findVarRegions = true;
-
-  
-  /////  Setting up variables  /////
   string fileName = "alignment.txt";
   string outputDir = "output/data/";
   for (int iarg=2; iarg<argc; iarg+=2) {
@@ -57,6 +61,7 @@ int main(int argc, char* argv[]) {
 
   double dshift = 4e-3;
   double seed = clock();
+
 
   ////////////////////////////////////////////
   /////  Finding Regions that Fluctuate  /////
@@ -81,16 +86,18 @@ int main(int argc, char* argv[]) {
   opts[2] = minimum;
   opts[3] = maximum;
 
-  std::map<string, map<string, vector<double> > > cbar;
-  cbar["20161102"]["LongScan1"].push_back(13);
-  cbar["20161102"]["LongScan2"].push_back(25);
-  cbar["20161104"]["LongScan2"].push_back(7);
-  cbar["20161106"]["LongScan1"].push_back(6);
-  cbar["20161102"]["LongScan1"].push_back(9);
-  cbar["20161102"]["LongScan2"].push_back(25);
-  cbar["20161104"]["LongScan2"].push_back(10);
-  cbar["20161106"]["LongScan1"].push_back(10);
+  std::map<string, double > cbar;
+  cbar["20161102_LongScan1_Leg0"] = 0.2;
+  cbar["20161102_LongScan1_Leg2"] = 0.2;
 
+
+  std::map< string, std::vector<double> > refAutCor, refLineOut;
+  bool plotSimDiffs = true;
+
+  double Iebeam     = 5;
+  double elEnergy   = 3.7e6;
+  double screenDist = 4;
+  std::string simReferenceDir = "../simulation/diffractionPattern/output/references/";
 
   int arrSize = 188448;
   bool filledRun = false;
@@ -109,16 +116,118 @@ int main(int argc, char* argv[]) {
   int NimgRows = (*imgSubBkg).size();
   int NimgCols = (*imgSubBkg)[0].size();
   int NdiffInds = (int)(NimgRows/2);
+
   int NautCpadding = 1000;
   int FFTsize = NradBins*2 + NautCpadding + 1;
   //int FFTsize = (NdiffInds + NautCpadding)*2 + 1;
   int FTsize = (int)(FFTsize/2) + 1;
   double holeRat = 0.15;
+  double rMaxRat = 0.75;
+  double padDecayRat = 0.5;
+  int indHR =  holeRat*NradBins;
+  int outSize = FTsize*rMaxRat;
+  double rMax = (rMaxRat*NradBins)*(2*PI/(2*11.3));
+
   double* qSpace = (double*) fftw_malloc(sizeof(double)*FFTsize);
   fftw_complex* rSpace = 
         (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*(int)((FFTsize/2) + 1));
   fftw_plan fftB;
   fftB = fftw_plan_dft_r2c_1d(FFTsize, qSpace, rSpace, FFTW_MEASURE);
+
+
+  //int NrefSub = 30;
+  int NrefSub = 20;
+  ////////////////////////////////////////////
+  /////  Importing simulated references  /////
+  ////////////////////////////////////////////
+
+  std::string fileNameSuffix = "_Bins-" + to_string(NradBins) + "_Qmax-" + to_string(maxQ)
+                                + "_Ieb-" + to_string(Iebeam) + "_scrnD-"
+                                + to_string(screenDist) + "_elE-" + to_string(elEnergy) + ".dat";
+
+  ///  Nitrobenzene reference  ///
+  cout << "fileName: " << simReferenceDir + "/nitrobenzene_atmDiffractionPatternLineOut" + fileNameSuffix<<endl;
+  FILE* atmFile = fopen((simReferenceDir + "/nitrobenzene_atmDiffractionPatternLineOut"
+                           + fileNameSuffix).c_str(), "rb");
+  fread(&atmDiff[0], sizeof(double), atmDiff.size(), atmFile);
+  fclose(atmFile);
+  plt.print1d(atmDiff, "testATMNBZ");
+
+  ///  Various possible final states  ///
+  if (compareFinalStates) {
+    for (auto name : radicalNames) {
+
+      cout<<"importing refs"<<endl;
+      // Import data
+      refLineOut[name].resize(NradBins, 0);
+
+      FILE* refFile = fopen((simReferenceDir + "/" + name + "_molDiffractionPatternLineOut" 
+                          + fileNameSuffix).c_str(), "rb");
+      fread(&refLineOut[name][0], sizeof(double), NradBins, refFile);
+      fclose(refFile);
+
+      delete plt.print1d(refLineOut[name], name + "_diffractionSimOrig");
+      // Normalize by atomic scattering
+      for (ir=0; ir<NradBins; ir++) {
+        refLineOut[name][ir] /= 1e20*atmDiff[ir]*(maxQ*(ir+0.5)/NradBins);
+      }
+      save::saveDat<double>(refLineOut[name], "plots/data/" + name + "SimGrnd["
+            + to_string(NradBins) + "].dat");
+      delete plt.print1d(refLineOut[name], name + "_diffractionSim");
+
+      cout<<"start pair corr"<<endl;
+      // Pair correlation 
+      std::vector<double> inpDiff(NradBins*2+1, 0);
+      std::vector< std::vector<double> > autCor1d;
+      int centI = (int)(inpDiff.size()/2);
+      cout<<"filling inpdiff"<<endl;
+      for (ir=0; ir<NradBins; ir++) {
+        if (ir < indHR) {
+          inpDiff[centI+1+ir] = refLineOut[name][indHR]
+                *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
+          //inpDiff[centI+1+ir] = smearedImg[0][it][ir]
+          //      *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
+          inpDiff[centI-1-ir] = inpDiff[centI+1+ir];
+        }
+        else {
+          inpDiff[centI+1+ir] = refLineOut[name][ir];
+          inpDiff[centI-1-ir] = refLineOut[name][ir];
+        }
+      }
+      cout<<"filled inpdiff"<<endl;
+      //cout<<"filled"<<endl;
+      //plt.print1d(inpDiff, "inpDiff");
+
+      cout<<"autcor"<<endl;
+      autCor1d = tools::fft1dRtoC(inpDiff, rMaxRat, 
+              NautCpadding, padDecayRat, fftB, qSpace, rSpace, false);
+      refAutCor[name] = autCor1d[0];
+      delete plt.print1d(refAutCor[name], name + "_pairCorrSim");
+      save::saveDat<double>(refAutCor[name], name + "AutCorr["
+              + to_string(refAutCor[name].size()) + "].dat");
+      cout<<"autcorred"<<endl;
+
+    }
+
+    if (plotSimDiffs) {
+      opts.resize(2);
+      vals.resize(2);
+      //opts[0] = draw;     vals[0] = "l";
+      opts[0] = xSpan;    vals[0] = "0," + to_string(rMax);
+      opts[1] = xLabel;   vals[1] = "R [Angs]";
+
+      std::vector<double> autDiff(refAutCor[radicalNames[0]].size(), 0);
+      for (uint i=1; i<Nradicals; i++) {
+        for (uint ir=0; ir<autDiff.size(); ir++) {
+          autDiff[ir] = refAutCor[radicalNames[i]][ir]
+                        - refAutCor[radicalNames[0]][ir];
+        }
+        delete plt.print1d(autDiff, "autCorDiff_" + radicalNames[i], opts, vals);
+      }
+    }
+  }
+
+
 
   ///////////////////////////
   /////  Aligning Runs  /////
@@ -190,14 +299,22 @@ int main(int argc, char* argv[]) {
           std::vector< std::vector< std::vector<double> > > img(3); //legCoeff_map.size());
           std::vector< std::vector< std::vector<double> > > smearedImg(3); //legCoeff_map.size());
 
+          // Calculating time delays from stage position
           ind = 1;
           for (auto coeffs : legCoeff_map) {
-            cout<<"pos: "<<coeffs.first<<endl;
             legDelays[ind] = 2*(coeffs.first/(3e-1)-0.5);
             ind++;
           }
           legDelays[0] = 2*legDelays[1] - legDelays[2];
+            opts.resize(2);
+            vals.resize(2);
+            opts[0] = yLabel;   vals[0] = "Time [ps]";
+            opts[1] = xLabel;   vals[1] = "Scattering Q [arb units]";
 
+
+          /////  Filling array of time dependend legendre signal  /////
+          std::vector<double> unPumped(NradBins, 0);
+          std::vector<int> autCorrLOinds = {2,45,55,60,65,70};
           for (uint i=0; i<3; i++) {
             cout<<"i: "<<i<<endl;
             ind = 0;
@@ -210,8 +327,12 @@ int main(int argc, char* argv[]) {
               }
               ind++;
             }
+            if (i==0) {
+              plt.printRC(img[i], legDelays, 0, maxQ, "testRaw", opts, vals);
+            }
             cout<<"111"<<endl;
 
+            // Mean subtraction and normalizing by atomic scattering
             for (uint iy=0; iy<img[i][0].size(); iy++) {
               double sum = 0;
               for (uint ix=0; ix<img[i].size(); ix++) {
@@ -220,14 +341,16 @@ int main(int argc, char* argv[]) {
               sum /= (double)img[i].size();
               for (uint ix=0; ix<img[i].size(); ix++) {
                 img[i][ix][iy] -= sum;
-                img[i][ix][iy] /= 1e20*atmDiff[iy]*(qMax*(iy+0.5)/NradBins);
+                img[i][ix][iy] /= 1e20*atmDiff[iy]*(maxQ*(iy+0.5)/NradBins);
                 if (iy < 3) {
                   img[i][ix][iy] = 0;
                 }
               }
             }
-            cout<<"222"<<endl;
 
+           cout<<"222"<<endl;
+
+            ///  Smearing time dependence  ///
             double sum = 0;
             smearedImg[i].resize(legCoeff_map.size());
             for (uint j=0; j<legCoeff_map.size(); j++) {
@@ -245,7 +368,7 @@ int main(int argc, char* argv[]) {
                 smearedImg[i][ix][iy] /= sum;
               }
 
-              // Subtract mean
+              // Mean subtraction
               sum = 0;
               for (uint ix=0; ix<img[i].size(); ix++) {
                 sum += smearedImg[i][ix][iy];
@@ -254,6 +377,52 @@ int main(int argc, char* argv[]) {
               for (uint ix=0; ix<smearedImg[i].size(); ix++) {
                 smearedImg[i][ix][iy] -= sum;
               }
+            }
+
+            ///  Subtract before t0  ///
+            // Raw data
+            unPumped.resize(NradBins,0);
+            for (ir=0; ir<NradBins; ir++) {
+              for (uint tm=0; tm<NrefSub; tm++) {
+                unPumped[ir] += img[i][tm][ir];
+              }
+              unPumped[ir] /= NrefSub;
+            }
+            for (ir=0; ir<NradBins; ir++) {
+              for (uint tm=0; tm<img[i].size(); tm++) {
+                img[i][tm][ir] -= unPumped[ir];
+              }
+            }
+
+            if (i == 0) {
+              save::saveDat<double>(unPumped, "./plots/data/unPumpedAvg[" 
+                  + to_string(NradBins) + "].dat");
+              plt.print1d(unPumped, "unPumped");
+              plt.printRC(img[i], legDelays, 0, maxQ, "testNorm", opts, vals);
+            }
+
+ 
+            // Smeared data
+            unPumped.resize(NradBins,0);
+            for (ir=0; ir<NradBins; ir++) {
+              for (uint tm=0; tm<NrefSub; tm++) {
+                unPumped[ir] += smearedImg[i][tm][ir];
+              }
+              unPumped[ir] /= NrefSub;
+            }
+            for (ir=0; ir<NradBins; ir++) {
+              for (uint tm=0; tm<img[i].size(); tm++) {
+                smearedImg[i][tm][ir] -= unPumped[ir];
+              }
+            }
+
+            if (i == 0) {
+              save::saveDat<double>(unPumped, "./plots/data/unPumpedSmearedAvg["
+                  + to_string(NradBins) + "].dat");
+              plt.print1d(unPumped, "unPumpedSmeared");
+            }
+            if (i==0 || i==2) {
+              plt.printRC(smearedImg[i], legDelays, 0, maxQ, "testSmearRaw" + to_string(i), opts, vals);
             }
             cout<<"last entry"<<endl;
             cout<<"plotting"<<endl;
@@ -265,54 +434,36 @@ int main(int argc, char* argv[]) {
                     + "_Leg" + to_string(i), oppts, vaals);
             */
               
-            if (false && (i==0 || i==2) && (cbar.find(curDate)!=cbar.end()) && (cbar[curDate].find(curScan)!=cbar[curDate].end())) {
-              vals[2] = to_string(-1*cbar[curDate][curScan][i/2]);
-              vals[3] = to_string(cbar[curDate][curScan][i/2]);
-              plt.printRC(img[i], legDelays, 0, qMax, curDate + "_" + curScan 
-                    + "_Leg" + to_string(i), opts, vals);
-                    //+ "_Leg" + to_string(i) + "_run" + to_string(curRun), opts, vals);
-            }
-            else {
-              vals[2] = "-4";
-              vals[3] = "4";
-              std::vector<PLOToptions> oopts;
-              std::vector<std::string> vvals;
-              //plt.printXY(img[i], legDelays, curDate + "_" + curScan 
-              //      + "_Leg" + to_string(i), oopts,vvals);
-              plt.printRC(img[i], legDelays, 0, qMax, curDate + "_" + curScan 
-                    + "_Leg" + to_string(i), opts, vals);
-                    //+ "_Leg" + to_string(i) + "_run" + to_string(curRun), oppts, vaals);
-              plt.printRC(smearedImg[i], legDelays, 0, qMax, "smeared_" + curDate + "_" + curScan
-                    + "_Leg" + to_string(i), opts, vals);
-                    //+ "_Leg" + to_string(i) + "_run" + to_string(curRun), oppts, vaals);
+            ///  Plotting time dependend legendre signal  ///
+            opts.resize(3);
+            vals.resize(3);
+            opts[0] = yLabel;   vals[0] = "Time [ps]";
+            opts[1] = xLabel;   vals[1] = "Scattering Q [arb units]";
+            opts[2] = draw;     vals[2] = "CONT4Z";
 
+
+            std::string cbarLegName = curDate + "_" + curScan + "_Leg" + to_string(i); 
+            if (cbar.find(cbarLegName) != cbar.end()) {
+              opts.push_back(minimum);
+              vals.push_back(to_string(-1*cbar[cbarLegName]));
+              opts.push_back(maximum);
+              vals.push_back(to_string(cbar[cbarLegName]));
             }
+
+            plt.printRC(img[i], legDelays, 0, maxQ, curDate + "_" + curScan 
+                  + "_Leg" + to_string(i), opts, vals);
+                  //+ "_Leg" + to_string(i) + "_run" + to_string(curRun), oppts, vaals);
+            plt.printRC(smearedImg[i], legDelays, 0, maxQ, "smeared_" + curDate + "_" + curScan
+                  + "_Leg" + to_string(i), opts, vals);
+                  //+ "_Leg" + to_string(i) + "_run" + to_string(curRun), oppts, vaals);
+
             
             cout<<"plotted"<<endl;
           }
 
           cout<<"start autocorrelation"<<endl;
 
-          double rMaxRat = 0.75;
-          double padDecayRat = 0.5;
-          double *autDelays = new double[avgImgs_map.size() + 1];
-          ind = 1;
-          for (auto coeffs : avgImgs_map) {
-            autDelays[ind] = 2*(coeffs.first/(3e-1)-0.5);
-            ind++;
-          }
-          autDelays[0] = 2*autDelays[1] - autDelays[2];
-          for (uint k=0; k<avgImgs_map.size(); k++) {
-                //cout<<"timing: "<<autDelays[k]<<endl;
-                if (autDelays[k] > autDelays[k+1]) {
-                        cout<<"WRONG!!!!!"<<endl;
-                }
-          }
-
-
-
-
-          int outSize = FTsize*rMaxRat;
+          /////  Pair correlation function  /////
           std::vector< std::vector<double> > autCorr(smearedImg[0].size()), autCorr1d;
           std::vector<double> powerSpct(outSize);
           for (uint it=0; it<smearedImg[0].size(); it++) {
@@ -325,60 +476,112 @@ int main(int argc, char* argv[]) {
               if (ir < indHR) {
                 inpDiff[centI+1+ir] = smearedImg[0][it][indHR]
                       *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
-                inpDiff[centI-1-ir] = smearedImg[0][it][indHR]
-                      *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
+                //inpDiff[centI+1+ir] = smearedImg[0][it][ir]
+                //      *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
+                inpDiff[centI-1-ir] = inpDiff[centI+1+ir];
               }
               else {
                 inpDiff[centI+1+ir] = smearedImg[0][it][ir];
                 inpDiff[centI-1-ir] = smearedImg[0][it][ir];
               }
-                //inpDiff[centI+1+ir] = smearedImg[0][it][ir];
-                //inpDiff[centI-1-ir] = smearedImg[0][it][ir];
             }
             //cout<<"filled"<<endl;
             //plt.print1d(inpDiff, "inpDiff");
 
             autCorr1d = tools::fft1dRtoC(inpDiff, rMaxRat, NautCpadding, 
                   padDecayRat, fftB, qSpace, rSpace, false);
-            //plt.print1d(autCorr1d[0], "autCorReal");
-            //plt.print1d(autCorr1d[1], "autCorImg");
-            //plt.print1d(autCorr1d[2], "autCorPow");
 
+            // Retrieve result and save results
             for (ir=0; ir<outSize; ir++) {
-              autCorr[it][ir] = autCorr1d[2][ir];
-            }
-
-          }
- 
-          std::vector< std::vector<double> > autCplot(smearedImg[0].size());
-          for (uint it=0; it<autCorr.size(); it++) {
-            autCplot[it].resize(outSize);
-            for (int ilo=0; ilo<autCplot[it].size(); ilo++) {
-              if (ilo < 3) {
-                autCplot[it][ilo] = 0;
+              if (ir < 3) {
+                autCorr[it][ir] = 0;
               }
               else {
-                autCplot[it][ilo] = autCorr[it][ilo];
+                autCorr[it][ir] = autCorr1d[0][ir]; 
               }
-              autCplot[it][ilo] = autCorr[it][ilo];
             }
           }
+ 
+          // Saving pair correlation line outs
+          for (auto& pInd : autCorrLOinds) {
+            save::saveDat<double>(autCorr[pInd], "data_pairCorrLO_smear"
+                  + to_string(stdev) + "_time"
+                  + to_string(legDelays[autCorrLOinds[0]]) + "_["
+                  + to_string(autCorr[pInd].size()) + "].dat");
+          }
+
+
+          cout<<"start opts/vals"<<endl;
           opts.resize(2);
           vals.resize(2);
-          opts[0] = maximum;    vals[0] = "4e-1";
-          //opts[1] = minimum;    vals[1] = "-5e2";
-          //opts[0] = xLabel;     vals[0] = "R [arb]";
-          opts[1] = yLabel;     vals[1] = "Time [ps]";
+          opts[0] = yLabel;     vals[0] = "Time [ps]";
+          opts[1] = xLabel;     vals[1] = "R [Ang]";
           //opts[2] = draw;       vals[2] = "CONT4Z";
  
-          double rMax = (rMaxRat*NradBins)*(2*PI/(2*11.3));
-          cout<<"ANGS: "<<2*PI*(double)((int)(NradBins/2))/(2*11.3)<<"   "<<NradBins*(2*PI/(2*11.3))<<"  "<<rMax<<endl;
-          cout<<"shapes: "<<autCplot.size()<<" "<<autCplot[0].size()<<"  "<<legCoeff_map.size() + 1<<endl;
-          plt.printRC(autCplot, legDelays, 0, rMax, curDate + "_" + curScan + "_AutCor", opts, vals);
+          cout<<"if opts/vals"<<endl;
+          std::string cbarAutName = curDate + "_" + curScan + "_Aut"; 
+          if (cbar.find(cbarAutName) != cbar.end()) {
+            opts.push_back(minimum);
+            vals.push_back(to_string(-1*cbar[cbarAutName]));
+            opts.push_back(maximum);
+            vals.push_back(to_string(cbar[cbarAutName]));
+          }
+
+          cout<<"plotting "<<opts.size()<<"   "<<vals.size()<<endl;
+          plt.printRC(autCorr, legDelays, 0, rMax, curDate + "_" + curScan + "_AutCor", opts, vals);
+
+          opts.resize(2);
+          vals.resize(2);
+          opts[0] = xSpan;    vals[0] = "0," + to_string(rMax);
+          opts[1] = xLabel;   vals[1] = "R [Angs]";
+
+          cout<<"Time Size: "<<autCorr.size()<<endl;
+          std::vector<TH1F*> hists;
+          for (auto& pInd : autCorrLOinds) {
+            cout<<"size: "<<autCorr[pInd].size()<<endl;
+            hists.push_back(plt.plot1d(autCorr[pInd], "autCorLO" + to_string(pInd), opts, vals));
+          }
+          TCanvas* Canv = new TCanvas("Canv","Canv", 800, 600);
+          //TLegend* lgnd = new TLegend(0.6, 0.15, 0.8, 0.55);
+          TLegend* lgnd = new TLegend(0.6, 0.6, 0.8, 0.95);
+          hists[0]->SetMinimum(-1e-3);
+          hists[0]->SetMaximum(1e-3);
+          hists[0]->Draw("l");
+          lgnd->AddEntry(hists[0], to_string(legDelays[autCorrLOinds[0]]).c_str(), "l");
+          for (uint i=1; i<hists.size(); i++) {
+            hists[i]->SetLineColor(i+1);
+            hists[i]->Draw("lSAME");
+            lgnd->AddEntry(hists[i], to_string(legDelays[autCorrLOinds[i]]).c_str(), "l");
+          }
+          lgnd->Draw("SAME");
+          Canv->Print("autCorrDelays.png");
+          cout<<"plotted corrdels"<<endl;
+
+          cout<<"deletin 1"<<endl;
+          for (auto& hst : hists) {
+            delete hst;
+          }
+          cout<<"del 2"<<endl;
+          delete Canv;
+          cout<<"del 3"<<endl;
+
+
+
+          unPumped.resize(autCorr[0].size(),0);
+          for (ir=0; ir<NradBins; ir++) {
+            for (uint tm=0; tm<NrefSub; tm++) {
+              unPumped[ir] += autCorr[tm][ir];
+            }
+            unPumped[ir] /= NrefSub;
+          }
+          save::saveDat<double>(unPumped, "./plots/data/unPumpedAutCorr["
+              + to_string(autCorr[0].size()) + "].dat");
+          plt.print1d(unPumped, "unPumpedSmeared");
 
 
           delete[] legDelays;
-          delete[] autDelays;
+          cout<<"del 4"<<endl;
+          cout<<"del 5"<<endl;
         }
         
         cout<<"clearing"<<endl;
@@ -462,11 +665,13 @@ int main(int argc, char* argv[]) {
       counts[curPosition] = 0;
     }
     for (uint i=0; i<(*legCoeffs).size(); i++) {
+      //legCoeff_map[curPosition][i] += imgNorm*(*legCoeffs)[i]; CHANGED
       legCoeff_map[curPosition][i] += imgNorm*(*legCoeffs)[i];
     }
     for (uint ir=0; ir<(*imgSubBkg).size(); ir++) {
       for (uint ic=0; ic<(*imgSubBkg)[ir].size(); ic++) {
-        avgImgs_map[curPosition][ir][ic] += imgNorm*(*imgSubBkg)[ir][ic];
+        //avgImgs_map[curPosition][ir][ic] += imgNorm*(*imgSubBkg)[ir][ic]; CHANGED
+        avgImgs_map[curPosition][ir][ic] += (*imgSubBkg)[ir][ic];
       }
     }
 
@@ -474,6 +679,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Clean up
+
   for (auto &runItr : diffP_arrays) {
     for (auto &imgItr : runItr.second) {
       delete[] imgItr.second;
