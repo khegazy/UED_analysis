@@ -47,7 +47,8 @@ class centerfnctr {
 int main(int argc, char* argv[]) {
 
   experimentParameters  expP = experimentParameters();
-  std::string outputDir = "/reg/ued/ana/scratch/nitroBenzene/rootFilesNew/";
+  PLOTclass plt;
+  std::string outputDir = "/reg/ued/ana/scratch/nitroBenzene/rootFilesCenterSearch/";
 
   // Image Parameters
   const int roiw = 835;
@@ -56,31 +57,44 @@ int main(int argc, char* argv[]) {
 
   // Number of Legendres
   const int Nlg = 6;
-  const int NradBins = 50;
+  const int NradBins = 30;
 
   // Laser Background Removal Parameters
-  const double  decayConst = -1.0/700.0;
-  const double  coreValThresh = 60; //65; //5e5;
+  const double  decayConst = -1.0/400.0;
+  const double  coreValThresh = 6.0e-3; //90; //65; //5e5;
   const int     coreRad = 4;
-  const int     minClusterSize = 450;
-  const int     minPixelSize = 200;
-  const double  minDensity = 0;//0.15;//0.2;
   const int     clusterRad = 1;
-  const double  borderValThresh = 26; //1e5;
-  const int     borderRad = 5;
+  const int     minClusterSize = 550;
+  const int     minPixelSize = 300;
+  const double  minDensity = 0.2;//0.2;
+  const double  borderValThresh = 5.8e-3; //75; //1e5;
+  const int     borderRad = 3;
   const int     padRad = 10;
 
+  int ir, ic;
+  double nanVal = 1.23456789e-12;
+  std::vector< std::vector<double> > nanMap(roih);
+  for (ir=0; ir<roih; ir++) {
+    nanMap[ir].resize(roiw, 0);
+    if ((ir > 350) && (ir < 500)) {
+      for (ic=(int)roiw*0.8; ic<roiw; ic++) {
+        nanMap[ir][ic] = nanVal;
+      }
+    }
+  }
+
+
   // Center Finding Parameters
+  int NavgCenters = 15;
   int symVLeg = 1;
   int minRadBin = 60;
-  int centShellW = 70;
+  int centShellW = 130; //70;
   int holeR = 547;
   int holeC = 492;
   int holeRad = 60;
   int uv1R = 580;
   int uv1C = 415;
   int uv1Rad = 70;
-  double nanVal = 1.23456789e-12;
 
   // Debugging
   bool pltCent = false;
@@ -106,17 +120,15 @@ int main(int argc, char* argv[]) {
   }
  
 
-  PLOTclass plt;
 
   // Indices
-  int ir, ic;
   int irow, icol, index;
   uint k, ifl, iffl, runScanStartItr;
   std::vector<PLOToptions> pltOpts(2);
   std::vector<string> pltVals(2);
 
 
-  std::vector<double> legCoeffs;
+  std::vector<double> legCoeffs(5);
 
   std::vector< std::vector<double> > imgOrig(roih);
   std::vector< std::vector<double> > imgSubBkg(roih);
@@ -261,7 +273,7 @@ int main(int argc, char* argv[]) {
       tree->Branch("centerC", 	&centerC, 	"centerC/I");
       tree->Branch("centerR", 	&centerR, 	"centerR/I");
       tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
-      tree->Branch("nanVal", 	&nanVal,   "nanVal/F");
+      tree->Branch("nanVal", 	&nanVal,        "nanVal/F");
       tree->Branch("imgOrig", 	&imgOrig);
       tree->Branch("imgBkg", 	&imgBkg);
       tree->Branch("imgSubBkg", &imgSubBkg);
@@ -272,7 +284,7 @@ int main(int argc, char* argv[]) {
       ///// Finding image center /////
       if (verbose) cout << "INFO: Starting center Finding!\n\n";
       centerR = centerC = Ncents = 0;
-      for (int icnt=ifl; icnt<std::min(ifl+3, (uint)imgINFO.size()); icnt++) {
+      for (int icnt=ifl; icnt<std::min(ifl+NavgCenters, (uint)imgINFO.size()); icnt++) {
 
         /// Filling image std::vector ///
         string imgAddr = imgINFO[icnt].path + imgINFO[icnt].fileName;
@@ -311,8 +323,9 @@ int main(int argc, char* argv[]) {
 
         // Remove readout noise
         imgProc::removeReadOutNoise(imgCent);
+                    
 
-        center[0] = 575;
+        center[0] = 572;
         center[1] = 495;
         centfnctr.symVleg = symVLeg;
         centfnctr.nanVal = nanVal;
@@ -320,12 +333,12 @@ int main(int argc, char* argv[]) {
         centfnctr.centShellW = centShellW;
         centfnctr.img = &imgCent;
 
-        tools::powellMin<centerfnctr> (centfnctr, center, 10, 1, 1, 0.01);
+        tools::powellMin<centerfnctr> (centfnctr, center, 10, 1, 0.2, 0.01);
 
-        if ((curDate == "20131102") && (curScan == "LongScan1")) {
-          center[0] = 569;
-          center[1] = 490;
-        }
+        //if ((curDate == "20131102") && (curScan == "LongScan1")) {
+        //  center[0] = 569;
+        //  center[1] = 490;
+        //}
         centerR += center[0];
         centerC += center[1];
 	Ncents += 1;
@@ -459,7 +472,7 @@ int main(int argc, char* argv[]) {
     imgIsRef = 0;
 
     /////  Image number (ordered)  /////
-    imgNum = k;
+    imgNum = imgINFO[ifl].imgNum;
 
     /////  Filling various variable  /////
     stagePos = imgINFO[ifl].stagePos;
@@ -472,6 +485,8 @@ int main(int argc, char* argv[]) {
     if (verbose) cout << "\tpassed!\n\n";
 
     imgOrig = imgProc::getImgVector(imgMat, roih, roiw, centerR, centerC);
+    imgProc::removeAvgReadOutNoise(imgOrig, roih/2, roiw/2, 
+                  0.9*roih/2., 0.99*roih/2., nanVal, &nanMap);
 
     // Fill in hole based on symmetry
     int hCentR = roih/2;
@@ -487,6 +502,8 @@ int main(int argc, char* argv[]) {
 
     ///////  Finding and subtracting background  ///////
 
+
+    /*
     ///  Finding asymmetric parts of the image  ///
     oddImgReal = imgProc::asymmetrize(imgOrig, roih/2, roiw/2, roih, roiw, 
         oddImgImgn, fftFref, fftIn, fftBref, fftOut);
@@ -495,8 +512,8 @@ int main(int argc, char* argv[]) {
     for (ir=0; ir<roih; ir++) { 
       for (ic=0; ic<roiw; ic++) {
         symImg[ir][ic] = imgOrig[ir][ic] - oddImgReal[ir][ic];
-        stdRatioImg[ir][ic] = std::exp(decayConst*sqrt(pow(ir - roih/2, 2) + pow(ic - roiw/2, 2)))
-                                *oddImgReal[ir][ic]/std::max(std::abs(symImg[ir][ic]),0.01);
+        stdRatioImg[ir][ic] = oddImgReal[ir][ic]/std::max(std::abs(symImg[ir][ic]),0.01)
+                                /sqrt(pow(ir - roih/2, 2) + pow(ic - roiw/2, 2));
         //stdRatioImg[ir][ic] = //std::sqrt(pow(ir - roih/2, 2) + pow(ic - roiw/2, 2))
           //                          oddImgReal[ir][ic]
             //                        /std::sqrt(std::sqrt(pow(ir - roih/2, 2) + pow(ic - roiw/2, 2)))
@@ -521,6 +538,29 @@ int main(int argc, char* argv[]) {
     }
     for (uint ip=0; ip<removePairs.size(); ip++) {
       imgSubBkg[removePairs[ip].first][removePairs[ip].second] = nanVal;
+    }
+    */
+    ///  Remove laser background from image by setting pixels = nanVal  ///
+    for (ir=0; ir<roih; ir++) {
+      for (ic=0; ic<roiw; ic++) {
+        imgSubBkg[ir][ic] = imgOrig[ir][ic];
+      }
+    }
+
+    for (ir=roih/2-40; ir<roih/2+40; ir++) {
+      for (ic=roiw/2-120; ic<roiw/2; ic++) {
+        imgSubBkg[ir][ic] = nanVal;
+      }
+    }
+    for (ir=roih/2-200; ir<roih/2+50; ir++) {
+      for (ic=roiw-225; ic<roiw-115; ic++) {
+        imgSubBkg[ir][ic] = nanVal;
+      }
+    }
+    for (ir=roih/2-60; ir<roih/2+35; ir++) {
+      for (ic=roiw-75; ic<roiw; ic++) {
+        imgSubBkg[ir][ic] = nanVal;
+      }
     }
 
     if (pltVerbose) {
@@ -557,12 +597,32 @@ int main(int argc, char* argv[]) {
       delete plt.printRC(imgBkg, 
           "imgBkg_"+curScan+"_"+to_string(curRun)+"_"+to_string(stagePos));
 
-      pltOpts[0] = minimum;	pltVals[0] = "1e4";
-      pltOpts[1] = maximum;	pltVals[1] = "1e6";
+      pltOpts[0] = minimum;	pltVals[0] = "0"; //"1e4";
+      pltOpts[1] = maximum;	pltVals[1] = to_string(coreValThresh); //"1e6";
       //pltOpts.push_back(logz);  pltVals.push_back("");
       delete plt.printRC(pltStdRat, 
-          "imgStdRat_"+curScan+"_"+to_string(curRun)+"_"+to_string(stagePos));//,
-          //pltOpts, pltVals);
+          "imgStdRat_"+curScan+"_"+to_string(curRun)+"_"+to_string(stagePos),
+          pltOpts, pltVals);
+
+      for (ir=roih/2-40; ir<roih/2+40; ir++) {
+        for (ic=roiw/2-120; ic<roiw/2; ic++) {
+          pltStdRat[ir][ic] = 0;
+        }
+      }
+      for (ir=roih/2-200; ir<roih/2+50; ir++) {
+        for (ic=roiw-225; ic<roiw-115; ic++) {
+          pltStdRat[ir][ic] = 0;
+        }
+      }
+      for (ir=roih/2-60; ir<roih/2+35; ir++) {
+        for (ic=roiw-75; ic<roiw; ic++) {
+          pltStdRat[ir][ic] = 0;
+        }
+      }
+      delete plt.printRC(pltStdRat, 
+          "imgStdRatRemove_"+curScan+"_"+to_string(curRun)+"_"+to_string(stagePos),
+          pltOpts, pltVals);
+
     }
 
 
@@ -608,6 +668,10 @@ int main(int argc, char* argv[]) {
     clock_t end = clock();
     cout<<"TIME: "<<double(end - begin) / CLOCKS_PER_SEC<<endl;
 
+    cout<<"printing leg coeff "<<imgINFO[ifl].imgNum<<endl;
+    for (int i=0; i<legCoeffs.size(); i++) {
+      cout<<"\t"<<legCoeffs[i];
+    }
     if (pltVerbose) {
       std::vector<double> test(NradBins);
       for (int i=0; i<Nlg; i++) {
