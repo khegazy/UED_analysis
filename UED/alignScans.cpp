@@ -1,4 +1,4 @@
-#include "alignRuns.h"
+#include "plotLegendres.h"
 #include "../simulation/diffractionPattern/simulations.h"
 #include <TLegend.h>
 
@@ -40,6 +40,7 @@ int main(int argc, char* argv[]) {
 
   const double maxQ = 9.726264; //11.3;
   const int NradBins = 30;
+  const int Nlegendres = 5;
   const int fitRange = NradBins - 5;
   std::vector<double> atmDiff(NradBins);
   std::vector<double> molDiff(NradBins);
@@ -64,16 +65,15 @@ int main(int argc, char* argv[]) {
   double timeZero = 0.5;
   bool subtractT0 = true;
 
+  int minImgCount = 5;
+
   double dshift = 4e-3;
   double seed = clock();
 
 
-  ////////////////////////////////////////////
-  /////  Finding Regions that Fluctuate  /////
-  ////////////////////////////////////////////
-
   int ir, ic, itr = 0;
   int curRun = -1;
+  int Nscans = 0;
   string runInd = "";
   string curDate = "";
   string curScan = "";
@@ -114,9 +114,18 @@ int main(int argc, char* argv[]) {
 
   bool newEntry;
   double rad;
-  std::map< double, std::vector<double> > diffPs, legCoeff_map, autCorr_map;
-  std::map< double, std::vector< std::vector<double> > > avgImgs_map;
-  std::map< double, double > counts;
+  std::map< int32_t, int > stagePosInds;
+  std::map< int, std::vector<double> > scanCounts;
+  std::map< int, std::vector< std::vector<double> > > scanLgndrs;
+
+
+  
+  
+  std::map< int32_t, std::vector<double> > diffPs, legCoeff_map, autCorr_map;
+  std::map< int32_t, std::vector< std::vector<double> > > avgImgs_map;
+  std::map< int32_t, double > counts;
+  std::map< int32_t, int > Nimages;
+  std::map< int32_t, std::vector<int32_t> > allPos;
 
   int NimgRows = (*imgSubBkg).size();
   int NimgCols = (*imgSubBkg)[0].size();
@@ -250,41 +259,294 @@ int main(int argc, char* argv[]) {
   std::map< string, std::map< double, double* > >  diffP_arrays;
   std::map< string, int > runShifts;
 
-  ///// Loop through events in the file /////
+  cout<<"begin adding to maps"<<endl;
+  ///// Loop through events in the file and saving to maps  /////
+  curRun = -1;
+  int pInd;
   for (uint64_t ievt=0; ievt<Nentries; ievt++) {
     analysis.loadEvent(ievt);
 
-    /*
-    if (ievt != 11) {
-      continue;
-    }
-    else {
-      cout<<"image "<<imgNum<<endl;
-      cout<<"size "<<(*legCoeffs).size()<<endl;
-      for (int i=0; i<(*legCoeffs).size(); i++) {
-          cout<<(*legCoeffs)[i]<<endl;
-      }
-    }
-    */
-    //if ((*date != "20161105")) {
-    //if ((*date != "20161104") || (*scan != "LongScan3")) {
-    //  continue;
-    //}
-    //cout << imgNum << "  " << runNum << "  "<< ievt << " "<<Nentries<<endl;
-    // Expect the reference image to be the first image
+    // Ignore reference images taken before scan
     if (imgIsRef) {
       continue;
     }
-
-    // Ignore reference images taken before scan
-    if (stagePos < (t0StagePos - 0.021)) {
+    if (stagePos < (t0StagePos - 0.021)*10000) {
       continue;
     }
+
+    ///  Initialize variables for new run  ///
+    if (runNum != curRun) {
+      curRun = runNum;
+
+      // Initialize legendres
+      uint timeSize = stagePosInds.size();
+      const std::vector<double> emptyVec((*legCoeffs).size(), 0.0);
+      scanLgndrs[runNum].resize(0);
+      for (uint i=0; i<timeSize; i++) {
+        scanLgndrs[runNum].push_back(emptyVec);
+      }
+
+      // Initialize counts
+      scanCounts[runNum].resize(timeSize, 0.0);
+    }
+
+    ///  Get index of stage position  ///
+    auto pos = stagePosInds.find(stagePos);
+    pInd = pos->second;
+
+    /// Add new stage position to index lookup table and all runs  ///
+    if (pos == stagePosInds.end()) {
+      int ind = 0;
+      stagePosInds[stagePos] = -1;
+      for (auto& itr : stagePosInds) {
+
+        if (itr.second == -1) {
+          pInd = ind;
+          auto sCitr = scanCounts.begin();
+          auto sLitr = scanLgndrs.begin();
+          const std::vector<double> emptyVec((*legCoeffs).size(), 0.0);
+          while (sCitr != scanCounts.end()) {
+            sCitr->second.insert(sCitr->second.begin()+ind, 0);
+            sLitr->second.insert(sLitr->second.begin()+ind, emptyVec);
+            sCitr++; sLitr++;
+          }
+        }
+        itr.second = ind;
+        ind++;
+      }
+    }
+
+    cout<<"ind/sizes: "<<pInd<<"  "<<scanCounts[runNum].size()<<"  "<<scanLgndrs[runNum].size()<<"  "<<scanLgndrs[runNum][pInd].size()<<endl;
+    ///  Add coefficients and counts to maps  ///
+    scanCounts[runNum][pInd] = imgNorm;
+    for (uint i=0; i<(*legCoeffs).size(); i++) {
+      scanLgndrs[runNum][pInd][i] = (*legCoeffs)[i];
+    }
+  }
+
+
+
+
+  ///////////////////////////////////////////////////////////
+  /////  Prune data for outliers and sparse time steps  /////
+  ///////////////////////////////////////////////////////////
+
+
+  /////  Remove time bins with few images and get mean  /////
+  std::vector<int32_t> removePos;
+  std::vector< std::vector<double> > runMeans(stagePosInds.size());
+  std::vector< std::vector<double> > runStdev(stagePosInds.size());
+  for (uint i=0; i<runMeans.size(); i++) {
+    runMeans[i].resize((*legCoeffs).size(), 0);
+    runStdev[i].resize((*legCoeffs).size(), 0);
+  }
+
+  // looping over time bins
+  for (auto pItr : stagePosInds) {
+    int count = 0;
+    double norm = 0;
+    for (auto sLitr : scanLgndrs) {
+      // mean
+      for (uint i=0; i<(*legCoeffs).size(); i++) {
+        runMeans[pItr.second][i] += sLitr.second[pItr.second][i];
+      }
+
+      // counting non zero bins
+      if (scanCounts[sLitr.first][pItr.second] > 0) {
+        count++;
+      }
+      norm += scanCounts[sLitr.first][pItr.second];
+    }
+
+    // calculate mean
+    for (uint i=0; i<runMeans.size(); i++) {
+      runMeans[pItr.second][i] /= norm;
+    }
+
+    // save time bins to cut
+    cout<<"COUNTING: "<<pItr.first<<"   "<<count<<endl;
+    if (count < minImgCount) {
+      removePos.push_back(pItr.first);
+    }
+  }
+
+  //plt.printXY(runMeans, "testRunMeans", maximum, "5e2");
+
+  ///  Remove time bins  ///
+  cout<<"Removing "<<removePos.size()<<" bins"<<endl;
+  cout<<"Before removal: "<<stagePosInds.size()<<"  "<<scanLgndrs.begin()->second.size()<<"  "<<scanCounts.begin()->second.size()<<"  "<<runMeans.size()<<"  "<<runStdev.size()<<endl;
+  for (int i=((int)removePos.size())-1; i>=0; i--) {
+    int pInd = stagePosInds[removePos[i]];
+    for (auto& sLitr : scanLgndrs) {
+      sLitr.second.erase(sLitr.second.begin() + pInd);
+    }
+    for (auto& sCitr : scanCounts) {
+      sCitr.second.erase(sCitr.second.begin() + pInd);
+    }
+    stagePosInds.erase(stagePosInds.find(removePos[i]));
+
+    runMeans.erase(runMeans.begin() + pInd);
+    runStdev.erase(runStdev.begin() + pInd);
+  }
+  int ind = 0;
+  for (auto& pItr : stagePosInds) {
+    pItr.second = ind;
+    ind++;
+  }
+  cout<<"After removal: "<<stagePosInds.size()<<"  "<<scanLgndrs.begin()->second.size()<<"  "<<scanCounts.begin()->second.size()<<"  "<<runMeans.size()<<"  "<<runStdev.size()<<endl;
+
+  ///  Calculate bin standard deviation  ///
+  for (auto pItr : stagePosInds) {
+    double norm = 0;
+    for (auto sLitr : scanLgndrs) {
+      // mean
+      for (uint i=0; i<(*legCoeffs).size(); i++) {
+        runStdev[pItr.second][i] 
+            += std::pow((sLitr.second[pItr.second][i] - runMeans[pItr.second][i]), 2);
+      }
+      norm += scanCounts[sLitr.first][pItr.second];
+    }
+
+    cout<<"\n\nTIME: "<<pItr.first<<endl<<endl;
+    // calculate standard deviation
+    for (uint i=0; i<runMeans.size(); i++) {
+      runStdev[pItr.second][i] = std::sqrt(runStdev[pItr.second][i]/norm);
+      cout<<runMeans[pItr.second][i]<<"/"<<runStdev[pItr.second][i]<<"\t"<<endl;
+    }
+
+  }
+
+
+
+  for (uint i=0; i<8; i++) {
+    runMeans.erase(--runMeans.end());
+    cout<<"reduce size: "<<runMeans.size()<<endl;
+    stagePosInds.erase(--stagePosInds.end());
+  }
+
+
+
+  cout<<"calculating time  "<<runMeans.size()<<endl;
+  // Calculating time delays from stage position
+  double *timeDelays = new double[runMeans.size() + 1];
+  ind = 1;
+  for (auto pItr : stagePosInds) {
+    timeDelays[ind] = 2*pItr.first/(3e3);
+    cout<<"time: "<<timeDelays[ind]<<endl;
+    ind++;
+  }
+  timeDelays[0] = 2*timeDelays[1] - timeDelays[2];
+  for (int i=runMeans.size(); i>=0; i--) {
+    timeDelays[i] -= timeZero + timeDelays[0];
+  }
+
+  save::saveDat<double>(timeDelays, runMeans.size() + 1, 
+      "./plots/data/timeDelays["
+      + to_string(runMeans.size() + 1) + "].dat");
+ 
+ /////  Filling array of time dependend legendre signal  /////
+ std::vector<double> unPumped(NradBins, 0);
+ int NrefBins = 0;
+ if (subtractT0) {
+   while (timeDelays[NrefBins+1] < 0) {
+     NrefBins++;
+   }
+ }
+ else {
+   NrefBins = runMeans.size();
+ }
+ cout<<"NrefBins"<<endl;
+
+ cout<<"starting ilg loop"<<endl;
+ std::vector< std::vector< std::vector<double> > > img(Nlegendres); //legCoeff_map.size());
+ for (uint ilg=0; ilg<Nlegendres; ilg++) {
+   img[ilg].resize(runMeans.size());
+   for (uint it=0; it<runMeans.size(); it++) {
+     img[ilg][it].resize(NradBins, 0);
+     for (uint ir=0; ir<NradBins; ir++) {
+       img[ilg][it][ir] = runMeans[it][ilg*NradBins + ir];
+     }
+   }
+   cout<<"filled img"<<endl;
+
+   // Mean/t0 subtraction and normalizing by atomic scattering
+   // Raw data
+   std::fill(unPumped.begin(), unPumped.end(), 0.0);
+   for (ir=0; ir<NradBins; ir++) {
+     for (uint tm=0; tm<NrefBins; tm++) {
+       unPumped[ir] += img[ilg][tm][ir];
+     }
+     unPumped[ir] /= NrefBins;
+   }
+   for (ir=0; ir<NradBins; ir++) {
+     for (uint tm=0; tm<img[ilg].size(); tm++) {
+       img[ilg][tm][ir] -= unPumped[ir];
+       img[ilg][tm][ir] *= sMsNorm[ir];
+     }
+   }
+   if (ilg==0) {
+     plt.print1d(unPumped, "testUnp");
+   }
+
+   ///  Saving data  ///
+   save::saveDat<double>(img[ilg], "./plots/data/data_sMsL" 
+       + to_string(ilg) + "Diff["
+       + to_string(img[ilg].size()) + ","
+       + to_string(img[ilg][0].size()) + "].dat");
+   save::saveDat<double>(img[ilg][img[ilg].size()-1], "./plots/data/data_sMsFinalL" 
+       + to_string(ilg) + "Diff["
+       + to_string(img[ilg][0].size()) + "].dat");
+
+
+   // Save raw unpumped data to fit background
+   if (ilg == 0) {
+     save::saveDat<double>(unPumped, "./qScale/results/unPumpedDiffractionL0["
+         + to_string(unPumped.size()) + "].dat");
+     plt.print1d(unPumped, "unPumpedRaw");
+   }
+
+ }
+
+
+
+  exit(0);
+
+
+
+
+
+
+  for (uint64_t ievt=0; ievt<Nentries; ievt++) {
+    analysis.loadEvent(ievt);
+
 
     /////  Make new root file and initialize variables  /////
     if ((curDate != *date) || (curScan != *scan) || (ievt == Nentries-1)/* || (curRun != runNum)*/) {
 
       if  ((curDate != *date) || (curScan != *scan) || (ievt == Nentries-1)/* || (curRun != runNum)*/) {
+
+        ///  Prune results  ///
+        auto litr = legCoeff_map.begin();
+        auto aitr = avgImgs_map.begin();
+        auto citr = counts.begin();
+        auto iitr = Nimages.begin();
+        while (citr != counts.end()) {
+          cout<<"counts: "<<citr->first<<"   "<<iitr->second<<"  "<<citr->second<<endl;
+          if (citr->second < 10) {
+            //litr--;
+            legCoeff_map.erase(litr);
+            //aitr--;
+            avgImgs_map.erase(aitr);
+            //citr--;
+            counts.erase(citr);
+          }
+          litr++;
+          aitr++;
+          citr++;
+          iitr++;
+        }
+
+
         cout<<"start plot"<<endl;
         if ((curRun != -1) && (legCoeff_map.size() > 1)) {
           cout<<"Plotting"<<endl;
@@ -306,14 +568,14 @@ int main(int argc, char* argv[]) {
           avgImgs_map.erase(--avgImgs_map.end());
 
           int ind = 0;
-          double *timeDelays = new double[legCoeff_map.size() + 1];
-          std::vector< std::vector< std::vector<double> > > img(3); //legCoeff_map.size());
-          std::vector< std::vector< std::vector<double> > > smearedImg(3); //legCoeff_map.size());
+   //       double *timeDelays = new double[legCoeff_map.size() + 1];
+     //     std::vector< std::vector< std::vector<double> > > img(Nlegendres); //legCoeff_map.size());
+          std::vector< std::vector< std::vector<double> > > smearedImg(Nlegendres); //legCoeff_map.size());
 
           // Calculating time delays from stage position
           ind = 1;
           for (auto coeffs : legCoeff_map) {
-            timeDelays[ind] = 2*coeffs.first/(3e-1) - timeZero;
+            timeDelays[ind] = 2*coeffs.first/(3e3) - timeZero;
             cout<<"Times: "<<ind<<"  "<<timeDelays[ind]<<"  "<<coeffs.first<<endl;
             ind++;
           }
@@ -345,19 +607,17 @@ int main(int argc, char* argv[]) {
             NrefBins = legCoeff_map.size();
           }
 
-          for (uint ilg=0; ilg<5; ilg++) {
+          for (uint ilg=0; ilg<Nlegendres; ilg++) {
             ind = 0;
             img[ilg].resize(legCoeff_map.size());
             for (auto coeffs : legCoeff_map) {
               img[ilg][ind].resize(NradBins, 0);
-              if (ilg==2) cout<<"counts: "<<coeffs.first<<"   "<<counts[coeffs.first]<<endl;
               for (uint ir=0; ir<NradBins; ir++) {
                 img[ilg][ind][ir] = coeffs.second[ilg*NradBins + ir]/counts[coeffs.first];
               }
               ind++;
             }
 
-            img[ilg].erase(img[ilg].begin()+66);
             // Mean/t0 subtraction and normalizing by atomic scattering
             // Raw data
             std::fill(unPumped.begin(), unPumped.end(), 0.0);
@@ -672,7 +932,8 @@ int main(int argc, char* argv[]) {
       runInds.push_back(runInd);
       cout<<runInd<<endl;
       runShifts[runInd] = 0;
-      prevStagePos = -1;
+      prevStagePos = 1e10;
+      Nscans = 0;
 
 
     }
@@ -682,13 +943,16 @@ int main(int argc, char* argv[]) {
       //continue;
     }
 
+    cout<<"StagePos"<<stagePos<<endl;
     // Need initial stage position (skips first image)
-    if (prevStagePos == -1) {
+    if (prevStagePos > stagePos) {
+      Nscans++;
       prevStagePos = stagePos;
-      continue;
+      curPosition = 0;
     }
 
     // Round the stage difference to the correct decimal place
+    /*
     compare = 1;
     itr = -1;
     while ((fabs(compare) > 0.01) && (itr < 4)) {
@@ -697,13 +961,15 @@ int main(int argc, char* argv[]) {
           - (stagePos - prevStagePos))
           /(stagePos - prevStagePos);
     }
-    stageDiff = ((double)tools::round((stagePos - prevStagePos)*pow(10, itr)))/pow(10, itr);
-    //cout<<"stage diff: "<<stagePos<<"  "<<stagePos - prevStagePos<<"  "<<stageDiff;
+    */
+    //stageDiff = ((double)tools::round((stagePos - prevStagePos)*pow(10, itr)))/pow(10, itr);
+    stageDiff = stagePos - prevStagePos;
     prevStagePos = stagePos;
 
-    stageDiff = ((double)((int)(1000*stageDiff)))/1000;
+    //stageDiff = ((double)((int)(1000*stageDiff)))/1000;
 
     curPosition += stageDiff;
+    //cout<<"stage diff: "<<prevStagePos<<"  "<<stagePos<<"  "<<stageDiff<<"      "<<curPosition<<endl;
     //cout<<endl;
 
     // Make sure we are still in regime of small step sizes
@@ -717,26 +983,30 @@ int main(int argc, char* argv[]) {
     //curPosition = ((double)((int)(1000*curPosition)))/1000.;
     //if (legCoeff_map.find(curPosition) == legCoeff_map.end()) {
     newEntry = true;
-      //cout<<"adding : "<<curPosition<<"   "<<endl;
-          for (auto itr = legCoeff_map.begin(); itr!=legCoeff_map.end(); itr++) {
-            //cout<<"search pos: "<<itr->first<<endl;
-            if (fabs((curPosition - itr->first)/curPosition) < 0.01) {
-              curPosition = itr->first;
-              newEntry = false;
-            }
-          }
+    for (auto itr = legCoeff_map.begin(); itr!=legCoeff_map.end(); itr++) {
+      if (curPosition == itr->first) {
+        curPosition = itr->first;
+        newEntry = false;
+      }
+    }
     if (newEntry) {
-      //cout<<"ADDED"<<endl;
+      if (Nscans > 3) {
+        cout << "WARNING: Skipping position " << curPosition << endl;
+        continue;
+      }
+
+      cout<<"ADDED "<<curPosition<<endl;
       legCoeff_map[curPosition].resize((*legCoeffs).size(), 0);
       avgImgs_map[curPosition].resize(NimgRows);
       for (int ir=0; ir<NimgRows; ir++) {
         avgImgs_map[curPosition][ir].resize(NimgCols);
       }
       counts[curPosition] = 0;
+      Nimages[curPosition] = 0;
     }
     for (uint i=0; i<(*legCoeffs).size(); i++) {
       //legCoeff_map[curPosition][i] += imgNorm*(*legCoeffs)[i]; CHANGED
-      legCoeff_map[curPosition][i] += imgNorm*(*legCoeffs)[i];
+      legCoeff_map[curPosition][i] += (*legCoeffs)[i];
     }
     for (uint ir=0; ir<(*imgSubBkg).size(); ir++) {
       for (uint ic=0; ic<(*imgSubBkg)[ir].size(); ic++) {
@@ -746,8 +1016,21 @@ int main(int argc, char* argv[]) {
     }
 
     counts[curPosition] += imgNorm;
+    Nimages[curPosition] += 1;
+    allPos[curPosition].push_back(stagePos);
   }
 
+  // Check stage position binning
+  for (auto itr : allPos) {
+    for (uint k=1; k<itr.second.size(); k++) {
+      if (itr.second[k-1] != itr.second[k]) {
+        cerr << "WARNING: Stage positions "
+          + to_string(itr.second[k-1]) + " and "
+          + to_string(itr.second[k]) + " do no match in bin "
+          + to_string(itr.first) << endl;
+      }
+    }
+  }
   // Clean up
 
   for (auto &runItr : diffP_arrays) {
