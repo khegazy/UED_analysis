@@ -3,19 +3,21 @@
 
 int main(int argc, char* argv[]) {
 
-  radicalEnums molecule = phenylRadical; //nitrobenzene; //phenoxyRadical;
+  radicalEnums molecule = nitrobenzene; //phenylRadical; //nitrobenzene; //phenoxyRadical;
+  //radicalEnums molecule = phenylRadical; //nitrobenzene; //phenoxyRadical;
+  //radicalEnums molecule = phenoxyRadical;
 
   // Diffraction Pattern
   uint NradBins = 30;
   uint Nbins = 2*NradBins - 1;
   //double maxQ = 11.3*((double)Nbins)/1000.0;
-  double maxQ = 11.3;
+  double maxQ = 11.3*835/1024*(9.5/9.0);
   double elEnergy = 3.7e6;
   double Iebeam = 5;
   double screenDist = 4;
 
 
-  PLOTclass plt;
+  //PLOTclass plt;
 
   double seed = (double)clock();
   int Nmols = 1;
@@ -24,12 +26,12 @@ int main(int argc, char* argv[]) {
   std::string outputDir = "output/references";
   //string outputDir = "/reg/neh/home/khegazy/simulations/n2o/diffractionPatterns/output";
   if (argc > 1) {
-    Nmols = atoi(argv[1]);
-  }
-  if (argc > 2) {
-    for (int iarg=2; iarg<argc; iarg+=2) {
-      if (strcmp(argv[iarg],"-Ofile")==0) {string str(argv[iarg+1]); fileName=str;}
+    for (int iarg=1; iarg<argc; iarg+=2) {
+      if (strcmp(argv[iarg],"-Nmols")==0) {Nmols = atoi(argv[iarg+1]);}
+      else if (strcmp(argv[iarg],"-Nbins")==0) {NradBins = atoi(argv[iarg+1]);}
+      else if (strcmp(argv[iarg],"-Ofile")==0) {string str(argv[iarg+1]); fileName=str;}
       else if (strcmp(argv[iarg],"-Odir")==0) {string str(argv[iarg+1]); outputDir=str;}
+      else if (strcmp(argv[iarg],"-maxQ")==0) {maxQ = atof(argv[iarg+1]);}
       else if (strcmp(argv[iarg],"-Index")==0) {index = atoi(argv[iarg+1]);}
       else {
         cerr<<"ERROR!!! Option "<<argv[iarg]<<" does not exist!"<<endl;
@@ -50,9 +52,9 @@ int main(int argc, char* argv[]) {
       NBZMCclass* NBZmc = new NBZMCclass(seed);
       NBZmc->Nmols = Nmols;
       NBZmc->NmolAtoms = 14;
-      NBZmc->atomTypes.push_back(N);
       NBZmc->atomTypes.push_back(C);
       NBZmc->atomTypes.push_back(O);
+      NBZmc->atomTypes.push_back(N);
       NBZmc->atomTypes.push_back(H);
       molMCs.push_back(NBZmc);
       break;
@@ -169,6 +171,7 @@ int main(int argc, char* argv[]) {
   opts[2] = fileType;   vals[2] = "png";
 
 
+  /*
   delete (TH2F*)plt.printRC(diffPatterns["diffractionPattern"], 
       prefix + "diffractionPattern_" + suffixDP, opts, vals);
   delete (TH2F*)plt.printRC(diffPatterns["molDiffractionPattern"], 
@@ -185,8 +188,10 @@ int main(int argc, char* argv[]) {
       prefix + "atmDiffractionPatternLineOut_" + suffixLO, xSpan, lineOutSpan);
   delete (TH1F*)plt.print1d(lineOuts["sPattern"], 
       prefix + "sPatternLineOut_" + suffixLO, xSpan, lineOutSpan);
+      */
 
 
+  cout<<"opening files"<<endl;
   FILE* otpDp = fopen((prefix + "diffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
   FILE* otpAp = fopen((prefix + "atmDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
   FILE* otpMp = fopen((prefix + "molDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
@@ -196,6 +201,7 @@ int main(int argc, char* argv[]) {
   FILE* otpApLo = fopen((prefix + "atmDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
   FILE* otpSpLo = fopen((prefix + "sPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
 
+  cout<<"writing to files"<<endl;
   for (uint ir=0; ir<diffPatterns["diffractionPattern"].size(); ir++) {
     fwrite(&diffPatterns["diffractionPattern"][ir][0], sizeof(double), 
         diffPatterns["diffractionPattern"][ir].size(), otpDp);
@@ -207,6 +213,7 @@ int main(int argc, char* argv[]) {
         diffPatterns["sPattern"][ir].size(), otpSp);
   }
 
+  cout<<"closing files"<<endl;
   fwrite(&lineOuts["diffractionPattern"][0], sizeof(double), 
       lineOuts["diffractionPattern"].size(), otpDpLo);
   fwrite(&lineOuts["molDiffractionPattern"][0], sizeof(double), 
@@ -220,10 +227,12 @@ int main(int argc, char* argv[]) {
   //////////////////////
   /////  Clean up  /////
   //////////////////////
-  
+ 
+  cout<<"cleaning"<<endl;
   for (auto mc : molMCs) {
     delete mc;
   }
+  cout<<"files"<<endl;
 
   fclose(otpDp);
   fclose(otpAp);
@@ -233,6 +242,7 @@ int main(int argc, char* argv[]) {
   fclose(otpApLo);
   fclose(otpMpLo);
   fclose(otpSpLo);
+  cout<<"done"<<endl;
 
 
   return 1;
