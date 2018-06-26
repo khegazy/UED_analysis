@@ -25,6 +25,7 @@ int main(int argc, char* argv[]) {
   std::string fileName = radicalNames[molecule];
   std::string outputDir = "output/references";
   //string outputDir = "/reg/neh/home/khegazy/simulations/n2o/diffractionPatterns/output";
+  std::string xyzDir = "/reg/neh/home5/khegazy/analysis/nitroBenzene/simulation/XYZfiles/";
   if (argc > 1) {
     for (int iarg=1; iarg<argc; iarg+=2) {
       if (strcmp(argv[iarg],"-Nmols")==0) {Nmols = atoi(argv[iarg+1]);}
@@ -49,32 +50,23 @@ int main(int argc, char* argv[]) {
   switch(molecule) {
     case nitrobenzene: {
       /////  nitrobenzene  /////
-      NBZMCclass* NBZmc = new NBZMCclass(seed);
+      MOLENSEMBLEMCclass* NBZmc = new MOLENSEMBLEMCclass(seed, 
+          xyzDir + "17050202_Nitrobenzene_opt_B3LYP_6-31G.xyz");
       NBZmc->Nmols = Nmols;
-      NBZmc->NmolAtoms = 14;
-      NBZmc->atomTypes.push_back(C);
-      NBZmc->atomTypes.push_back(O);
-      NBZmc->atomTypes.push_back(N);
-      NBZmc->atomTypes.push_back(H);
       molMCs.push_back(NBZmc);
       break;
     }
 
     case phenoxyRadical: {  
       /////  phenoxy radical  /////
-      PNOXYRadMCclass* PNOXYmc = new PNOXYRadMCclass(seed);
+      MOLENSEMBLEMCclass* PNOXYmc = new MOLENSEMBLEMCclass(seed, 
+          xyzDir + "18062101_phenyloxy_opt_B3LYP_6-31G.xyz");
       PNOXYmc->Nmols = Nmols;
-      PNOXYmc->NmolAtoms = 12;
-      PNOXYmc->atomTypes.push_back(C);
-      PNOXYmc->atomTypes.push_back(O);
-      PNOXYmc->atomTypes.push_back(H);
       molMCs.push_back(PNOXYmc);
 
-      NOMCclass* NOmc = new NOMCclass(seed);
+      MOLENSEMBLEMCclass* NOmc = new MOLENSEMBLEMCclass(seed,
+          xyzDir + "18062102_NO_opt_B3LYP_6-31G.xyz");
       NOmc->Nmols = Nmols;
-      NOmc->NmolAtoms = 2;
-      NOmc->atomTypes.push_back(O);
-      NOmc->atomTypes.push_back(N);
       molMCs.push_back(NOmc);
       break;
     }
@@ -229,7 +221,7 @@ int main(int argc, char* argv[]) {
   //////////////////////
  
   cout<<"cleaning"<<endl;
-  for (auto mc : molMCs) {
+  for (auto& mc : molMCs) {
     delete mc;
   }
   cout<<"files"<<endl;
