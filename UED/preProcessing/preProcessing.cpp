@@ -21,7 +21,7 @@ class centerfnctr {
             cerr << "ERROR: Did not select a correct center finding alogrithm, now exiting!!!\n\n";
             exit(0);
           }
-          //N2 return imgProc::centerOddLeg(img, vect[0], vect[1], 1, 70, 40, true, params.nanVal);
+          //N2 return imgProc::centerOddLeg(img, vect[0], vect[1], 1, 70, 40, true, NANVAL);
         }
 };
          
@@ -40,6 +40,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::string runListName(argv[1]);
+  bool doBackground = false;
 
 
   experimentParameters  expP = experimentParameters();
@@ -48,7 +49,16 @@ int main(int argc, char* argv[]) {
     runName = "doRunLists";
   }
   else {
-    auto iPos = runListName.find("Run") + 4;
+    auto initPos = runListName.find("runList_") + 8;
+    auto iPos = runListName.find("Run", initPos);
+    if (iPos == string::npos) {
+      std::cout << "INFO: Will do background!!!\n";
+      iPos = runListName.find("Background") + 11;
+      doBackground = true;
+    }
+    else {
+      iPos += 4;
+    }
     runName = runListName.substr(iPos, 
         runListName.find("_Scan-") - iPos);
   }
@@ -97,14 +107,18 @@ int main(int argc, char* argv[]) {
   std::vector< std::vector<double> > imgOrig(imgSize);
   std::vector< std::vector<double> > imgSubBkg(imgSize);
   std::vector< std::vector<double> > imgTemp(imgSize);
-  std::vector< std::vector<double> > imgBkg(imgSize);
+  std::vector< std::vector<double> > imgLaserBkg(imgSize);
+  std::vector< std::vector<double> > imgBkg(1024);
   std::vector< std::vector<double> > imgCent;
   float imgNorm;
   for (uint ir=0; ir<imgSize; ir++) {
     imgOrig[ir].resize(imgSize, 0);
     imgSubBkg[ir].resize(imgSize, 0);
     imgTemp[ir].resize(imgSize, 0);
-    imgBkg[ir].resize(imgSize, 0);
+    imgLaserBkg[ir].resize(imgSize, 0);
+  }
+  for (uint ir=0; ir<imgBkg.size(); ir++) {
+    imgBkg[ir].resize(1024, 0);
   }
 
   std::vector< std::vector<double> > oddImgImgn;
@@ -161,7 +175,67 @@ int main(int argc, char* argv[]) {
     ppFunct::makeRunLists(imgINFO);
   }
 
- 
+
+  //////////////////////////////////////////////
+  /////  Create and save background image  /////
+  //////////////////////////////////////////////
+
+  if (doBackground) {
+    if (params.verbose) std::cout << "INFO: Making background!!!\n";
+
+    double count = 0;
+    std::vector< std::vector<double> > imgVec;
+    for (ifl=0; ifl<imgINFO.size(); ifl++) {
+      ///  Get image  ///
+      string imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
+      cv::Mat imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+      cout<<"image addr: "<<imgAddr<<endl;
+      imgProc::threshold(imgMat, params.hotPixel);
+
+      Nrows = imgMat.rows;
+      Ncols = imgMat.cols;
+      if (params.imgMatType.compare("uint16") == 0) {
+        imgVec = imgProc::getImgVector<uint16_t>(imgMat, 
+                    Nrows, Nrows/2, Ncols/2); 
+      }  
+      else if (params.imgMatType.compare("uint32") == 0) {
+        imgVec = imgProc::getImgVector<uint32_t>(imgMat, 
+                    Nrows, Nrows/2, Ncols/2);
+      }  
+      else {
+        cerr << "ERROR: Do not recognize imgMatType = " 
+            + params.imgMatType + "!!!\n";
+        exit(0);
+      }
+
+      ///  Add image  ///
+      if (params.verbose) std::cout << "\tAdding images\n";
+      for (uint ir=0; ir<imgVec.size(); ir++) {
+        std::transform(imgVec[ir].begin(), imgVec[ir].end(), 
+            imgBkg[ir].begin(), imgBkg[ir].begin(),
+            std::plus<double>());
+      }
+      count++;
+    }
+
+    ///  Scaling vector  ///
+    for (uint ir=0; ir<imgVec.size(); ir++) {
+      tools::vScale<double>(imgBkg[ir], 1.0/count);
+    }
+
+    ///  Save image  ///
+    if (params.verbose) std::cout << "\tSaving image\n";
+    save::saveDat<double>(imgBkg, params.backgroundFolder 
+        + "/backgroundImg-" + imgINFO[0].run + ".dat");
+
+    if (params.pltVerbose) {
+      delete plt.printRC(imgBkg, "background-" + imgINFO[0].run);
+    }
+
+    exit(1);
+  }
+
+   
   //////////////////////////////////
   /////  Rough center finding  /////
   //////////////////////////////////
@@ -194,12 +268,21 @@ int main(int argc, char* argv[]) {
     
     if ((curScan != imgINFO[ifl].scan) || (curRun != imgINFO[ifl].run)) {
 
-      ///////  Get information about new run-scan combination  ///////
+      /////  Get information about new run-scan combination  /////
       runScanStartItr = ifl;
       curScan = imgINFO[ifl].scan;
       curRun = imgINFO[ifl].run;
 
-      ///////  Create new output ROOT file  ///////
+      /////  Get background image  /////
+      if (params.backgroundImage.compare("NULL") != 0) {
+        save::importDat<double>(imgBkg, params.backgroundFolder 
+            + "/" + params.backgroundImage);
+        if (params.pltVerbose) {
+          delete plt.printRC(imgBkg, "importBkg-" + imgINFO[ifl].run);
+        }
+      }
+
+      /////  Create new output ROOT file  /////
       if (file && tree) {
      	tree->Write();
   	file->Close();
@@ -241,7 +324,6 @@ int main(int argc, char* argv[]) {
       tree->Branch("centerR", 	&centerR, 	"centerR/I");
       tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
       tree->Branch("imgOrig", 	&imgOrig);
-      tree->Branch("imgBkg", 	&imgBkg);
       tree->Branch("imgSubBkg", &imgSubBkg);
       tree->Branch("legCoeffs", &legCoeffs);
       if (params.verbose) cout << "INFO: Tree and file are setup!\n\n";
@@ -260,40 +342,38 @@ int main(int argc, char* argv[]) {
 
         Nrows = imgMat.rows;
         Ncols = imgMat.cols;
-        imgCent.resize(Nrows);
-        int index;
         if (params.imgMatType.compare("uint16") == 0) {
           imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, 
-                      params.holeRad, params.holeR, 
-                      params.holeC, params.nanVal, false);
+                      Nrows, Nrows/2, Ncols/2, &imgBkg,
+                      params.holeRad, params.holeR, params.holeC);
         }  
         else if (params.imgMatType.compare("uint32") == 0) {
-          imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows, Ncols, 
-                      params.holeRad, params.holeR, 
-                      params.holeC, params.nanVal, false);
+          imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
+                      Nrows, Nrows/2, Ncols/2, &imgBkg,
+                      params.holeRad, params.holeR, params.holeC);
         }  
         else {
           cerr << "ERROR: Do not recognize imgMatType = " 
               + params.imgMatType + "!!!\n";
           exit(0);
         }
-          
-
-
+      
         // Remove readout noise
         if (params.verbose) std::cout << "\tSubtract readout noise.\n";
         imgProc::removeReadOutNoise(imgCent);
 
-        // Center finding: fine tuned
         if (params.pltVerbose) {
-          plt.printRC(imgCent, "center_holeRemoval" + to_string(imgINFO[icnt].imgNum), maximum, "200");
+          pltOpts[0] = minimum;	pltVals[0] = "0";
+          pltOpts[1] = maximum;	pltVals[1] = "200";
+          plt.printRC(imgCent, 
+              "centerAfter_holeRemoval" + to_string(imgINFO[icnt].imgNum),
+              pltOpts, pltVals);
         }
+ 
         center[0] = centersCOM[0];
         center[1] = centersCOM[1];
         centfnctr.symVleg = params.symVLeg;
-        centfnctr.nanVal = params.nanVal;
+        centfnctr.nanVal = NANVAL;
         centfnctr.minRadBin = params.minRadBin;
         centfnctr.centShellW = params.centShellW;
         centfnctr.img = &imgCent;
@@ -434,15 +514,19 @@ int main(int argc, char* argv[]) {
 
     if (params.imgMatType.compare("uint16") == 0) {
       imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
-          imgSize, centerR, centerC, 
-          params.holeRad, params.holeR, 
-          params.holeC, params.nanVal, false);
+          imgSize, centerR, centerC, NULL,
+          params.holeRad, params.holeR, params.holeC);
+      imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
+          imgSize, centerR, centerC, &imgBkg,
+          params.holeRad, params.holeR, params.holeC);
     }
     else if (params.imgMatType.compare("uint32") == 0) {
       imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
-          imgSize, centerR, centerC, 
-          params.holeRad, params.holeR, 
-          params.holeC, params.nanVal, false);
+          imgSize, centerR, centerC, NULL,
+          params.holeRad, params.holeR, params.holeC);
+      imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
+          imgSize, centerR, centerC, &imgBkg,
+          params.holeRad, params.holeR, params.holeC);
     }
     else {
       cerr << "ERROR: Do not recognize imgMatType = " 
@@ -454,19 +538,14 @@ int main(int argc, char* argv[]) {
     ///// Remove readout noise  /////
     if (params.verbose) std::cout << "INFO: Readout noise subtraction.\n";
     if (params.hasLaserBkg) {
-      imgProc::removeAvgReadOutNoise(imgOrig, imgSize/2, imgSize/2, 
-                  0.9*imgSize/2., 0.99*imgSize/2., params.nanVal, &params.nanMap);
+      imgProc::removeAvgReadOutNoise(imgSubBkg, imgSize/2, imgSize/2, 
+                  0.9*imgSize/2., 0.99*imgSize/2., &params.nanMap);
     }
     else {
-      imgProc::removeAvgReadOutNoise(imgOrig, imgSize/2, imgSize/2, 
-                  0.9*imgSize/2., 0.99*imgSize/2., params.nanVal);
+      imgProc::removeAvgReadOutNoise(imgSubBkg, imgSize/2, imgSize/2, 
+                  0.9*imgSize/2., 0.99*imgSize/2.);
     }
 
-    for (int ir=0; ir<imgSize; ir++) {
-      for (int ic=0; ic<imgSize; ic++) {
-        imgSubBkg[ir][ic] = imgOrig[ir][ic];
-      }
-    }
 
     //////////////////////////////////////////////////////
     /////  Finding and subtracting laser background  /////
@@ -474,8 +553,8 @@ int main(int argc, char* argv[]) {
     // We cluster background spots based on the assymetry of 
     //    the image. 
 
-    if (params.verbose) std::cout << "INFO: Laser background removal.\n";
     if (params.hasLaserBkg) {
+      if (params.verbose) std::cout << "INFO: Laser background removal.\n";
       // Fill in hole based on symmetry
       std::vector< std::vector<double> > imgLaser = imgOrig;
       int hCentR = imgSize/2;
@@ -524,15 +603,15 @@ int main(int argc, char* argv[]) {
               stdRatioImg, params.holeRad*1.2,
               params.coreValThresh, params.coreRad, 
               params.minClusterSize, params.minPixelSize, params.minDensity, params.clusterRad,
-              params.borderValThresh, params.borderRad, params.padRad, imgBkg);
+              params.borderValThresh, params.borderRad, params.padRad, imgLaserBkg);
 
 
-      ///  Remove laser background from image by setting pixels = params.nanVal  ///
+      ///  Remove laser background from image by setting pixels = NANVAL  ///
       for (uint ip=0; ip<removePairs.size(); ip++) {
-        imgSubBkg[removePairs[ip].first][removePairs[ip].second] = params.nanVal;
+        imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
       }
       /*
-      ///  Remove laser background from image by setting pixels = params.nanVal  ///
+      ///  Remove laser background from image by setting pixels = NANVAL  ///
       for (ir=0; ir<imgSize; ir++) {
         for (ic=0; ic<imgSize; ic++) {
           imgSubBkg[ir][ic] = imgOrig[ir][ic];
@@ -541,17 +620,17 @@ int main(int argc, char* argv[]) {
 
       for (ir=imgSize/2-40; ir<imgSize/2+40; ir++) {
         for (ic=imgSize/2-120; ic<imgSize/2; ic++) {
-          imgSubBkg[ir][ic] = params.nanVal;
+          imgSubBkg[ir][ic] = NANVAL;
         }
       }
       for (ir=imgSize/2-200; ir<imgSize/2+50; ir++) {
         for (ic=imgSize-225; ic<imgSize-115; ic++) {
-          imgSubBkg[ir][ic] = params.nanVal;
+          imgSubBkg[ir][ic] = NANVAL;
         }
       }
       for (ir=imgSize/2-60; ir<imgSize/2+35; ir++) {
         for (ic=imgSize-75; ic<imgSize; ic++) {
-          imgSubBkg[ir][ic] = params.nanVal;
+          imgSubBkg[ir][ic] = NANVAL;
         }
       }
       */
@@ -578,8 +657,8 @@ int main(int argc, char* argv[]) {
 
         pltOpts[0] = minimum;	pltVals[0] = "0";
         pltOpts[1] = maximum;	pltVals[1] = "5e6";
-        delete plt.printRC(imgBkg, 
-            "imgBkg_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
+        delete plt.printRC(imgLaserBkg, 
+            "imgLaserBkg_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
 
         pltOpts[0] = minimum;	pltVals[0] = "0"; //"1e4";
         pltOpts[1] = maximum;	pltVals[1] = to_string(params.coreValThresh); //"1e6";
@@ -623,15 +702,8 @@ int main(int argc, char* argv[]) {
         pltOrig[ir].resize(imgSize);
         pltSubBkg[ir].resize(imgSize);
         for (int ic=0; ic<imgSize; ic++) {
-          if (std::pow(ir-hCentR,2) + std::pow(ic-hCentC,2) 
-              < std::pow(params.holeRad, 2)) {
-            pltOrig[ir][ic] = 0;
-            pltSubBkg[ir][ic] = 0;
-          }
-          else {
-            pltOrig[ir][ic] = imgOrig[ir][ic];
-            pltSubBkg[ir][ic] = imgSubBkg[ir][ic];
-          }
+          pltOrig[ir][ic] = imgOrig[ir][ic];
+          pltSubBkg[ir][ic] = imgSubBkg[ir][ic];
         }
       }
       delete plt.printRC(pltOrig, 
@@ -682,13 +754,13 @@ int main(int argc, char* argv[]) {
 
     clock_t begin = clock();
     //legCoeffs = imgProc::legendreFit(imgSubBkg, 5, Nlegendres, 
-    //    NradBins, lgFit_Rows, lgFit_Cols, params.nanVal, gOrig);
+    //    NradBins, lgFit_Rows, lgFit_Cols, NANVAL, gOrig);
     
     std::fill(legCoeffs.begin(), legCoeffs.end(), 0);
     std::fill(legCounts.begin(), legCounts.end(), 0);
     for (int ir=0; ir<imgSubBkg.size(); ir++) {
       for (int ic=0; ic<imgSubBkg[ir].size(); ic++) {
-        if (imgSubBkg[ir][ic] != params.nanVal) {
+        if (imgSubBkg[ir][ic] != NANVAL) {
           double rad = sqrt(pow(ir-params.imgSize/2,2) + pow(ic-params.imgSize/2,2));
           int radInd = (int)(params.NradBins*rad/(params.imgSize/2));
           if (radInd >= params.NradBins) continue;
