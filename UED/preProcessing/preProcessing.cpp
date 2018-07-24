@@ -164,6 +164,8 @@ int main(int argc, char* argv[]) {
   ////////////////////////////////
 
   ppFunct::getScanRunInfo(imgINFO, runListName, params.verbose);
+  curRun  = imgINFO[0].run;
+  curScan = imgINFO[0].scan;
 
 
   //////////////////////////////////////////////////////
@@ -257,7 +259,78 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-   
+
+  //////////////////////////////////
+  /////  Get background image  /////
+  //////////////////////////////////
+
+  if (params.backgroundImage.compare("NULL") != 0) {
+    save::importDat<double>(imgBkg, params.backgroundFolder 
+        + "/" + params.backgroundImage);
+    if (params.pltVerbose) {
+      delete plt.printRC(imgBkg, "plots/importBkg-" + imgINFO[ifl].run);
+    }
+  }
+
+
+  //////////////////////////////
+  /////  Making root file  /////
+  //////////////////////////////
+
+   //rFileName = "/reg/ued/ana/scratch/nitroBenzene/rootFiles/" + dataType 
+  std::string subFolder;
+  if (runListName.find("UVpump", 0) != std::string::npos) {
+    subFolder = "UVpump";
+  }
+  else if (runListName.find("IRalign", 0) != std::string::npos) {
+    subFolder = "IRalign";
+  }
+  else if (runListName.find("Au", 0) != std::string::npos) {
+    subFolder = "Au";
+  }
+  else if (runListName.find("BKG", 0) != std::string::npos) {
+    subFolder = "BKG";
+  }
+
+  rFileName =  params.preProcOutputDir + "/" + subFolder + "/"
+  //rFileName =  "testing/" + subFolder + "/"
+        + "Run-" + curRun + "_"
+        + "Scan-" + to_string(curScan) + ".root";
+
+  if (params.verbose) std::cout << "INFO: Making file " << rFileName << endl;
+
+  file = TFile::Open(rFileName.c_str(), "RECREATE");
+  tree = new TTree("physics","physics");
+
+  tree->Branch("run", 	&curRun);
+  tree->Branch("scan", 	&curScan,       "scan/I");
+  tree->Branch("imgNum", 	&imgNum, 	"imgNum/I");
+  tree->Branch("imgIsRef", 	&imgIsRef, 	"imgIsRef/I");
+  tree->Branch("stagePos", 	&stagePos, 	"stagePos/I");
+  tree->Branch("t0StagePos",&t0SP,		"t0StagePos/F");
+  tree->Branch("t0Time",	&t0Time,	"t0Time/F");
+  tree->Branch("centerC", 	&centerC, 	"centerC/I");
+  tree->Branch("centerR", 	&centerR, 	"centerR/I");
+  tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
+  tree->Branch("imgOrig", 	&imgOrig);
+  tree->Branch("imgSubBkg", &imgSubBkg);
+  tree->Branch("legCoeffs", &legCoeffs);
+  tree->Branch("azmAvg",    &azmAvg);
+  if (params.verbose) cout << "INFO: Tree and file are setup!\n\n";
+
+
+  //////////////////////////////////
+  /////  Checking if bad scan  /////
+  //////////////////////////////////
+
+  if (std::find(params.badScans.begin(), params.badScans.end(), imgINFO[ifl].scan)
+        != params.badScans.end()) {
+    std::cout << "INFO: This is a bad scan, saving empty tree and exiting!!!\n";
+    tree->Write();
+    file->Close();
+    exit(1);
+  }
+  
   //////////////////////////////////
   /////  Rough center finding  /////
   //////////////////////////////////
@@ -270,209 +343,124 @@ int main(int argc, char* argv[]) {
   if (params.verbose) std::cout << "COMcenters: " 
     << centersCOM[0] << "  " << centersCOM[1] << endl;
 
-  ////////////////////////////////////////////////////////////
-  /////  Create root file for each run-scan combination  /////
-  ////////////////////////////////////////////////////////////
 
-  ////////////////////////////////////////
-  // For a new run/scan do setup        //
-  //    -Run/scan numbers               //
-  //    -Number of images in scan       //
-  //    -Close previous root file       //
-  //    -Create new root file           //
-  //    -Find image center              //
-  ////////////////////////////////////////
+  /////////////////////////////////
+  /////  Fine center finding  /////
+  /////////////////////////////////
+
+  ///// Finding image center /////
+  if (params.verbose) cout << "INFO: Starting fine center Finding!\n\n";
+  centerR = centerC = Ncents = 0;
+  for (int icnt=0; icnt<std::min(params.NavgCenters, (int)imgINFO.size()); icnt++) {
+
+    /// Filling image std::vector ///
+    imgAddr = imgINFO[icnt].path + imgINFO[icnt].fileName;
+    imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+    cout<<"centering image addr: "<<imgAddr<<endl;
+    imgProc::threshold(imgMat, params.hotPixel);
+
+    Nrows = imgMat.rows;
+    Ncols = imgMat.cols;
+    if (params.imgMatType.compare("uint16") == 0) {
+      imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
+                  Nrows, Nrows/2, Ncols/2, &imgBkg,
+                  params.holeRad, params.holeR, params.holeC);
+    }  
+    else if (params.imgMatType.compare("uint32") == 0) {
+      imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
+                  Nrows, Nrows/2, Ncols/2, &imgBkg,
+                  params.holeRad, params.holeR, params.holeC);
+    }  
+    else {
+      cerr << "ERROR: Do not recognize imgMatType = " 
+          + params.imgMatType + "!!!\n";
+      exit(0);
+    }
+
+    //  Remove pixel outliers
+    radProc.removeOutliers(imgCent,  
+        centersCOM[0], centersCOM[1], params.shellWidth, params.Npoly,
+        params.stdIncludeLeft, params.distSTDratioLeft,
+        params.stdCutLeft, params.meanBinSize,
+        params.stdIncludeRight, params.distSTDratioRight,
+        params.stdChangeRatio, params.stdCutRight,
+        imgINFO[icnt].stagePos, params.outlierVerbose, params.pltVerbose);
+
+  
+    // Remove readout noise
+    if (params.verbose) std::cout << "\tSubtract readout noise.\n";
+    imgProc::removeReadOutNoise(imgCent);
+
+    if (params.pltVerbose) {
+      pltOpts[0] = minimum;	pltVals[0] = "0";
+      pltOpts[1] = maximum;	pltVals[1] = "200";
+      plt.printRC(imgCent, 
+          "plots/center_holeRemoval" + to_string(imgINFO[icnt].imgNum),
+          pltOpts, pltVals);
+    }
  
-  curRun=""; curScan=-1;
-  file=NULL; tree=NULL;
+    center[0] = centersCOM[0];
+    center[1] = centersCOM[1];
+    centfnctr.radProc     = &radProc;
+    centfnctr.fxnType     = params.centerFxnType;
+    centfnctr.minRadBin   = params.centerMinRadBin;
+    centfnctr.centShellW  = params.centerShellWidth;
+    centfnctr.img         = &imgCent;
+    //centfnctr.verbose     = params.verbose;
+
+    if (params.verbose) std::cout << "\tSearching for center (PowellMin) ... ";
+    tools::powellMin<centerfnctr> (centfnctr, center, 
+        params.cntrScale, params.cntrMinScale, 
+        params.cntrPowellTol, params.cntrFracTol1d);
+    if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
+
+    //if ((curDate == "20131102") && (curScan == "LongScan1")) {
+    //  center[0] = 569;
+    //  center[1] = 490;
+    //}
+    centerR += center[0];
+    centerC += center[1];
+    Ncents += 1;
+
+    // Show image center
+    if (params.pltCent) {
+      TH2F* cImg = plt.plotRC(imgCent, "plots/centeredImage"+to_string(icnt), maximum, "1500");
+      for (int ir=(center[0])-5; ir<=center[0]+5; ir++) {
+        for (int ic=(center[1])-5; ic<=center[1]+5; ic++) {
+          if (sqrt(pow(ir-center[0],2)+pow(ic-center[1],2)) < 5) 
+            cImg->SetBinContent(ic, ir, 100000);
+        }
+      }
+      cImg->SetMinimum(-1);
+      plt.print2d(cImg, "plots/centeredImage"+to_string(icnt));
+      delete cImg;
+    }
+
+  }
+  centerR /= Ncents;
+  centerC /= Ncents;
+  if (params.verbose) cout << "INFO: Found center " << centerR 
+    		<< " "<< centerC << "!\n\n";
+
+
+  ///////////////////////////////////////
+  /////  Processing images in scan  /////
+  ///////////////////////////////////////
+ 
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
 
-    /////  Skip bad scans  /////
-    if (std::find(params.badScans.begin(), params.badScans.end(), imgINFO[ifl].scan)
-          != params.badScans.end()) {
-      continue;
+    /////  Check we are in the same run/scan  /////
+    if ((imgINFO[ifl].run.compare(curRun) != 0) && (imgINFO[ifl].scan != curScan)) {
+      std::cerr << "ERROR new image in run/scan " << imgINFO[ifl].run 
+        << "/" << imgINFO[ifl].scan << " instead of " 
+        << curRun << "/" << curScan << endl;
+      exit(0);
     }
-   
-    if ((curScan != imgINFO[ifl].scan) || (curRun != imgINFO[ifl].run)) {
 
-      /////  Get information about new run-scan combination  /////
-      runScanStartItr = ifl;
-      curScan = imgINFO[ifl].scan;
-      curRun = imgINFO[ifl].run;
-
-      /////  Get background image  /////
-      if (params.backgroundImage.compare("NULL") != 0) {
-        save::importDat<double>(imgBkg, params.backgroundFolder 
-            + "/" + params.backgroundImage);
-        if (params.pltVerbose) {
-          delete plt.printRC(imgBkg, "plots/importBkg-" + imgINFO[ifl].run);
-        }
-      }
-
-      /////  Create new output ROOT file  /////
-      if (file && tree) {
-     	tree->Write();
-  	file->Close();
-      }
-
-      //rFileName = "/reg/ued/ana/scratch/nitroBenzene/rootFiles/" + dataType 
-      std::string subFolder;
-      if (runListName.find("UVpump", 0) != std::string::npos) {
-        subFolder = "UVpump";
-      }
-      else if (runListName.find("IRalign", 0) != std::string::npos) {
-        subFolder = "IRalign";
-      }
-      else if (runListName.find("Au", 0) != std::string::npos) {
-        subFolder = "Au";
-      }
-      else if (runListName.find("BKG", 0) != std::string::npos) {
-        subFolder = "BKG";
-      }
-
-      rFileName =  params.preProcOutputDir + "/" + subFolder + "/"
-      //rFileName =  "testing/" + subFolder + "/"
-            + "Run-" + curRun + "_"
-            + "Scan-" + to_string(curScan) + ".root";
-
-      cout << "  Making file " << rFileName << endl;
-
-      file = TFile::Open(rFileName.c_str(), "RECREATE");
-      tree = new TTree("physics","physics");
-
-      tree->Branch("run", 	&curRun);
-      tree->Branch("scan", 	&curScan,       "scan/I");
-      tree->Branch("imgNum", 	&imgNum, 	"imgNum/I");
-      tree->Branch("imgIsRef", 	&imgIsRef, 	"imgIsRef/I");
-      tree->Branch("stagePos", 	&stagePos, 	"stagePos/I");
-      tree->Branch("t0StagePos",&t0SP,		"t0StagePos/F");
-      tree->Branch("t0Time",	&t0Time,	"t0Time/F");
-      tree->Branch("centerC", 	&centerC, 	"centerC/I");
-      tree->Branch("centerR", 	&centerR, 	"centerR/I");
-      tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
-      tree->Branch("imgOrig", 	&imgOrig);
-      tree->Branch("imgSubBkg", &imgSubBkg);
-      tree->Branch("legCoeffs", &legCoeffs);
-      tree->Branch("azmAvg",    &azmAvg);
-      if (params.verbose) cout << "INFO: Tree and file are setup!\n\n";
-
-
-      ///// Finding image center /////
-      if (params.verbose) cout << "INFO: Starting center Finding!\n\n";
-      centerR = centerC = Ncents = 0;
-      cout<<"center conditions: "<<ifl<<"  "<<params.NavgCenters<<"  "<<std::min(ifl+params.NavgCenters, (uint)imgINFO.size())<<endl;
-      for (int icnt=ifl; icnt<std::min(ifl+params.NavgCenters, (uint)imgINFO.size()); icnt++) {
-
-        /// Filling image std::vector ///
-        imgAddr = imgINFO[icnt].path + imgINFO[icnt].fileName;
-        imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-        cout<<"centering image addr: "<<imgAddr<<endl;
-        imgProc::threshold(imgMat, params.hotPixel);
-
-        Nrows = imgMat.rows;
-        Ncols = imgMat.cols;
-        if (params.imgMatType.compare("uint16") == 0) {
-          imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, &imgBkg,
-                      params.holeRad, params.holeR, params.holeC);
-        }  
-        else if (params.imgMatType.compare("uint32") == 0) {
-          imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, &imgBkg,
-                      params.holeRad, params.holeR, params.holeC);
-        }  
-        else {
-          cerr << "ERROR: Do not recognize imgMatType = " 
-              + params.imgMatType + "!!!\n";
-          exit(0);
-        }
-
-        //  Remove pixel outliers
-        radProc.removeOutliers(imgCent,  
-            centersCOM[0], centersCOM[1], params.shellWidth, params.Npoly,
-            params.stdIncludeLeft, params.distSTDratioLeft,
-            params.stdCutLeft, params.meanBinSize,
-            params.stdIncludeRight, params.distSTDratioRight,
-            params.stdChangeRatio, params.stdCutRight,
-            imgINFO[icnt].stagePos, params.outlierVerbose, params.pltVerbose);
-
-     
-        // Remove readout noise
-        if (params.verbose) std::cout << "\tSubtract readout noise.\n";
-        imgProc::removeReadOutNoise(imgCent);
-
-        if (params.pltVerbose) {
-          pltOpts[0] = minimum;	pltVals[0] = "0";
-          pltOpts[1] = maximum;	pltVals[1] = "200";
-          plt.printRC(imgCent, 
-              "plots/center_holeRemoval" + to_string(imgINFO[icnt].imgNum),
-              pltOpts, pltVals);
-        }
- 
-        center[0] = centersCOM[0];
-        center[1] = centersCOM[1];
-        centfnctr.radProc     = &radProc;
-        centfnctr.fxnType     = params.centerFxnType;
-        centfnctr.minRadBin   = params.centerMinRadBin;
-        centfnctr.centShellW  = params.centerShellWidth;
-        centfnctr.img         = &imgCent;
-        //centfnctr.verbose     = params.verbose;
-
-        if (params.verbose) std::cout << "\tSearching for center (PowellMin) ... ";
-        tools::powellMin<centerfnctr> (centfnctr, center, 
-            params.cntrScale, params.cntrMinScale, 
-            params.cntrPowellTol, params.cntrFracTol1d);
-        if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
-
-        //if ((curDate == "20131102") && (curScan == "LongScan1")) {
-        //  center[0] = 569;
-        //  center[1] = 490;
-        //}
-        centerR += center[0];
-        centerC += center[1];
-	Ncents += 1;
-
-	// Show image center
-        if (params.pltCent) {
-          TH2F* cImg = plt.plotRC(imgCent, "plots/centeredImage"+to_string(icnt), maximum, "1500");
-          for (int ir=(center[0])-5; ir<=center[0]+5; ir++) {
-            for (int ic=(center[1])-5; ic<=center[1]+5; ic++) {
-              if (sqrt(pow(ir-center[0],2)+pow(ic-center[1],2)) < 5) 
-                cImg->SetBinContent(ic, ir, 100000);
-            }
-          }
-          cImg->SetMinimum(-1);
-          plt.print2d(cImg, "plots/centeredImage"+to_string(icnt));
-          delete cImg;
-        }
-
-      }
-      centerR /= Ncents;
-      centerC /= Ncents;
-      if (params.verbose) cout << "INFO: Found center " << centerR 
-			<< " "<< centerC << "!\n\n";
-    } // Initial things to do for new file
-
-
-
-
-
-
-    ///////////////////////////////////////
-    /////  Processing images in scan  /////
-    ///////////////////////////////////////
-
-    // Skipping reference images, already processed above
-    //if (hasRef && Nrefs) {
-    //  Nrefs--;
-    //  continue;
-    //}
-    
-    // Looping through non reference images
     if (params.verbose) cout << "\tStage position: " 
       + to_string(imgINFO[ifl].stagePos) << endl;
 
-    /////  Reference image done at beginning  /////
+    /////  Check if reference image  /////
     imgIsRef = 0;
     if (params.hasRef) {
       if (imgINFO[ifl].stagePos < params.refStagePos) {
@@ -483,7 +471,7 @@ int main(int argc, char* argv[]) {
     /////  Image number (ordered)  /////
     imgNum = imgINFO[ifl].imgNum;
 
-    /////  Filling various variable  /////
+    /////  Stage position  /////
     stagePos = imgINFO[ifl].stagePos;
  
     ///////  Load image  ///////
