@@ -1,7 +1,6 @@
 #include "preProcessing.h"
 #include "../parameters.h"
 #include "config.h"
-#include <dirent.h>
 
 using namespace std;
 
@@ -86,14 +85,13 @@ int main(int argc, char* argv[]) {
   // Indices
   //const int imgSize = 935;
   const int imgSize = 895;
-  const int Npix = std::pow(imgSize, 2);
 
   if (Nlegendres != params.Nlegendres) {
     cerr << "ERROR: parameter Nlegendres does not match with parameter class!!!\n";
     exit(0);
   }
   if (NradLegBins != params.NradLegBins) {
-    cerr << "ERROR: parameter NradLegBinss does not match with parameter class!!!\n";
+    cerr << "ERROR: parameter NradLegBins does not match with parameter class!!!\n";
     exit(0);
   }
   cout<<imgSize<<"  "<<params.imgSize<<endl;
@@ -117,12 +115,14 @@ int main(int argc, char* argv[]) {
 
 
   std::vector<double> legCoeffs(params.NradLegBins);
-  std::vector<double> azmAvg;
-  std::vector<double> azmCounts;
+  std::vector<double> azmAvg(params.NradAzmBins);
+  std::vector<double> azmCounts(params.NradAzmBins);
 
   std::vector< std::vector<double> > oddImgImgn;
   std::vector< std::vector<double> > symImg(imgSize);
   std::vector< std::vector<double> > stdRatioImg(imgSize);
+  std::vector< std::vector<double> > outlierImage;
+  std::vector< std::vector<double> > outlierBkg;
   for (uint ir=0; ir<imgSize; ir++) { 
     symImg[ir].resize(imgSize, 0);
     stdRatioImg[ir].resize(imgSize, 0);
@@ -145,6 +145,11 @@ int main(int argc, char* argv[]) {
   int imgIsRef;
   int Nrefs = 2;
 
+  float pressure;
+  float pressureDer;
+
+  int timeStamp;
+
   int radInd;
   int imgNum;
   int curScan;
@@ -155,6 +160,7 @@ int main(int argc, char* argv[]) {
   int32_t stagePos;
   float t0SP, t0Time;
   std::vector<imgProc::imgInfoStruct> imgINFO;
+  float readoutNoise;
 
   TFile* file=NULL;
   TTree* tree=NULL;
@@ -173,7 +179,7 @@ int main(int argc, char* argv[]) {
   //////////////////////////////////////////////////////
 
   if (doRunLists) {
-    ppFunct::makeRunLists(imgINFO);
+    ppFunct::makeRunLists(imgINFO, runName, params.preProcOutputDir);
   }
 
 
@@ -181,7 +187,7 @@ int main(int argc, char* argv[]) {
   /////  Setting image variables  /////
   /////////////////////////////////////
 
-  string imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
+  string imgAddr = imgINFO[0].path + imgINFO[0].fileName;
   cv::Mat imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
   int Nrows = imgMat.rows;
   int Ncols = imgMat.cols;
@@ -264,13 +270,84 @@ int main(int argc, char* argv[]) {
   /////  Get background image  /////
   //////////////////////////////////
 
+  cout<<"getting background"<<endl;
   if (params.backgroundImage.compare("NULL") != 0) {
+    cout<<"fileName: "<<params.backgroundFolder+ "/" + params.backgroundImage<<endl;
     save::importDat<double>(imgBkg, params.backgroundFolder 
         + "/" + params.backgroundImage);
     if (params.pltVerbose) {
-      delete plt.printRC(imgBkg, "plots/importBkg-" + imgINFO[ifl].run);
+      delete plt.printRC(imgBkg, "plots/importBkg-" + imgINFO[0].run);
     }
   }
+  cout<<"done"<<endl;
+
+
+  ///////////////////////
+  /////  Import PV  /////
+  ///////////////////////
+
+  long int pvStartTime = 0;
+  ipos = params.pressureFileName.find("_");
+  for (int i=1; i<stoi(params.pressureFileName.substr(ipos+1, 2));i++) {
+    pvStartTime += ppFunct::monthLengths[i]*24*3600;
+  }
+  ipos = params.pressureFileName.find("_", ipos+1);
+  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2))*24*3600;
+  ipos = params.pressureFileName.find("_", ipos+1);
+  ipos = params.pressureFileName.find("_", ipos+1);
+  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2))*3600;
+  ipos = params.pressureFileName.find("_", ipos+1);
+  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2))*60;
+  ipos = params.pressureFileName.find("-", ipos+1);
+  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2));
+
+  ipos = params.pressureFileName.find("-", ipos+1);
+  int pvSize = stoi(params.pressureFileName.substr(ipos+1, params.pressureFileName.length()-5-ipos));
+
+  std::vector<double> pvOrigPressure(pvSize); 
+  save::importDat(pvOrigPressure, params.pressureFileName);
+
+  std::vector<double> pvPressure(pvSize, 0);
+  std::vector<double> pvPressureDer(pvSize, 0);
+  float norm;
+  int NsmearSteps = 3*params.pressureSmear/params.pvSampleTimes + 1;
+  for (int i=0; i<pvSize; i++) {
+    pvPressure[i] = pvOrigPressure[i];
+    norm = 1;
+    for (int ii=1; ii<NsmearSteps; ii++) {
+      if (i+ii < pvSize) {
+        pvPressure[i] += pvOrigPressure[i+ii]
+                         *exp(-1*std::pow(params.pvSampleTimes*ii, 2)
+                             /(2*pow(params.pressureSmear, 2)));
+        norm += exp(-1*std::pow(params.pvSampleTimes*ii, 2)
+                    /(2*std::pow(params.pressureSmear, 2)));
+      }
+      if (i-ii >= 0) {
+        pvPressure[i] += pvOrigPressure[i-ii]
+                         *exp(-1*std::pow(params.pvSampleTimes*ii, 2)
+                             /(2*std::pow(params.pressureSmear, 2)));
+        norm += exp(-1*std::pow(params.pvSampleTimes*ii, 2)
+                    /(2*std::pow(params.pressureSmear, 2)));
+      }
+    }
+    pvPressure[i] /= norm;
+  }
+
+  for (int i=0; i<pvSize; i++) {
+    if ((i == 0) || (i == pvSize-1)) {
+      pvPressureDer[i] = 0;
+    }
+    else {
+      pvPressureDer[i] = ((pvPressure[i+1] - pvPressure[i-1])
+                          /(2*params.pvSampleTimes));
+    }
+  }
+
+  //plt.print1d(pvPressure, "./plots/pressureSmooth");
+  //plt.print1d(pvPressureDer, "./plots/pressureDer");
+  //plt.print1d(pvOrigPressure, "./plots/pressure");
+  //exit(0);
+
 
 
   //////////////////////////////
@@ -302,20 +379,24 @@ int main(int argc, char* argv[]) {
   file = TFile::Open(rFileName.c_str(), "RECREATE");
   tree = new TTree("physics","physics");
 
-  tree->Branch("run", 	&curRun);
-  tree->Branch("scan", 	&curScan,       "scan/I");
+  tree->Branch("run", 	        &curRun);
+  tree->Branch("scan", 	        &curScan,       "scan/I");
   tree->Branch("imgNum", 	&imgNum, 	"imgNum/I");
   tree->Branch("imgIsRef", 	&imgIsRef, 	"imgIsRef/I");
+  tree->Branch("timeStamp", 	&timeStamp, 	"timeStamp/I");
   tree->Branch("stagePos", 	&stagePos, 	"stagePos/I");
-  tree->Branch("t0StagePos",&t0SP,		"t0StagePos/F");
+  tree->Branch("t0StagePos",    &t0SP,		"t0StagePos/F");
   tree->Branch("t0Time",	&t0Time,	"t0Time/F");
+  tree->Branch("pressure",	&pressure,	"pressure/F");
+  tree->Branch("pressureDer",	&pressureDer,	"pressureDer/F");
   tree->Branch("centerC", 	&centerC, 	"centerC/I");
   tree->Branch("centerR", 	&centerR, 	"centerR/I");
   tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
+  tree->Branch("readoutNoise", 	&readoutNoise, 	"readoutNoise/F");
   tree->Branch("imgOrig", 	&imgOrig);
-  tree->Branch("imgSubBkg", &imgSubBkg);
-  tree->Branch("legCoeffs", &legCoeffs);
-  tree->Branch("azmAvg",    &azmAvg);
+  tree->Branch("imgSubBkg",     &imgSubBkg);
+  tree->Branch("legCoeffs",     &legCoeffs);
+  tree->Branch("azmAvg",        &azmAvg);
   if (params.verbose) cout << "INFO: Tree and file are setup!\n\n";
 
 
@@ -323,6 +404,7 @@ int main(int argc, char* argv[]) {
   /////  Checking if bad scan  /////
   //////////////////////////////////
 
+  /*
   if (std::find(params.badScans.begin(), params.badScans.end(), imgINFO[ifl].scan)
         != params.badScans.end()) {
     std::cout << "INFO: This is a bad scan, saving empty tree and exiting!!!\n";
@@ -330,15 +412,17 @@ int main(int argc, char* argv[]) {
     file->Close();
     exit(1);
   }
+  */
   
   //////////////////////////////////
   /////  Rough center finding  /////
   //////////////////////////////////
 
+  if (params.verbose) cout << "INFO: Start COM center finding\n"; 
   std::vector<int> centersCOM = imgProc::centerSearchCOM(imgINFO,
       params.hotPixel, params.sigma,
       params.blockCentR, params.blockCentC, params.minRad, params.maxRad,
-      params.meanInd, params.stdScale, params.verbose);
+      params.meanInd, params.COMstdScale, params.verbose, NULL); //&plt);
 
   if (params.verbose) std::cout << "COMcenters: " 
     << centersCOM[0] << "  " << centersCOM[1] << endl;
@@ -348,6 +432,8 @@ int main(int argc, char* argv[]) {
   /////  Fine center finding  /////
   /////////////////////////////////
 
+  //centerR = centersCOM[0];
+  //centerC = centersCOM[1];
   ///// Finding image center /////
   if (params.verbose) cout << "INFO: Starting fine center Finding!\n\n";
   centerR = centerC = Ncents = 0;
@@ -379,12 +465,14 @@ int main(int argc, char* argv[]) {
 
     //  Remove pixel outliers
     radProc.removeOutliers(imgCent,  
-        centersCOM[0], centersCOM[1], params.shellWidth, params.Npoly,
+        centersCOM[0], centersCOM[1], params.buffer,
+        500, params.shellWidth, params.Npoly,
         params.stdIncludeLeft, params.distSTDratioLeft,
         params.stdCutLeft, params.meanBinSize,
         params.stdIncludeRight, params.distSTDratioRight,
         params.stdChangeRatio, params.stdCutRight,
-        imgINFO[icnt].stagePos, params.outlierVerbose, params.pltVerbose);
+        imgINFO[icnt].stagePos, params.outlierMapSTDcut,
+        false, params.outlierVerbose, NULL);
 
   
     // Remove readout noise
@@ -449,6 +537,9 @@ int main(int argc, char* argv[]) {
  
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
 
+    //if (imgINFO[ifl].stagePos != 1543400) continue; 
+
+    //cout<<"\n\n\n\nSTARTING"<<endl;
     /////  Check we are in the same run/scan  /////
     if ((imgINFO[ifl].run.compare(curRun) != 0) && (imgINFO[ifl].scan != curScan)) {
       std::cerr << "ERROR new image in run/scan " << imgINFO[ifl].run 
@@ -473,6 +564,20 @@ int main(int argc, char* argv[]) {
 
     /////  Stage position  /////
     stagePos = imgINFO[ifl].stagePos;
+
+    /////  Image capture time  /////
+    timeStamp = imgINFO[ifl].time;
+
+    /////  Get chamber pressure  /////
+    pressure = 0;
+    pressureDer = 0;
+    int pvInd = (imgINFO[ifl].time - pvStartTime)/params.pvSampleTimes - 2;
+    for (int i=0; i<params.imgShutterTime/params.pvSampleTimes; i++) {
+      pressure += pvPressure[pvInd-i];
+      pressureDer += pvPressureDer[pvInd-i];
+    }
+    pressure /= params.imgShutterTime/params.pvSampleTimes;
+    pressureDer /= params.imgShutterTime/params.pvSampleTimes;
  
     ///////  Load image  ///////
     imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
@@ -502,37 +607,100 @@ int main(int argc, char* argv[]) {
           + params.imgMatType + "!!!\n";
       exit(0);
     }
+    //cout<<"444"<<endl;
 
     /////  Remove pixel outliers  /////
+    cout<<"IMGORIG  "<<stagePos<<endl;
     radProc.removeOutliers(imgOrig,  
-        centerR, centerC, params.shellWidth, params.Npoly,
+        centerR, centerC, params.buffer, 
+        params.NradAzmBins, params.shellWidth, params.Npoly,
         //imgOrig.size()/2, imgOrig.size()/2, params.shellWidth,
         params.stdIncludeLeft, params.distSTDratioLeft,
         params.stdCutLeft, params.meanBinSize,
         params.stdIncludeRight, params.distSTDratioRight,
         params.stdChangeRatio, params.stdCutRight,
-        imgINFO[ifl].stagePos, params.outlierVerbose, params.pltVerbose);
+        imgINFO[ifl].stagePos, params.outlierMapSTDcut,
+        false, (false || params.outlierVerbose), NULL);
 
-    radProc.removeOutliers(imgSubBkg,  
-        centerR, centerC, params.shellWidth, params.Npoly,
+    //cout<<"555"<<endl;
+    cout<<"IMGSUB "<<stagePos<<endl;
+    outlierImage = radProc.removeOutliers(imgSubBkg,  
+        centerR, centerC, params.buffer,
+        params.NradAzmBins, params.shellWidth, params.Npoly,
         //imgOrig.size()/2, imgOrig.size()/2, params.shellWidth,
         params.stdIncludeLeft, params.distSTDratioLeft,
         params.stdCutLeft, params.meanBinSize,
         params.stdIncludeRight, params.distSTDratioRight,
         params.stdChangeRatio, params.stdCutRight,
-        imgINFO[ifl].stagePos, params.outlierVerbose, params.pltVerbose);
-    //plt.printRC(imgSubBkg, "testHP_" + to_string(stagePos), minimum, "0");
+        imgINFO[ifl].stagePos, params.outlierMapSTDcut,
+        true, (false || params.outlierVerbose), NULL);//, &plt);
+    
+    //cout<<"666"<<endl;
+    if (params.pltVerbose) {
+      //plt.printRC(outlierImage, "outlierSTD_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
+      save::saveDat<double>(outlierImage, 
+            "plots/data/outlierSTD-" + runName
+                + "-" + to_string(imgINFO[ifl].scan)
+                + "-" + to_string(imgINFO[ifl].stagePos) + ".dat");
+    }
+
+    ///  Find large clusters corresponding to laser spots  ///
+    //std::vector< std::pair<uint, uint> > removePairs;
+    std::vector< std::pair<uint, uint> > removePairs = imgProc::findClusters(
+            outlierImage, centerR, centerC, params.holeRad,
+            params.outlierCoreValThresh, params.outlierCoreRad, 
+            params.outlierMinClusterSize, params.outlierMinPixelSize, 
+            params.outlierMinDensity, params.outlierShapeVarCut, 
+            params.outlierShapeEdgeCut, params.outlierClusterRad,
+            params.outlierBorderValThresh, params.outlierBorderDistLimit, 
+            params.outlierBorderRad, params.outlierPadRad, 
+            params.outlierrMinScale, params.outlierrMaxScale,
+            params.outliercMinScale, params.outliercMaxScale,
+            outlierBkg, NULL); //&plt);
+
+    if (params.pltVerbose) {
+      //plt.printRC(outlierBkg, "outlierBKG_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
+      save::saveDat<double>(outlierBkg, 
+            "plots/data/outlierBackground-" + runName
+                + "-" + to_string(imgINFO[ifl].scan)
+                + "-" + to_string(imgINFO[ifl].stagePos) + ".dat");
+      for (int ir=0; ir<imgSubBkg.size(); ir ++) {
+        for (int ic=0; ic<imgSubBkg[ir].size(); ic ++) {
+          if (sqrt(pow(ir-params.holeR,2) + pow(ic-params.holeC,2)) < params.holeRad) continue;
+          if (imgSubBkg[ir][ic] == NANVAL) imgSubBkg[ir][ic] = params.hotPixel;
+        }
+      }
+
+      save::saveDat<double>(imgSubBkg, 
+            "plots/data/image-" + runName
+                + "-" + to_string(imgINFO[ifl].scan)
+                + "-" + to_string(imgINFO[ifl].stagePos) 
+                + "[" + to_string(imgSubBkg.size())
+                + "," + to_string(imgSubBkg.size()) + "].dat");
+    }
+
+
+    ///  Remove laser background from image by setting pixels = NANVAL  ///
+    for (uint ip=0; ip<removePairs.size(); ip++) {
+      imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
+    }
 
 
     ///// Remove readout noise  /////
     if (params.verbose) std::cout << "INFO: Readout noise subtraction.\n";
+    /*
+    imgProc::removeReadOutNoise(imgOrig);
+    readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
+    */
     if (params.hasLaserBkg) {
-      imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
-                  0.9*imgSize/2., 0.99*imgSize/2., &params.nanMap);
+      readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
+                        0.94*params.NradAzmBins, params.NradAzmBins, 
+                        params.buffer, &params.nanMap);
     }
     else {
-      imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
-                  0.9*imgSize/2., 0.99*imgSize/2.);
+      readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
+                        0.94*params.NradAzmBins, params.NradAzmBins,
+                        params.buffer);
     }
 
 
@@ -587,10 +755,11 @@ int main(int argc, char* argv[]) {
 
       ///  Find large clusters corresponding to laser spots  ///
       std::vector< std::pair<uint, uint> > removePairs = imgProc::findClusters(
-              stdRatioImg, params.holeRad*1.2,
+              stdRatioImg, centerR, centerC, params.holeRad*1.2,
               params.coreValThresh, params.coreRad, 
-              params.minClusterSize, params.minPixelSize, params.minDensity, params.clusterRad,
-              params.borderValThresh, params.borderRad, params.padRad, imgLaserBkg);
+              params.minClusterSize, params.minPixelSize, 
+              params.minDensity, params.clusterRad,
+              params.borderValThresh, 1, params.borderRad, params.padRad, imgLaserBkg);
 
 
       ///  Remove laser background from image by setting pixels = NANVAL  ///
@@ -702,12 +871,6 @@ int main(int argc, char* argv[]) {
     /////  Filling image variables and filling the tree  /////
     //////////////////////////////////////////////////////////
 
-    /////  Image norm  /////
-    if (params.verbose) cout << "INFO: Subtracting background and calculating norm  .....  ";
-
-    imgNorm = imgProc::imageNorm(imgSubBkg);
-
-    if (params.verbose) cout << "passed!\n\n";
 
     //// TODO!!!!!!!!!!!!! MUST CENTER IMAGE BEFORE FITTING
     //////  Legendre Fit  //////
@@ -749,18 +912,19 @@ int main(int argc, char* argv[]) {
 
     /////  Azimuthal average  /////
 
-    azmAvg.clear();
-    azmCounts.clear();
+    std::fill(azmAvg.begin(), azmAvg.end(), 0);
+    std::fill(azmCounts.begin(), azmCounts.end(), 0);
     for (int ir=0; ir<imgSubBkg.size(); ir++) {
+      if (ir < params.buffer || imgSubBkg.size() - ir < params.buffer) continue;
       for (int ic=0; ic<imgSubBkg[ir].size(); ic++) {
+        if (ic < params.buffer || imgSubBkg[ir].size() - ic < params.buffer) continue;
+
         if (imgSubBkg[ir][ic] != NANVAL) {
           radInd = (int)sqrt(pow(ir-centerR,2) + pow(ic-centerC,2));
-          if (radInd >= (int)azmAvg.size()) {
-            azmAvg.resize(radInd+1, 0);
-            azmCounts.resize(radInd+1, 0);
+          if (radInd < params.NradAzmBins) {
+            azmAvg[radInd] += imgSubBkg[ir][ic];
+            azmCounts[radInd] += 1;
           }
-          azmAvg[radInd] += imgSubBkg[ir][ic];
-          azmCounts[radInd] += 1;
         }
         else {
           //cout<<"skipping nan"<<endl;
@@ -772,8 +936,21 @@ int main(int argc, char* argv[]) {
       if (azmCounts[ir] != 0) {
         azmAvg[ir] /= azmCounts[ir];
       }
-      else azmAvg[ir] = 0;
+      else azmAvg[ir] = NANVAL;
     }
+
+    azmAvg.resize(params.NradAzmBins, NANVAL);
+
+
+    /////  Image norm  /////
+    imgNorm = 0;
+    count = 0;
+    for (int i=0; i<params.NradAzmBins; i++) {
+      if (azmAvg[i] == NANVAL) continue;
+      imgNorm += azmAvg[i];
+      count++;
+    }
+    imgNorm /= count;
 
 
     /////  Plotting results  /////
