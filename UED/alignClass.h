@@ -20,31 +20,68 @@
 
 
 class alignClass : public parameterClass {
+
+  private :
+
+    PLOTclass* plt;
+    
+    int curScan;
+    int NlegBins;
+    int NrefBins;
+    std::string runInd;
+    std::string curDate;
+    std::string curRun;
+    std::string simFileNameSuffix;
+
+    // Simulation results
+    std::vector<double> atmLegDiff, atmAzmDiff;
+    std::vector<double> molLegDiff, molAzmDiff;
+
+    std::vector<double> sMsLegNorm;
+    std::vector<double> sMsAzmNorm;
+
+    struct LTparamStruct {
+      int scan;
+      int stagePos;
+      double imgNorm;
+    };
+
+    struct referenceStruct {
+      std::vector<double> azmRef;
+      std::vector<double> legRef;
+      double imgNorm;
+    };
+
+
+    void getNrefBins();
+    void initializeVariables();
+    void calculateSMS();
+
+
   public :
 
     // Constructor
     alignClass(std::string runName);
     ~alignClass();
 
+    std::string runName;
     double* timeDelays;
 
-    // Simulation results
-    std::vector<double> atmLegDiff, atmAzmDiff;
-    std::vector<double> molLegDiff, molAzmDiff;
     // Output files and location
     string fileName = "alignment.txt";
     string outputDir = "output/data/";
 
-    std::vector<double> sMsLegNorm;
-    std::vector<double> sMsAzmNorm;
-
+    std::vector<double> azmReference;
     std::vector< std::vector<double> > azimuthalAvg;
+    std::vector< std::vector<double> > legReference;
     std::vector< std::vector< std::vector<double> > > legendres;
     std::vector< std::vector< std::vector<double> > > smearedImg;
     std::map< int32_t, int > stagePosInds;
     std::map< int, std::vector<double> > scanCounts;
     std::map< int, std::vector< std::vector<double> > > scanLgndrs;
     std::map< int, std::vector< std::vector<double> > > scanAzmAvg;
+    std::map< int, LTparamStruct > labTimeParams;
+    std::map< int, std::map< int, referenceStruct > > scanReferences;
 
 
     std::map< int32_t, std::vector<double> > diffPs, legCoeff_map, pairCorr_map;
@@ -53,16 +90,26 @@ class alignClass : public parameterClass {
     std::map< int32_t, int > Nimages;
     std::map< int32_t, std::vector<int32_t> > allPos;
 
-    std::vector< std::vector<double> > runMeans;
-    std::vector< std::vector<double> > runStdev;
+    std::vector< std::vector<double> > runLegMeans, runAzmMeans;
+    std::vector< std::vector<double> > runLegSTD, runAzmSTD;
+
+    std::vector<double> smoothImgNorm, smoothImgNormSTD;
 
     void compareSimulations(std::vector<std::string> radicals);
     void addEntry(int scan, int stagePos,
                   std::vector<double>* azmAvg, 
                   std::vector<double>* legCoeffs,
                   double imgNorm);
+    void addLabTimeParameter(int timeStamp,
+                  int scan, int stagePos,
+                  double imgNorm);
+    void addReference(int scan, int stagePos,
+                  std::vector<double>* azmAvg,
+                  std::vector<double>* legCoeffs,
+                  double imgNorm);
+   
 
-
+    void removeLabTimeOutliers();
     void removeOutliers();
     void mergeScans();
     void subtractT0andNormalize();
@@ -77,21 +124,6 @@ class alignClass : public parameterClass {
     int outSize = FTsize*rMaxRat;
     */
 
-  private :
-
-    PLOTclass* plt;
-    
-    int curScan;
-    int legSize;
-    int NrefBins;
-    std::string runInd;
-    std::string curDate;
-    std::string curRun;
-    std::string simFileNameSuffix;
-
-    void getNrefBins();
-    void initializeVariables();
-    void calculateSMS();
 };
 
 #endif

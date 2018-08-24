@@ -1,4 +1,4 @@
-#include "alignment.h"
+#include "analysis.h"
 //#include "../simulation/diffractionPattern/simulations.h"
 #include <TLegend.h>
 
@@ -32,18 +32,38 @@ int main(int argc, char* argv[]) {
   /////  Setting up variables  /////
   //////////////////////////////////
 
-  auto iPos = fileList.find("RUN-") + 4;
+  auto iPos = fileList.find("run-");
+  if (iPos == string::npos) {
+    iPos = fileList.find("RUN-");
+  }
+  iPos += 4;
   auto fPos = fileList.find(".txt");
-  std::string runName = fileList.substr(iPos, fPos - iPos);
+  std::string runName = fileList.substr(iPos, 13); //fPos - iPos);
   cout<<"RunName: "<<runName<<endl;
   alignClass align(runName);
   //parameterClass params(runName);
 
+  std::string prefix = "";
+  bool scanSearch = false;
   /////  Importing variables from command line  /////
   for (int iarg=2; iarg<argc; iarg+=2) {
-    if (strcmp(argv[iarg],"-Odir")==0) {
+    if (strcmp(argv[iarg],"-Odir") == 0) {
       string str(argv[iarg+1]); 
       align.alignScansOutputDir = str;
+    }
+    else if (strcmp(argv[iarg],"-ScanSearch") == 0) {
+      string str(argv[iarg+1]);
+      prefix = str + "-";
+      align.alignScansOutputDir = align.scanSearchOutputDir;
+      scanSearch = true;
+    }
+    else if (strcmp(argv[iarg], "-OdirSuffix") == 0) {
+      string str(argv[iarg+1]);
+      align.alignScansOutputDir += (str + "/");
+
+      if (!tools::fileExists(align.alignScansOutputDir)) {
+        system(("mkdir " + align.alignScansOutputDir).c_str());
+      }
     }
     else {
       cerr<<"ERROR!!! Option "<<argv[iarg]<<" does not exist!"<<endl;
@@ -59,7 +79,7 @@ int main(int argc, char* argv[]) {
   //int FFTsize = (NdiffInds + NautCpadding)*2 + 1;
   int FTsize = (int)(FFTsize/2) + 1;
   int indHR =  align.holeRat*align.NradLegBins;
-  int outSize = FTsize*align.rMaxRat;
+  int outSize = FTsize*align.rMaxAzmRat;
 
 
   double* qSpace = (double*) fftw_malloc(sizeof(double)*FFTsize);
@@ -79,9 +99,9 @@ int main(int argc, char* argv[]) {
   oppts[2] = draw;     vaals[2] = "COLZ";
   opts[0] = yLabel;   vals[0] = "Time [ps]";
   opts[1] = xLabel;   vals[1] = "Scattering Q [arb units]";
-  opts[4] = draw;     vals[4] = "COLZ";
-  opts[2] = minimum;
-  opts[3] = maximum;
+  opts[2] = draw;     vals[2] = "COLZ";
+  opts[3] = minimum;  vals[3] = "-0.2";
+  opts[4] = maximum;  vals[4] = "0.2";
 
   std::map<string, double > cbar;
   cbar["20161102_LongScan1_Leg0"] = 0.2;
@@ -117,32 +137,22 @@ int main(int argc, char* argv[]) {
   for (uint64_t ievt=0; ievt<Nentries; ievt++) {
     analysis.loadEvent(ievt);
 
+    if (std::find(align.badScans.begin(), align.badScans.end(), scan) 
+          != align.badScans.end()) continue;
+
+    align.addLabTimeParameter(timeStamp, scan, stagePos, imgNorm);
+
     // Ignore reference images taken before scan
     if (imgIsRef) {
       if (align.verbose) std::cout << "INFO: Adding reference image.\n";
 
-      if (reference.size() < (*azmAvg).size()) {
-        reference.resize((*azmAvg).size(), 0);
-        referenceCount.resize((*azmAvg).size(), 0);
-      }
-
-      std::transform((*azmAvg).begin(), (*azmAvg).end(),
-                      reference.begin(), reference.begin(), 
-                      std::plus<double>());
-
-      std::for_each(referenceCount.begin(), (referenceCount.begin() + (*azmAvg).size()),
-                      [] (double &d) {
-                        d++;
-                      });
+      align.addReference(scan, stagePos, azmAvg, legCoeffs, imgNorm);
       continue;
     }
-    //if (stagePos < (align.t0StagePos - 0.021)*10000) {
-    //  continue;
-    //}
 
-    cout<<"ORIG: "<<(*azmAvg).size()<<"  "<<(*legCoeffs).size()<<endl;
     ///  Insert entries to respective maps  ///
-    align.addEntry(scan, stagePos, azmAvg, legCoeffs, 1);
+    align.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
+
   }
 
 
@@ -153,46 +163,92 @@ int main(int argc, char* argv[]) {
   ///////////////////////////////////////////////////////////
 
 
+  //cout<<"removing outliers"<<endl;
   //align.removeOutliers();
 
   cout<<"merging scans"<<endl;
   align.mergeScans();
 
+  /////  Saving  /////
+  // References
+  save::saveDat<double>(align.azmReference,
+      "./results/referenceAzm-" + runName +
+      "[" + to_string(align.NradAzmBins) + "].dat");
+  save::saveDat<double>(align.legReference,
+      "./results/referenceLeg-" + runName + 
+      "[" + to_string(align.Nlegendres) + 
+      "," + to_string(align.NradLegBins) + "].dat");
+
+  // Raw diffraction images
+  save::saveDat<double>(align.azimuthalAvg, 
+      align.alignScansOutputDir + "data-"
+      + runName + "-" + prefix + "sMsAzmAvgDiffRaw["
+      + to_string(align.azimuthalAvg.size()) + ","
+      + to_string(align.azimuthalAvg[0].size()) + "].dat");
+ 
+  /*
+  if (scanSearch || align.pltVerbose) {
+    plt.printRC(align.azimuthalAvg, 
+        "data-"
+        + runName + "-" + prefix + "sMsAzmAvgDiffRaw", maximum, "1e-18");
+  }
+  */
+  
+
   cout<<"subtracting t0 and norm"<<endl;
-  //align.subtractT0andNormalize();
+  align.subtractT0andNormalize();
 
   cout<<"smearing time"<<endl;
   //align.smearTime();
 
 
-  for (uint ir=0; ir<align.NradAzmBins; ir++) {
-    cout<<"azm: "<<ir<<"  "<<align.azimuthalAvg[12][ir]<<endl;
+  // Clean up NANVAL for saving and plotting
+  for (int itm=0; itm<align.azimuthalAvg.size(); itm++) {
+    for (int ir=0; ir<align.azimuthalAvg[itm].size(); ir++) {
+      if (align.azimuthalAvg[itm][ir] == NANVAL) align.azimuthalAvg[itm][ir] = 0;
+    }
   }
 
 
-  cout<<"saving"<<endl;
-  cout<<"111"<<endl;
   save::saveDat<double>(align.azimuthalAvg, 
-      "./plots/data/data_sMsAzmAvgDiff["
+      align.alignScansOutputDir + "data-"
+      + runName + "-" + prefix + "sMsAzmAvgDiff["
       + to_string(align.azimuthalAvg.size()) + ","
       + to_string(align.azimuthalAvg[0].size()) + "].dat");
- 
+  plt.printRC(align.azimuthalAvg, 
+      "./plots/data-"
+      + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
+
+  if (scanSearch) {
+    cout<<"plotting to "<<align.alignScansOutputDir + "/plots/data-"+ runName + "-" + prefix + "sMsAzmAvgDiff";
+    plt.printRC(align.azimuthalAvg, 
+        align.alignScansOutputDir + "/plots/data-"
+        + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
+  }
+
+
+  /*
   for (int ilg=0; ilg<align.Nlegendres; ilg++) {
     ///  Saving data  ///
     cout<<"111"<<endl;
-    save::saveDat<double>(align.legendres[ilg], "./plots/data/data_sMsL"
+    save::saveDat<double>(align.legendres[ilg], 
+        align.alignScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsL"
         + to_string(ilg) + "Diff["
         + to_string(align.legendres[ilg].size()) + ","
         + to_string(align.legendres[ilg][0].size()) + "].dat");
     cout<<"222"<<endl;
     save::saveDat<double>(align.legendres[ilg][align.legendres[ilg].size()-1], 
-        "./plots/data/data_sMsFinalL"
+        align.alignScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsFinalL"
         + to_string(ilg) + "Diff["
         + to_string(align.legendres[ilg][0].size()) + "].dat");
 
 
     cout<<"333"<<endl;
-    save::saveDat<double>(align.smearedImg[ilg], "./plots/data/data_sMsL"
+    save::saveDat<double>(align.smearedImg[ilg], 
+        align.alignScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsL"
         + to_string(ilg) + "DiffSmear["
         + to_string(align.smearSTD) + "["
         + to_string(align.smearedImg[ilg].size()) + ","
@@ -200,11 +256,13 @@ int main(int argc, char* argv[]) {
 
     cout<<"444"<<endl;
     save::saveDat<double>(align.smearedImg[ilg][align.stagePosInds.size()-1],
-        "./plots/data/data_sMsFinalL"
+        align.alignScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsFinalL"
         + to_string(ilg) + "DiffSmear"
         + to_string(align.smearSTD) + "["
         + to_string(align.smearedImg[ilg][0].size()) + "].dat");
   }
+  */
 
 
 
@@ -216,6 +274,11 @@ int main(int argc, char* argv[]) {
   if (align.verbose) {
     std::cout << "Begin calculating pair correlation functions\n";
   }
+
+  int padding = 500;
+  //std::vector<double> fftInp(2*params.NradAzmBins + 2*padding + 1);
+
+
 
   /*
   std::vector< std::vector<double> > pairCorr(smearedImg[0].size()), pairCorr1d;

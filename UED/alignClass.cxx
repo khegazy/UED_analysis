@@ -1,8 +1,9 @@
 #include "alignClass.h"
 
 
-alignClass::alignClass(std::string runName) : parameterClass(runName) {
+alignClass::alignClass(std::string runName_inp) : parameterClass(runName_inp) {
 
+  runName = runName_inp;
   initializeVariables();
 }
 
@@ -16,9 +17,8 @@ alignClass::~alignClass() {
 void alignClass::initializeVariables() {
 
   plt = new PLOTclass("alignCanv");
-  legSize  = -1;
   curScan  = -1;
-  NrefBins = -1;
+  NlegBins = NradLegBins*Nlegendres;
   runInd   = "";
   curDate  = "";
   curRun   = "";
@@ -29,7 +29,7 @@ void alignClass::initializeVariables() {
   atmLegDiff.resize(NradLegBins, 0.0);
   molLegDiff.resize(NradLegBins, 0.0);
   simFileNameSuffix = "_Bins-" + to_string(NradLegBins) 
-                      + "_Qmax-" + to_string(maxQ)
+                      + "_Qmax-" + to_string(maxQleg)
                       + "_Ieb-" + to_string(Iebeam) 
                       + "_scrnD-" + to_string(screenDist) 
                       + "_elE-" + to_string(elEnergy) + ".dat";
@@ -43,7 +43,7 @@ void alignClass::initializeVariables() {
   atmAzmDiff.resize(NradAzmBins, 0.0);
   molAzmDiff.resize(NradAzmBins, 0.0);
   simFileNameSuffix = "_Bins-" + to_string(NradAzmBins) 
-                      + "_Qmax-" + to_string(NradAzmBins*QperPix)
+                      + "_Qmax-" + to_string(maxQazm)
                       + "_Ieb-" + to_string(Iebeam) 
                       + "_scrnD-" + to_string(screenDist) 
                       + "_elE-" + to_string(elEnergy) + ".dat";
@@ -58,6 +58,21 @@ void alignClass::initializeVariables() {
   plt->print1d(atmAzmDiff, "TestingAzmAtm");
   // Calculate normalization coefficients for modified molecular scattering
   calculateSMS();
+
+  // Reference
+  azmReference.resize(NradAzmBins, 0);
+  legReference.resize(Nlegendres);
+  for (auto& v : legReference) {
+    v.resize(NradLegBins, 0);
+  }
+
+  /*
+  if (subtractT0) {
+    save::importDat(referenceAzm, 
+        "staticDiffraction/results/references-" 
+        + runName + ".dat");
+  }
+  */
 
 
   // Output files and location
@@ -76,13 +91,13 @@ void alignClass::calculateSMS() {
 
   sMsLegNorm.resize(NradLegBins, 0.0);
   for (int ir=0; ir<NradLegBins; ir++) {
-    sMsLegNorm[ir] = (maxQ*(ir+0.5)/NradLegBins)/(1e20*atmLegDiff[ir]);
+    sMsLegNorm[ir] = (maxQleg*(ir+0.5)/NradLegBins)/(atmLegDiff[ir]);
   }
 
   sMsAzmNorm.resize(NradAzmBins, 0.0);
   for (int ir=0; ir<NradAzmBins; ir++) {
-    sMsAzmNorm[ir] = ((NradAzmBins*QperPix)*(ir+0.5)/NradAzmBins)
-                        /(1e20*atmAzmDiff[ir]);
+    sMsAzmNorm[ir] = (maxQazm*(ir+0.5)/NradAzmBins)
+                        /(atmAzmDiff[ir]);
   }
 }
 
@@ -112,9 +127,11 @@ void alignClass::compareSimulations(std::vector<std::string> radicals) {
         delete plt->print1d(refLineOut[name], "./plots/sim_" + name + "_diffraction");
 
       // Normalize by atomic scattering
+      /*
       for (int ir=0; ir<NradLegBins; ir++) {
         refLineOut[name][ir] *= sMsLegNorm[ir];
       } 
+      */
       // Save sMs
       save::saveDat<double>(refLineOut[name], "./plots/data/sim_" + name + "Diffraction["
             + to_string(NradLegBins) + "].dat");
@@ -162,6 +179,36 @@ void alignClass::compareSimulations(std::vector<std::string> radicals) {
 }
 
 
+void alignClass::addLabTimeParameter(int timeStamp,
+                          int scan, int stagePos, 
+                          double imgNorm) {
+
+  labTimeParams[timeStamp].scan      = scan;
+  labTimeParams[timeStamp].stagePos  = stagePos;
+  labTimeParams[timeStamp].imgNorm   = imgNorm;
+}
+
+
+void alignClass::addReference(int scan, int stagePos,
+                          std::vector<double>* azmAvg, 
+                          std::vector<double>* legCoeffs,
+                          double imgNorm) {
+
+  if (!normalizeImgs) imgNorm = 1;
+  scanReferences[scan][stagePos].imgNorm = imgNorm;
+  scanReferences[scan][stagePos].azmRef.resize(NradAzmBins, 0);
+  for (int i=0; i<NradAzmBins; i++) {
+    scanReferences[scan][stagePos].azmRef[i] = (*azmAvg)[i]/imgNorm;
+    if (i==101) cout<<scan<<"  "<<(*azmAvg)[i]/imgNorm<<endl;
+  }
+
+  scanReferences[scan][stagePos].legRef.resize(NlegBins, 0);
+  for (int i=0; i<NlegBins; i++) {
+    scanReferences[scan][stagePos].legRef[i] = (*legCoeffs)[i]/imgNorm;
+  }
+}
+
+
 void alignClass::addEntry(int scan, int stagePos, 
                           std::vector<double>* azmAvg, 
                           std::vector<double>* legCoeffs,
@@ -174,9 +221,6 @@ void alignClass::addEntry(int scan, int stagePos,
   /////  deviation cuts over the scan axis.         /////
   ///////////////////////////////////////////////////////
 
-  legSize = (*legCoeffs).size();
-
-  cout<<"INFO: sizes: "<<(*azmAvg).size()<<"   "<<(*legCoeffs).size()<<endl;
   ///  Get index of stage position  ///
   if (scanLgndrs.find(scan) == scanLgndrs.end()) {
     std::vector<double> emptyC(stagePosInds.size(), 0);
@@ -184,12 +228,12 @@ void alignClass::addEntry(int scan, int stagePos,
 
     std::vector< std::vector<double> > empty(stagePosInds.size());
     for (uint ipos=0; ipos<stagePosInds.size(); ipos++) {
-      empty[ipos].resize(legSize, 0);
+      empty[ipos].resize(NlegBins, 0);
     }
     scanLgndrs[scan] = empty;
     
     for (uint ipos=0; ipos<stagePosInds.size(); ipos++) {
-      empty[ipos].resize((*azmAvg).size(), 0);
+      empty[ipos].resize(NradAzmBins, 0);
     }
     scanAzmAvg[scan] = empty;
   }
@@ -230,13 +274,14 @@ void alignClass::addEntry(int scan, int stagePos,
   }
 
   ///  Add coefficients and counts to maps  ///
+  if (!normalizeImgs) imgNorm = 1;
   scanCounts[scan][pInd] = imgNorm;
   for (uint i=0; i<(*legCoeffs).size(); i++) {
-    scanLgndrs[scan][pInd][i] = (*legCoeffs)[i];
+    scanLgndrs[scan][pInd][i] = (*legCoeffs)[i]/imgNorm;
   }
   //cout<<"INFO: "<<scan<<"  "<<pInd<<"  "<<(*azmAvg).size()<<"  "<<scanAzmAvg[scan][pInd].size()<<endl;
   for (uint i=0; i<(*azmAvg).size(); i++) {
-    scanAzmAvg[scan][pInd][i] = (*azmAvg)[i];
+    scanAzmAvg[scan][pInd][i] = (*azmAvg)[i]/imgNorm;
   }
 
   
@@ -255,76 +300,234 @@ void alignClass::addEntry(int scan, int stagePos,
   
 }
 
+void alignClass::removeLabTimeOutliers() {
+
+  float norm;
+  auto tItr  = labTimeParams.begin();
+  auto tmItr = tItr;
+  int tInd = 0;
+  int ltScan = 1;
+  int NsmearSteps = 3*labParamSmear/pvSampleTimes + 1;
+  smoothImgNorm.clear(); smoothImgNormSTD.clear();
+  smoothImgNorm.resize(labTimeParams.size(), 0);
+  smoothImgNormSTD.resize(labTimeParams.size(), 0);
+  while (tItr != labTimeParams.end()) {
+    ltScan = tItr->second.scan;
+    norm = 0;
+
+    tmItr = tItr;
+    for (int i=0; i<=NsmearSteps; i++) {
+      smoothImgNorm[tInd] += tmItr->second.imgNorm
+          *exp(-1*std::pow(pvSampleTimes*i, 2)
+              /(2*pow(labParamSmear, 2)));
+      norm += exp(-1*std::pow(pvSampleTimes*i, 2)
+                 /(2*pow(labParamSmear, 2)));
+
+      if (tmItr == labTimeParams.begin()) break;
+      tmItr--;
+    
+      // Only look at scan immediatly prior
+      if (ltScan - tmItr->second.scan > 0) {
+        if (ltScan - tmItr->second.scan == 1) {
+          ltScan = tmItr->second.scan;
+        }
+        else {
+          break;
+        }
+      }
+    }
+    smoothImgNorm[tInd] /= norm;
+
+    tmItr = tItr;
+    for (int i=0; i<=NsmearSteps; i++) {
+      smoothImgNormSTD[tInd] += 
+          pow(tItr->second.imgNorm -tmItr->second.imgNorm, 2)
+          *exp(-1*std::pow(pvSampleTimes*i, 2)
+              /(2*pow(labParamSmear, 2)));
+
+      if (tmItr == labTimeParams.begin()) break;
+      tmItr--;
+    
+      // Only look at scan immediatly prior
+      if (ltScan - tmItr->second.scan > 0) {
+        if (ltScan - tmItr->second.scan == 1) {
+          ltScan = tmItr->second.scan;
+        }
+        else {
+          break;
+        }
+      }
+    }
+    smoothImgNormSTD[tInd] = sqrt(smoothImgNormSTD[tInd]/norm);
+
+
+    tInd++;
+    tItr++;
+  }
+
+  tInd = 0;
+  for (tItr=labTimeParams.begin(); tItr!= labTimeParams.end(); tInd++) {
+    if (fabs(tItr->second.imgNorm - smoothImgNorm[tInd]) 
+        > labSTDcut*smoothImgNormSTD[tInd]) {
+      tItr->second.imgNorm = 0;
+    }
+    tInd++;
+  }
+}
+    
+
 
 void alignClass::removeOutliers() {
 
-  if (legSize == -1) {
-    std::cerr << "ERROR: Must add entries before removing outliers!!!\n";
-  }
-
   /////  Remove time bins with few images and get mean  /////
   std::vector<int32_t> removePos;
-  runMeans.clear(); runStdev.clear();
-  runMeans.resize(stagePosInds.size());
-  runStdev.resize(stagePosInds.size());
-  for (uint i=0; i<runMeans.size(); i++) {
-    runMeans[i].resize(legSize, 0);
-    runStdev[i].resize(legSize, 0);
+  runLegMeans.clear(); runLegSTD.clear();
+  runAzmMeans.clear(); runAzmSTD.clear();
+  runLegMeans.resize(stagePosInds.size());
+  runAzmMeans.resize(stagePosInds.size());
+  runLegSTD.resize(stagePosInds.size());
+  runAzmSTD.resize(stagePosInds.size());
+  for (uint i=0; i<stagePosInds.size(); i++) {
+    runLegMeans[i].resize(NlegBins, 0);
+    runAzmMeans[i].resize(NradAzmBins, 0);
+    runLegSTD[i].resize(NlegBins, 0);
+    runAzmSTD[i].resize(NradAzmBins, 0);
   }
 
   // looping over time bins
+  std::vector<double> legNorms(NlegBins, 0);
+  std::vector<double> azmNorms(NradAzmBins, 0);
   for (auto pItr : stagePosInds) {
-    int count = 0;
-    double norm = 0;
-
-    ///  mean calculation  ///
-    for (auto sLitr : scanLgndrs) {
-      // mean
-      for (uint i=0; i<legSize; i++) {
-        runMeans[pItr.second][i] += sLitr.second[pItr.second][i];
+    for (int k=0; k<3; k++) {
+      std::fill(legNorms.begin(), legNorms.end(), 0);
+      std::fill(azmNorms.begin(), azmNorms.end(), 0);
+      for (uint i=0; i<stagePosInds.size(); i++) {
+        std::fill(runLegMeans[pItr.second].begin(), runLegMeans[pItr.second].end(), 0);
+        std::fill(runAzmMeans[pItr.second].begin(), runAzmMeans[pItr.second].end(), 0);
+        std::fill(runLegSTD[pItr.second].begin(), runLegSTD[pItr.second].end(), 0);
+        std::fill(runAzmSTD[pItr.second].begin(), runAzmSTD[pItr.second].end(), 0);
       }
 
-      // counting non zero bins
-      if (scanCounts[sLitr.first][pItr.second] > 0) {
-        count++;
+      /////  Mean calculation  /////
+      ///  Legendres  ///
+      for (auto sLitr : scanLgndrs) {
+        if (scanCounts[sLitr.first][pItr.second] > 0) {
+          for (int i=0; i<NlegBins; i++) {
+            if (sLitr.second[pItr.second][i] != NANVAL) {
+              runLegMeans[pItr.second][i] += sLitr.second[pItr.second][i];
+              legNorms[i] += 1; //scanCounts[sLitr.first][pItr.second];
+            }
+          }
+        }
       }
-      norm += 1; //scanCounts[sLitr.first][pItr.second];
-    }
 
-    // calculate mean
-    for (uint i=0; i<legSize; i++) {
-      runMeans[pItr.second][i] /= norm;
-    }
-
-    ///  Standard deviation calculation  ///
-    norm = 0;
-    for (auto sLitr : scanLgndrs) {
-      for (uint i=0; i<legSize; i++) {
-        runStdev[pItr.second][i]
-            += std::pow((sLitr.second[pItr.second][i]
-                    - runMeans[pItr.second][i]), 2);
-        /*
-            += scanCounts[sLitr.first][pItr.second]
-                  *std::pow((sLitr.second[pItr.second][i]
-                    /scanCounts[sLitr.first][pItr.second]
-                    - runMeans[pItr.second][i]), 2);
-                    */
+      for (int i=0; i<NlegBins; i++) {
+        runLegMeans[pItr.second][i] /= legNorms[i];
       }
-      norm += 1; //scanCounts[sLitr.first][pItr.second];
-    }
 
-    cout<<"\n\nTIME: "<<pItr.first<<endl<<endl;
-    // calculate standard deviation
-    for (uint i=0; i<legSize; i++) {
-      runStdev[pItr.second][i] = std::sqrt(runStdev[pItr.second][i]/norm);
-      cout<<runMeans[pItr.second][i]<<"/"<<runStdev[pItr.second][i]<<"\t"<<endl;
-    }
+      ///  Azimuthal  ///
+      for (auto sAitr : scanAzmAvg) {
+        if (scanCounts[sAitr.first][pItr.second] > 0) {
+          for (int i=0; i<NradAzmBins; i++) {
+            if (sAitr.second[pItr.second][i] != NANVAL) {
+              runAzmMeans[pItr.second][i] += sAitr.second[pItr.second][i];
+              azmNorms[i] += 1; //scanCounts[sAitr.first][pItr.second];
+            }
+          }
+        }
+      }
 
-    for (auto sLitr : scanLgndrs) {
-      for (uint rInd=0; rInd<legSize; rInd++) {
-        if (fabs(sLitr.second[pItr.second][rInd] - runMeans[pItr.second][rInd])
-            < stdScale*runStdev[pItr.second][rInd]) {
-          sLitr.second[pItr.second][rInd] = NANVAL;
+      for (int i=0; i<NlegBins; i++) {
+        runAzmMeans[pItr.second][i] /= azmNorms[i];
+      }
+
+
+      /////  Standard deviation calculation  /////
+
+      ///  Legendres  ///
+      for (auto sLitr : scanLgndrs) {
+        if (scanCounts[sLitr.first][pItr.second]) {
+          for (int i=0; i<NlegBins; i++) {
+            if (runLegSTD[pItr.second][i] != NANVAL) {
+              runLegSTD[pItr.second][i]
+                  += std::pow((sLitr.second[pItr.second][i]
+                          - runLegMeans[pItr.second][i]), 2);
+              /*
+                  += scanCounts[sLitr.first][pItr.second]
+                        *std::pow((sLitr.second[pItr.second][i]
+                          /scanCounts[sLitr.first][pItr.second]
+                          - runMeans[pItr.second][i]), 2);
+                          */
+            }
+          }
+        }
+      }
+
+      for (int i=0; i<NlegBins; i++) {
+        runLegSTD[pItr.second][i] = std::sqrt(runLegSTD[pItr.second][i]/legNorms[i]);
+        //cout<<runMeans[pItr.second][i]<<"/"<<runStdev[pItr.second][i]<<"\t"<<endl;
+      }
+
+      ///  Azimuthal  ///
+      for (auto sAitr : scanAzmAvg) {
+        if (scanCounts[sAitr.first][pItr.second]) {
+          for (int i=0; i<NradAzmBins; i++) {
+            if (runAzmSTD[pItr.second][i] != NANVAL) {
+              runAzmSTD[pItr.second][i]
+                  += std::pow((sAitr.second[pItr.second][i]
+                          - runAzmMeans[pItr.second][i]), 2);
+              /*
+                  += scanCounts[sLitr.first][pItr.second]
+                        *std::pow((sLitr.second[pItr.second][i]
+                          /scanCounts[sLitr.first][pItr.second]
+                          - runMeans[pItr.second][i]), 2);
+                          */
+            }
+          }
+        }
+      }
+
+      for (int i=0; i<NradAzmBins; i++) {
+        runAzmSTD[pItr.second][i] = std::sqrt(runAzmSTD[pItr.second][i]/azmNorms[i]);
+        //cout<<runMeans[pItr.second][i]<<"/"<<runStdev[pItr.second][i]<<"\t"<<endl;
+      }
+
+      /////  Make cuts  /////
+      ///  Legendres  ///
+      cout<<"\n\nTIME: "<<pItr.first<<endl<<endl;
+      for (auto sLitr : scanLgndrs) {
+        int imageNoise = 0;
+        for (int rInd=0; rInd<NlegBins; rInd++) {
+          if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
+              < alignSTDscanScale*runLegSTD[pItr.second][rInd]) {
+            imageNoise++;
+          }
+          if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
+              < alignSTDscale*runLegSTD[pItr.second][rInd]) {
+            sLitr.second[pItr.second][rInd] = NANVAL;
+          }
+        }
+        if (imageNoise > legImageNoiseCut) {
+          scanCounts[sLitr.first][pItr.second] = 0;
+        }
+      }
+
+      ///  Azimuthal  ///
+      cout<<"\n\nTIME: "<<pItr.first<<endl<<endl;
+      for (auto sAitr : scanAzmAvg) {
+        int imageNoise = 0;
+        for (int rInd=0; rInd<NradAzmBins; rInd++) {
+          if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
+              < alignSTDscanScale*runAzmSTD[pItr.second][rInd]) {
+            imageNoise++;
+          }
+          if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
+              < alignSTDscale*runAzmSTD[pItr.second][rInd]) {
+            sAitr.second[pItr.second][rInd] = NANVAL;
+          }
+        }
+        if (imageNoise > azmImageNoiseCut) {
+          scanCounts[sAitr.first][pItr.second] = 0;
         }
       }
     }
@@ -338,7 +541,7 @@ void alignClass::removeOutliers() {
     std::cout << "Before removal: " << stagePosInds.size() << "  "
       << scanLgndrs.begin()->second.size() << "  "
       << scanCounts.begin()->second.size() << "  "
-      << runMeans.size() << "  " << runStdev.size() << std::endl;
+      << runLegMeans.size() << "  " << runLegSTD.size() << std::endl;
   }
   /*
   ///  Remove time bins  ///
@@ -375,9 +578,13 @@ void alignClass::removeOutliers() {
 
 
 void alignClass::mergeScans() {
-  ///  Calculating time delays from stage position  ///
+
+  /////////////////////////////////////////////////////////
+  /////  Calculating time delays from stage position  /////
+  /////////////////////////////////////////////////////////
+
   if (verbose) {
-    std::cout << "calculating time delays: " << runMeans.size() << std::endl;
+    std::cout << "calculating time delays: " << stagePosInds.size() << std::endl;
   }
 
   int NtimeSteps = stagePosInds.size();
@@ -385,16 +592,12 @@ void alignClass::mergeScans() {
   if (timeDelays) delete[] timeDelays;
   timeDelays = new double[NtimeSteps + 1];
   for (auto pItr : stagePosInds) {
-    cout<<"stage: "<<pItr.first<<"   "<<pItr.second<<endl;
     timeDelays[tInd] = 2*pItr.first/(3e3);
     tInd++;
   }
-  cout<<"timeZ: "<<timeZero<<endl;
   timeDelays[0] = 2*timeDelays[1] - timeDelays[2];
   for (int i=NtimeSteps; i>=0; i--) {
-    cout<<"time: "<<timeDelays[i]<<"     ";
     timeDelays[i] -= timeZero + timeDelays[0];
-    cout<<timeDelays[i]<<endl;
   }
 
   save::saveDat<double>(timeDelays, NtimeSteps + 1,
@@ -402,10 +605,69 @@ void alignClass::mergeScans() {
       + to_string(stagePosInds.size() + 1) + "].dat");
 
 
-  /////  Initialize variables  /////
+  ///////////////////////////
+  /////  Merging scans  /////
+  ///////////////////////////
+
+  /////  Merging reference images  /////
+  ///  Merging legendres  ///
+  int rInd;
+  double norm;
+  legReference.clear();
+  legReference.resize(Nlegendres);
+  for (int ilg=0; ilg<Nlegendres; ilg++) {
+    legReference[ilg].resize(NradLegBins, 0);
+    for (int ir=0; ir<NradLegBins; ir++) {
+      norm = 0;
+      rInd = ilg*NradLegBins + ir;
+      for (auto sRitr : scanReferences) {
+        for (auto pItr : sRitr.second) {
+          if (pItr.second.imgNorm) {
+            if (pItr.second.legRef[rInd] != NANVAL) {
+              legReference[ilg][ir] += pItr.second.legRef[rInd];
+              norm += 1;
+            }
+          }
+        }
+      }
+      if (norm) {
+        legReference[ilg][ir] /= norm;
+      }
+      else {
+        legReference[ilg][ir] = 0;
+      }
+    }
+  }
+
+  ///  Merging azimuthal averages  ///
+  for (int ir=0; ir<NradAzmBins; ir++) {
+    norm = 0;
+    for (auto sRitr : scanReferences) {
+      for (auto pItr : sRitr.second) {
+        if (pItr.second.imgNorm) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            azmReference[ir] += pItr.second.azmRef[ir];
+            norm += 1;
+          }
+        }
+      }
+    }
+    if (norm) {
+      azmReference[ir] /= norm;
+    }
+    else {
+      azmReference[ir] = 0;
+    }
+  }
+
+
+  /////  Merging time dependent diffraction  /////
+
+  // Initialize variables
+  auto pItr = stagePosInds.begin();
   legendres.clear();
   legendres.resize(Nlegendres);
-  for (uint ilg=0; ilg<Nlegendres; ilg++) {
+  for (int ilg=0; ilg<Nlegendres; ilg++) {
     legendres[ilg].resize(stagePosInds.size());
     for (uint it=0; it<stagePosInds.size(); it++) {
       legendres[ilg][it].resize(NradLegBins, 0);
@@ -418,23 +680,14 @@ void alignClass::mergeScans() {
     azimuthalAvg[it].resize(NradAzmBins, 0);
   }
 
+  //  Merging loop
+  for (int it=0; it<NtimeSteps; it++) {
 
-  ///////////////////////////
-  /////  Merging scans  /////
-  ///////////////////////////
-  int rInd;
-  double legNorm, azmNorm;
-  auto pItr = stagePosInds.begin();
-  for (uint it=0; it<NtimeSteps; it++) {
-
-    /////  Merging legendres  /////
-    for (uint ilg=0; ilg<Nlegendres; ilg++) {
-    cout<<"starting to fill"<<endl;
-      cout<<"it: "<<it<<endl;
-      cout<<"resized"<<endl;
-      for (uint ir=0; ir<NradLegBins; ir++) {
+    ///  Merging legendres  ///
+    for (int ilg=0; ilg<Nlegendres; ilg++) {
+      for (int ir=0; ir<NradLegBins; ir++) {
         rInd = ilg*NradLegBins + ir;
-        legNorm = 0;
+        norm = 0;
         //for (auto sLiter : scanLgndrs) {
           //cout<<"filling: "<<ilg<<"  "<<it<<"  "<<ir<<"  "<<sLiter.first<<"  "<<sLiter.second[it][rInd]<<"  "<<sLiter.second[it][rInd] -     runMeans[it][rInd]<<"  "<< stdScale*runStdev[it][rInd]<<endl;
           //if (sLiter.second[it][rInd] != NANVAL) {
@@ -442,24 +695,28 @@ void alignClass::mergeScans() {
           //  legNorm += scanCounts[sLiter.first][it];
           //}
         //}
-        //legendres[ilg][it][ir] /= legNorm;
+        //if (norm) {
+        //  legendres[ilg][it][ir] /= norm;
+        //}
+        //else {
+        //  legendres[ilg][it][ir] = 0;
+        //}
         //cout<<"filled for lg: "<<ilg<<endl;
       }
     }
 
-    for (uint iazm=0; iazm<NradAzmBins; iazm++) {
-      azmNorm = 0;
+    ///  Merging azimuthal averages  ///
+    for (int iazm=0; iazm<NradAzmBins; iazm++) {
+      norm = 0;
       for (auto sAzml : scanAzmAvg) {
-        if ((std::isnan(azimuthalAvg[it][iazm]) || fabs(azimuthalAvg[it][iazm]) > 1e100 || fabs(azimuthalAvg[it][iazm]) < 1e-100) && (azimuthalAvg[it][iazm]!=0)) {
-          cout<<"FOUNDNAN azml merging: "<<sAzml.first<<"  "<<it<<"  "<<iazm<<"  "<<azimuthalAvg[it][iazm]<<endl;
-        }
-        if (sAzml.second[it][iazm] != NANVAL) {
+        if ((sAzml.second[it][iazm] != NANVAL) 
+            && (scanCounts[sAzml.first][it] != 0)) {
           azimuthalAvg[it][iazm] += sAzml.second[it][iazm];
-          azmNorm += 1; //scanCounts[sAzml.first][it];
+          norm += 1; //scanCounts[sAzml.first][it];
         }
       }
-      if (azmNorm) {
-        azimuthalAvg[it][iazm] /= azmNorm;
+      if (norm) {
+        azimuthalAvg[it][iazm] /= norm;
       }
       else {
         azimuthalAvg[it][iazm] = NANVAL;
@@ -467,73 +724,42 @@ void alignClass::mergeScans() {
     }
     pItr++;
   }
-  for (int i=0; i<azimuthalAvg[12].size(); i++) {
-    cout<<"dbl check "<<i<<"  "<<azimuthalAvg[12][i]<<endl;
-    if ((std::isnan(azimuthalAvg[12][i]) || fabs(azimuthalAvg[12][i]) > 1e100 || fabs(azimuthalAvg[12][i]) < 1e-100) && (azimuthalAvg[12][i]!=0)) {
-      cout<<"FOUNDNAN azml merge: "<<"12 "<<"  "<<i<<"  "<<azimuthalAvg[12][i]<<endl;
-    }
-  }
-
-  for (uint i=0; i<15; i++) {
-    cout<<"CHECK: "<<i<<"  "<<azimuthalAvg[12][i]<<endl;
-  }
-}
-
-
-void alignClass::getNrefBins() {
-  ///  Number of images to average before T0  ///
-  std::vector<double> unPumped(NradLegBins, 0);
-  NrefBins = 0;
-  if (subtractT0) {
-    while (timeDelays[NrefBins+1] < 0) {
-      NrefBins++;
-    }
-  }
-  else {
-    NrefBins = stagePosInds.size();
-  }
-  cout<<"NrefBins: "<<NrefBins<<endl;
 }
 
 
 void alignClass::subtractT0andNormalize() {
 
-  if (NrefBins == -1) getNrefBins();
-
-  std::vector<double> unPumped(legendres[0][0].size());
-  std::vector<double> count(legendres[0][0].size());
-
-  for (uint ilg=0; ilg<Nlegendres; ilg++) {
+  for (int ilg=0; ilg<Nlegendres; ilg++) {
     // Mean/t0 subtraction and normalizing by atomic scattering
-    // Raw data
-    std::fill(unPumped.begin(), unPumped.end(), 0.0);
-    std::fill(count.begin(), count.end(), 0.0);
-    for (int ir=0; ir<NradLegBins; ir++) {
-      for (int tm=0; tm<NrefBins; tm++) {
-        if (legendres[ilg][tm][ir] != NANVAL) {
-          unPumped[ir] += legendres[ilg][tm][ir];
-          count[ir]++;
+    if (!subtractT0) {
+      // Raw data
+      std::fill(legReference[ilg].begin(), legReference[ilg].end(), 0.0);
+      std::vector<int> count(NradLegBins, 0);
+      //std::fill(count.begin(), count.end(), 0.0);
+      for (int ir=0; ir<NradLegBins; ir++) {
+        for (uint tm=0; tm<legendres[ilg].size(); tm++) {
+          if (legendres[ilg][tm][ir] != NANVAL) {
+            legReference[ilg][ir] += legendres[ilg][tm][ir];
+            count[ir]++;
+          }
+        }
+        if (count[ir]) {
+          legReference[ilg][ir] /= count[ir];
+        }
+        else {
+          legReference[ilg][ir] = 0;
         }
       }
-      if (count[ir]) {
-        unPumped[ir] /= count[ir];
-      }
-      else {
-        unPumped[ir] = 0;
-      }
     }
+
     cout<<"unp filled"<<endl;
     for (int ir=0; ir<NradLegBins; ir++) {
       for (uint tm=0; tm<legendres[ilg].size(); tm++) {
         if (legendres[ilg][tm][ir] != NANVAL) {
-          legendres[ilg][tm][ir] -= unPumped[ir];
-          legendres[ilg][tm][ir] *= sMsLegNorm[ir];
+          legendres[ilg][tm][ir] -= legReference[ilg][ir];
+          //legendres[ilg][tm][ir] *= sMsLegNorm[ir];
         }
       }
-    }
-    cout<<"scaled"<<endl;
-    if (ilg==0) {
-      plt->print1d(unPumped, "testUnp");
     }
 
     ///  Saving data  ///
@@ -556,32 +782,33 @@ void alignClass::subtractT0andNormalize() {
     */
   }
 
-
-  /////  Editting azimuthal average  /////
-  count.clear();
-  unPumped.clear();
-  count.resize(NradAzmBins, 0);
-  unPumped.resize(NradAzmBins, 0);
-  for (int ir=0; ir<NradAzmBins; ir++) {
-    for (int tm=0; tm<NrefBins; tm++) {
-      if (azimuthalAvg[tm][ir] != NANVAL) {
-        unPumped[ir] += azimuthalAvg[tm][ir];
-        count[ir]++;
+  if (!subtractT0) {
+    std::vector<int> count(NradAzmBins, 0);
+    count.resize(NradAzmBins,0);
+    std::fill(azmReference.begin(), azmReference.end(), 0);
+    for (int ir=0; ir<NradAzmBins; ir++) {
+      for (uint tm=0; tm<azimuthalAvg.size(); tm++) {
+        if (azimuthalAvg[tm][ir] != NANVAL) {
+          azmReference[ir] += azimuthalAvg[tm][ir];
+          count[ir]++;
+        }
       }
-    }
-    if (count[ir]) {
-      unPumped[ir] /= count[ir];
-    }
-    else {
-      unPumped[ir] = 0;
+      if (count[ir]) {
+        azmReference[ir] /= count[ir];
+      }
+      else {
+        azmReference[ir] = 0;
+      }
     }
   }
 
+
+  /////  Editting azimuthal average  /////
   for (int ir=0; ir<NradAzmBins; ir++) {
     for (int tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
-        azimuthalAvg[tm][ir] -= unPumped[ir];
-        azimuthalAvg[tm][ir] *= sMsAzmNorm[ir];
+        azimuthalAvg[tm][ir] -= azmReference[ir];
+        //azimuthalAvg[tm][ir] *= sMsAzmNorm[ir];
       }
     }
   }
@@ -610,16 +837,15 @@ void alignClass::smearTime() {
   }
   */
 
-  if (NrefBins == -1) getNrefBins();
 
   smearedImg.resize(Nlegendres);
   std::vector<double> unPumped(legendres[0][0].size());
 
-  for (uint ilg=0; ilg<Nlegendres; ilg++) {
+  for (int ilg=0; ilg<Nlegendres; ilg++) {
 
     double sum = 0;
     smearedImg[ilg].resize(stagePosInds.size());
-    for (uint ir=0; ir<(int)stagePosInds.size(); ir++) {
+    for (uint ir=0; ir<stagePosInds.size(); ir++) {
       smearedImg[ilg][ir].resize(NradLegBins, 0);
     }
     for (int ir=0; ir<NradLegBins; ir++) {
@@ -631,20 +857,6 @@ void alignClass::smearTime() {
           sum += exp(-1*std::pow(timeDelays[tm] - timeDelays[tmm], 2)/(2*std::pow(smearSTD, 2)));
         }
         smearedImg[ilg][tm][ir] /= sum;
-      }
-    }
-
-    ///  Subtract before t0  ///
-    std::fill(unPumped.begin(), unPumped.end(), 0.0);
-    for (int ir=0; ir<NradLegBins; ir++) {
-      for (int tm=0; tm<NrefBins; tm++) {
-        unPumped[ir] += smearedImg[ilg][tm][ir];
-      }
-      unPumped[ir] /= (double)NrefBins;
-    }
-    for (int ir=0; ir<NradLegBins; ir++) {
-      for (uint tm=0; tm<stagePosInds.size(); tm++) {
-        smearedImg[ilg][tm][ir] -= unPumped[ir];
       }
     }
 
