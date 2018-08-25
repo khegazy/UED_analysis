@@ -269,7 +269,7 @@ void ppFunct::makeRunLists(std::vector<imgProc::imgInfoStruct> &imgINFO,
 
 
   /////  Runlist of preprocessed files  /////
-  outList.open(("../runLists/run-" + imgINFO[0].run + ".txt").c_str());
+  outList.open(("../mergeScans/runLists/run-" + imgINFO[0].run + ".txt").c_str());
   for (int i=1; i<=maxScan; i++) {
     outList << preProcFolder + "Run-" 
                 + imgINFO[0].run + "_Scan-"
