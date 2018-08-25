@@ -43,7 +43,7 @@ if __name__ == '__main__':
   #runs = ["20180627_1551", "20180630_1925"]#, "20161102_LongScan1", "All"]
   #runs = ["20180701_0746"]
   for rname in runs:
-    fileName = "../results/referenceAzm-" + rname + "[555].dat"
+    fileName = "../mergeScans/results/referenceAzm-" + rname + "[555].dat"
     if os.path.isfile(fileName):
       dataList.append(np.fromfile(fileName, dtype = np.double))
     else:
