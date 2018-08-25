@@ -1,6 +1,5 @@
 #include "preProcessing.h"
-#include "../parameters.h"
-#include "config.h"
+#include "../../parameters.h"
 
 using namespace std;
 
@@ -53,7 +52,6 @@ int main(int argc, char* argv[]) {
   bool doBackground = false;
 
 
-  experimentParameters  expP = experimentParameters();
   std::string runName;
   if (doRunLists) {
     runName = "doRunLists";
