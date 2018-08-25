@@ -20,9 +20,6 @@ all: $(EXE_FILES)
 
 .PRECIOUS: %.o 
 
-../../parameters.o: ../../parameters.cxx ../../parameters.h
-	$(CXX) $(CXXFLAGS) -c ../../parameters.cxx
-
 %.o: %.cpp $(DEPS) 
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
