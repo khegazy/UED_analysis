@@ -499,7 +499,7 @@ void mergeClass::removeOutliers() {
         int imageNoise = 0;
         for (int rInd=0; rInd<NlegBins; rInd++) {
           if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
-              < mergeSTDscanScale*runLegSTD[pItr.second][rInd]) {
+              < mergeImageSTDScale*runLegSTD[pItr.second][rInd]) {
             imageNoise++;
           }
           if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
@@ -518,7 +518,7 @@ void mergeClass::removeOutliers() {
         int imageNoise = 0;
         for (int rInd=0; rInd<NradAzmBins; rInd++) {
           if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
-              < mergeSTDscanScale*runAzmSTD[pItr.second][rInd]) {
+              < mergeImageSTDScale*runAzmSTD[pItr.second][rInd]) {
             imageNoise++;
           }
           if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
