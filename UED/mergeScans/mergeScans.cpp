@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
   auto fPos = fileList.find(".txt");
   std::string runName = fileList.substr(iPos, 13); //fPos - iPos);
   cout<<"RunName: "<<runName<<endl;
-  alignClass align(runName);
+  mergeClass merge(runName);
   //parameterClass params(runName);
 
   std::string prefix = "";
@@ -48,20 +48,20 @@ int main(int argc, char* argv[]) {
   for (int iarg=2; iarg<argc; iarg+=2) {
     if (strcmp(argv[iarg],"-Odir") == 0) {
       string str(argv[iarg+1]); 
-      align.alignScansOutputDir = str;
+      merge.mergeScansOutputDir = str;
     }
     else if (strcmp(argv[iarg],"-ScanSearch") == 0) {
       string str(argv[iarg+1]);
       prefix = str + "-";
-      align.alignScansOutputDir = align.scanSearchOutputDir;
+      merge.mergeScansOutputDir = merge.scanSearchOutputDir;
       scanSearch = true;
     }
     else if (strcmp(argv[iarg], "-OdirSuffix") == 0) {
       string str(argv[iarg+1]);
-      align.alignScansOutputDir += (str + "/");
+      merge.mergeScansOutputDir += (str + "/");
 
-      if (!tools::fileExists(align.alignScansOutputDir)) {
-        system(("mkdir " + align.alignScansOutputDir).c_str());
+      if (!tools::fileExists(merge.mergeScansOutputDir)) {
+        system(("mkdir " + merge.mergeScansOutputDir).c_str());
       }
     }
     else {
@@ -74,11 +74,11 @@ int main(int argc, char* argv[]) {
   std::vector<double> reference;
   std::vector<double> referenceCount;
 
-  int FFTsize = align.NradLegBins*2 + align.NautCpadding + 1;
+  int FFTsize = merge.NradLegBins*2 + merge.NautCpadding + 1;
   //int FFTsize = (NdiffInds + NautCpadding)*2 + 1;
   int FTsize = (int)(FFTsize/2) + 1;
-  int indHR =  align.holeRat*align.NradLegBins;
-  int outSize = FTsize*align.rMaxAzmRat;
+  int indHR =  merge.holeRat*merge.NradLegBins;
+  int outSize = FTsize*merge.rMaxAzmRat;
 
 
   double* qSpace = (double*) fftw_malloc(sizeof(double)*FFTsize);
@@ -114,16 +114,16 @@ int main(int argc, char* argv[]) {
   /////  Compare simulation results  /////
   ////////////////////////////////////////
   
-  if (align.compareSims) {
-    align.compareSimulations(radicalNames);
+  if (merge.compareSims) {
+    merge.compareSimulations(radicalNames);
   }
 
   ///////////////////////////
-  /////  Aligning Runs  /////
+  /////  Merging Scans  /////
   ///////////////////////////
 
-  if (align.verbose)  {
-    std::cout << "Begin to align runs" << endl;
+  if (merge.verbose)  {
+    std::cout << "Begin to merge runs" << endl;
   }
 
   std::vector<string> runInds;
@@ -136,21 +136,21 @@ int main(int argc, char* argv[]) {
   for (uint64_t ievt=0; ievt<Nentries; ievt++) {
     analysis.loadEvent(ievt);
 
-    if (std::find(align.badScans.begin(), align.badScans.end(), scan) 
-          != align.badScans.end()) continue;
+    if (std::find(merge.badScans.begin(), merge.badScans.end(), scan) 
+          != merge.badScans.end()) continue;
 
-    align.addLabTimeParameter(timeStamp, scan, stagePos, imgNorm);
+    merge.addLabTimeParameter(timeStamp, scan, stagePos, imgNorm);
 
     // Ignore reference images taken before scan
     if (imgIsRef) {
-      if (align.verbose) std::cout << "INFO: Adding reference image.\n";
+      if (merge.verbose) std::cout << "INFO: Adding reference image.\n";
 
-      align.addReference(scan, stagePos, azmAvg, legCoeffs, imgNorm);
+      merge.addReference(scan, stagePos, azmAvg, legCoeffs, imgNorm);
       continue;
     }
 
     ///  Insert entries to respective maps  ///
-    align.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
+    merge.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
 
   }
 
@@ -163,31 +163,31 @@ int main(int argc, char* argv[]) {
 
 
   //cout<<"removing outliers"<<endl;
-  //align.removeOutliers();
+  //merge.removeOutliers();
 
   cout<<"merging scans"<<endl;
-  align.mergeScans();
+  merge.mergeScans();
 
   /////  Saving  /////
   // References
-  save::saveDat<double>(align.azmReference,
+  save::saveDat<double>(merge.azmReference,
       "./results/referenceAzm-" + runName +
-      "[" + to_string(align.NradAzmBins) + "].dat");
-  save::saveDat<double>(align.legReference,
+      "[" + to_string(merge.NradAzmBins) + "].dat");
+  save::saveDat<double>(merge.legReference,
       "./results/referenceLeg-" + runName + 
-      "[" + to_string(align.Nlegendres) + 
-      "," + to_string(align.NradLegBins) + "].dat");
+      "[" + to_string(merge.Nlegendres) + 
+      "," + to_string(merge.NradLegBins) + "].dat");
 
   // Raw diffraction images
-  save::saveDat<double>(align.azimuthalAvg, 
-      align.alignScansOutputDir + "data-"
+  save::saveDat<double>(merge.azimuthalAvg, 
+      merge.mergeScansOutputDir + "data-"
       + runName + "-" + prefix + "sMsAzmAvgDiffRaw["
-      + to_string(align.azimuthalAvg.size()) + ","
-      + to_string(align.azimuthalAvg[0].size()) + "].dat");
+      + to_string(merge.azimuthalAvg.size()) + ","
+      + to_string(merge.azimuthalAvg[0].size()) + "].dat");
  
   /*
-  if (scanSearch || align.pltVerbose) {
-    plt.printRC(align.azimuthalAvg, 
+  if (scanSearch || merge.pltVerbose) {
+    plt.printRC(merge.azimuthalAvg, 
         "data-"
         + runName + "-" + prefix + "sMsAzmAvgDiffRaw", maximum, "1e-18");
   }
@@ -195,71 +195,71 @@ int main(int argc, char* argv[]) {
   
 
   cout<<"subtracting t0 and norm"<<endl;
-  align.subtractT0andNormalize();
+  merge.subtractT0andNormalize();
 
   cout<<"smearing time"<<endl;
-  //align.smearTime();
+  //merge.smearTime();
 
 
   // Clean up NANVAL for saving and plotting
-  for (int itm=0; itm<align.azimuthalAvg.size(); itm++) {
-    for (int ir=0; ir<align.azimuthalAvg[itm].size(); ir++) {
-      if (align.azimuthalAvg[itm][ir] == NANVAL) align.azimuthalAvg[itm][ir] = 0;
+  for (int itm=0; itm<merge.azimuthalAvg.size(); itm++) {
+    for (int ir=0; ir<merge.azimuthalAvg[itm].size(); ir++) {
+      if (merge.azimuthalAvg[itm][ir] == NANVAL) merge.azimuthalAvg[itm][ir] = 0;
     }
   }
 
 
-  save::saveDat<double>(align.azimuthalAvg, 
-      align.alignScansOutputDir + "data-"
+  save::saveDat<double>(merge.azimuthalAvg, 
+      merge.mergeScansOutputDir + "data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff["
-      + to_string(align.azimuthalAvg.size()) + ","
-      + to_string(align.azimuthalAvg[0].size()) + "].dat");
-  plt.printRC(align.azimuthalAvg, 
+      + to_string(merge.azimuthalAvg.size()) + ","
+      + to_string(merge.azimuthalAvg[0].size()) + "].dat");
+  plt.printRC(merge.azimuthalAvg, 
       "./plots/data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
 
   if (scanSearch) {
-    cout<<"plotting to "<<align.alignScansOutputDir + "/plots/data-"+ runName + "-" + prefix + "sMsAzmAvgDiff";
-    plt.printRC(align.azimuthalAvg, 
-        align.alignScansOutputDir + "/plots/data-"
+    cout<<"plotting to "<<merge.mergeScansOutputDir + "/plots/data-"+ runName + "-" + prefix + "sMsAzmAvgDiff";
+    plt.printRC(merge.azimuthalAvg, 
+        merge.mergeScansOutputDir + "/plots/data-"
         + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
   }
 
 
   /*
-  for (int ilg=0; ilg<align.Nlegendres; ilg++) {
+  for (int ilg=0; ilg<merge.Nlegendres; ilg++) {
     ///  Saving data  ///
     cout<<"111"<<endl;
-    save::saveDat<double>(align.legendres[ilg], 
-        align.alignScansOutputDir + "data-"
+    save::saveDat<double>(merge.legendres[ilg], 
+        merge.mergeScansOutputDir + "data-"
         + runName + "-" + prefix + "sMsL"
         + to_string(ilg) + "Diff["
-        + to_string(align.legendres[ilg].size()) + ","
-        + to_string(align.legendres[ilg][0].size()) + "].dat");
+        + to_string(merge.legendres[ilg].size()) + ","
+        + to_string(merge.legendres[ilg][0].size()) + "].dat");
     cout<<"222"<<endl;
-    save::saveDat<double>(align.legendres[ilg][align.legendres[ilg].size()-1], 
-        align.alignScansOutputDir + "data-"
+    save::saveDat<double>(merge.legendres[ilg][merge.legendres[ilg].size()-1], 
+        merge.mergeScansOutputDir + "data-"
         + runName + "-" + prefix + "sMsFinalL"
         + to_string(ilg) + "Diff["
-        + to_string(align.legendres[ilg][0].size()) + "].dat");
+        + to_string(merge.legendres[ilg][0].size()) + "].dat");
 
 
     cout<<"333"<<endl;
-    save::saveDat<double>(align.smearedImg[ilg], 
-        align.alignScansOutputDir + "data-"
+    save::saveDat<double>(merge.smearedImg[ilg], 
+        merge.mergeScansOutputDir + "data-"
         + runName + "-" + prefix + "sMsL"
         + to_string(ilg) + "DiffSmear["
-        + to_string(align.smearSTD) + "["
-        + to_string(align.smearedImg[ilg].size()) + ","
-        + to_string(align.smearedImg[ilg][0].size()) + "].dat");
+        + to_string(merge.smearSTD) + "["
+        + to_string(merge.smearedImg[ilg].size()) + ","
+        + to_string(merge.smearedImg[ilg][0].size()) + "].dat");
 
     cout<<"444"<<endl;
-    save::saveDat<double>(align.smearedImg[ilg][align.stagePosInds.size()-1],
-        align.alignScansOutputDir + "data-"
+    save::saveDat<double>(merge.smearedImg[ilg][merge.stagePosInds.size()-1],
+        merge.mergeScansOutputDir + "data-"
         + runName + "-" + prefix + "sMsFinalL"
         + to_string(ilg) + "DiffSmear"
-        + to_string(align.smearSTD) + "["
-        + to_string(align.smearedImg[ilg][0].size()) + "].dat");
+        + to_string(merge.smearSTD) + "["
+        + to_string(merge.smearedImg[ilg][0].size()) + "].dat");
   }
   */
 
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
   ///////////////////////////////////////
   /////  Pair correlation function  /////
   ///////////////////////////////////////
-  if (align.verbose) {
+  if (merge.verbose) {
     std::cout << "Begin calculating pair correlation functions\n";
   }
 
@@ -327,7 +327,7 @@ int main(int argc, char* argv[]) {
   /////  Cleaning up  /////
   /////////////////////////
 
-  if (align.verbose) {
+  if (merge.verbose) {
     std::cout << "Cleaning up" << endl;
   }
 

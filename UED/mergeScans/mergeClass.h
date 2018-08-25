@@ -1,5 +1,5 @@
-#ifndef ALIGNCLASS_H
-#define ALIGNCLASS_H
+#ifndef MERGECLASS_H
+#define MERGECLASS_H
 
 
 #include <cmath>
@@ -19,7 +19,7 @@
 #include "../../parameters.h"
 
 
-class alignClass : public parameterClass {
+class mergeClass : public parameterClass {
 
   private :
 
@@ -61,14 +61,14 @@ class alignClass : public parameterClass {
   public :
 
     // Constructor
-    alignClass(std::string runName);
-    ~alignClass();
+    mergeClass(std::string runName);
+    ~mergeClass();
 
     std::string runName;
     double* timeDelays;
 
     // Output files and location
-    string fileName = "alignment.txt";
+    string fileName = "mergedScans.txt";
     string outputDir = "output/data/";
 
     std::vector<double> azmReference;

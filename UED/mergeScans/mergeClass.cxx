@@ -1,22 +1,22 @@
-#include "alignClass.h"
+#include "mergeClass.h"
 
 
-alignClass::alignClass(std::string runName_inp) : parameterClass(runName_inp) {
+mergeClass::mergeClass(std::string runName_inp) : parameterClass(runName_inp) {
 
   runName = runName_inp;
   initializeVariables();
 }
 
 
-alignClass::~alignClass() {
+mergeClass::~mergeClass() {
   delete plt;
   delete[] timeDelays;
 }
 
 
-void alignClass::initializeVariables() {
+void mergeClass::initializeVariables() {
 
-  plt = new PLOTclass("alignCanv");
+  plt = new PLOTclass("mergeCanv");
   curScan  = -1;
   NlegBins = NradLegBins*Nlegendres;
   runInd   = "";
@@ -76,14 +76,14 @@ void alignClass::initializeVariables() {
 
 
   // Output files and location
-  fileName = "alignment.txt";
+  fileName = "mergedScans.txt";
   outputDir = "output/data/";
 
   legendres.resize(Nlegendres);
 }
 
 
-void alignClass::calculateSMS() {
+void mergeClass::calculateSMS() {
 
   if (sMsLegNorm.size()) {
     std::cerr << "WARNING: Replacing sMsLegNorm values!!!\n";
@@ -102,7 +102,7 @@ void alignClass::calculateSMS() {
 }
 
 
-void alignClass::compareSimulations(std::vector<std::string> radicals) {
+void mergeClass::compareSimulations(std::vector<std::string> radicals) {
 
   if (verbose) std::cout << "INFO: Entering comareFinalStates!!!\n";
 
@@ -179,7 +179,7 @@ void alignClass::compareSimulations(std::vector<std::string> radicals) {
 }
 
 
-void alignClass::addLabTimeParameter(int timeStamp,
+void mergeClass::addLabTimeParameter(int timeStamp,
                           int scan, int stagePos, 
                           double imgNorm) {
 
@@ -189,7 +189,7 @@ void alignClass::addLabTimeParameter(int timeStamp,
 }
 
 
-void alignClass::addReference(int scan, int stagePos,
+void mergeClass::addReference(int scan, int stagePos,
                           std::vector<double>* azmAvg, 
                           std::vector<double>* legCoeffs,
                           double imgNorm) {
@@ -209,7 +209,7 @@ void alignClass::addReference(int scan, int stagePos,
 }
 
 
-void alignClass::addEntry(int scan, int stagePos, 
+void mergeClass::addEntry(int scan, int stagePos, 
                           std::vector<double>* azmAvg, 
                           std::vector<double>* legCoeffs,
                           double imgNorm) {
@@ -300,7 +300,7 @@ void alignClass::addEntry(int scan, int stagePos,
   
 }
 
-void alignClass::removeLabTimeOutliers() {
+void mergeClass::removeLabTimeOutliers() {
 
   float norm;
   auto tItr  = labTimeParams.begin();
@@ -377,7 +377,7 @@ void alignClass::removeLabTimeOutliers() {
     
 
 
-void alignClass::removeOutliers() {
+void mergeClass::removeOutliers() {
 
   /////  Remove time bins with few images and get mean  /////
   std::vector<int32_t> removePos;
@@ -499,11 +499,11 @@ void alignClass::removeOutliers() {
         int imageNoise = 0;
         for (int rInd=0; rInd<NlegBins; rInd++) {
           if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
-              < alignSTDscanScale*runLegSTD[pItr.second][rInd]) {
+              < mergeSTDscanScale*runLegSTD[pItr.second][rInd]) {
             imageNoise++;
           }
           if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
-              < alignSTDscale*runLegSTD[pItr.second][rInd]) {
+              < mergeSTDscale*runLegSTD[pItr.second][rInd]) {
             sLitr.second[pItr.second][rInd] = NANVAL;
           }
         }
@@ -518,11 +518,11 @@ void alignClass::removeOutliers() {
         int imageNoise = 0;
         for (int rInd=0; rInd<NradAzmBins; rInd++) {
           if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
-              < alignSTDscanScale*runAzmSTD[pItr.second][rInd]) {
+              < mergeSTDscanScale*runAzmSTD[pItr.second][rInd]) {
             imageNoise++;
           }
           if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
-              < alignSTDscale*runAzmSTD[pItr.second][rInd]) {
+              < mergeSTDscale*runAzmSTD[pItr.second][rInd]) {
             sAitr.second[pItr.second][rInd] = NANVAL;
           }
         }
@@ -577,7 +577,7 @@ void alignClass::removeOutliers() {
 
 
 
-void alignClass::mergeScans() {
+void mergeClass::mergeScans() {
 
   /////////////////////////////////////////////////////////
   /////  Calculating time delays from stage position  /////
@@ -727,7 +727,7 @@ void alignClass::mergeScans() {
 }
 
 
-void alignClass::subtractT0andNormalize() {
+void mergeClass::subtractT0andNormalize() {
 
   for (int ilg=0; ilg<Nlegendres; ilg++) {
     // Mean/t0 subtraction and normalizing by atomic scattering
@@ -816,7 +816,7 @@ void alignClass::subtractT0andNormalize() {
 }
 
 
-void alignClass::smearTime() {
+void mergeClass::smearTime() {
   if (verbose) {
     std::cout << "Begin smearing legendres in time\n";
   }
