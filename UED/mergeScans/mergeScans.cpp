@@ -1,5 +1,4 @@
-#include "analysis.h"
-//#include "../simulation/diffractionPattern/simulations.h"
+#include "../analysis.h"
 #include <TLegend.h>
 
 using namespace std;

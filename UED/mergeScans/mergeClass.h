@@ -16,7 +16,7 @@
 #include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
 #include "/reg/neh/home/khegazy/baseScripts/saveClass.h"
 #include "/reg/neh/home/khegazy/baseScripts/saving.h"
-#include "./parameters.h"
+#include "../../parameters.h"
 
 
 class alignClass : public parameterClass {
