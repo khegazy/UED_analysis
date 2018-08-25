@@ -27,9 +27,7 @@
 #include "/reg/neh/home/khegazy/baseScripts/imageProcessing.h"
 #include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
 #include "/reg/neh/home/khegazy/baseScripts/saveClass.h"
-#include "../simulation/diffractionPattern/simulations.h"
-#include "parameters.h"
-#include "alignClass.h"
+#include "../parameters.h"
 
 
 using namespace std;

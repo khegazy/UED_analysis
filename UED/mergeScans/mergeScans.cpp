@@ -1,4 +1,5 @@
 #include "../analysis.h"
+#include "mergeClass.h"
 #include <TLegend.h>
 
 using namespace std;
@@ -114,9 +115,9 @@ int main(int argc, char* argv[]) {
   /////  Compare simulation results  /////
   ////////////////////////////////////////
   
-  if (merge.compareSims) {
-    merge.compareSimulations(radicalNames);
-  }
+  //if (merge.compareSims) {
+  //  merge.compareSimulations(merge.molName);
+  //}
 
   ///////////////////////////
   /////  Merging Scans  /////
