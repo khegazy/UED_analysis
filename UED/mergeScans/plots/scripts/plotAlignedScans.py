@@ -21,14 +21,14 @@ for i,run in enumerate(runs):
     "yTitle"     : r"Q [$\AA^{-1}$]",
     "xSlice" : [-0.3, maxX[i]]
     }
-  timeDelay = np.fromfile("../data/timeDelays["
-        + str(timeSteps[i]) + "].dat", np.double)
+  timeDelay = np.fromfile("../../results/timeDelays["
+        + str(timeSteps[i] + 1) + "].dat", np.double)
   
-  plc.print2d("/reg/ued/ana/scratch/nitroBenzene/alignScans/data-" + run + "-sMsAzmAvgDiff["
+  plc.print2d("/reg/ued/ana/scratch/nitroBenzene/mergeScans/data-" + run + "-sMsAzmAvgDiff["
         + str(timeSteps[i]) + "," + str(params.NradAzmBins) + "].dat",
         "../data-" + run + "-sMsAzmAvgDiff",
         X=timeDelay,
-        yRange=params.Qrange,
+        yRange=params.QrangeAzm,
         options=opts)
 
 
