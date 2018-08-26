@@ -9,9 +9,9 @@ class pltParams:
     self.NpairCorrLegBins   = 398
     self.Nlegendres         = 5
 
-    self.QrangeAzm = [0, QperPix*self.NpairCorrAzmBins]
+    self.QrangeAzm = [0, self.QperPix*self.NpairCorrAzmBins]
     self.RrangeAzm = [0, 6.255]
-    self.QrangeLeg = [0, QperPix*self.NradLegBins]
+    self.QrangeLeg = [0, self.QperPix*self.NradLegBins]
     self.RrangeLeg = [0, 6]
 
     self.smearStr  = "0.750000"
