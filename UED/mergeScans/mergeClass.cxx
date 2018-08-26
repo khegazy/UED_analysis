@@ -77,7 +77,6 @@ void mergeClass::initializeVariables() {
 
   // Output files and location
   fileName = "mergedScans.txt";
-  outputDir = "output/data/";
 
   legendres.resize(Nlegendres);
 }
@@ -133,7 +132,7 @@ void mergeClass::compareSimulations(std::vector<std::string> radicals) {
       } 
       */
       // Save sMs
-      save::saveDat<double>(refLineOut[name], "./plots/data/sim_" + name + "Diffraction["
+      save::saveDat<double>(refLineOut[name], "./results/data/sim_" + name + "Diffraction["
             + to_string(NradLegBins) + "].dat");
       if (pltVerbose) 
         delete plt->print1d(refLineOut[name], "./sim_" + name + "_diffractionsMs");
@@ -199,7 +198,6 @@ void mergeClass::addReference(int scan, int stagePos,
   scanReferences[scan][stagePos].azmRef.resize(NradAzmBins, 0);
   for (int i=0; i<NradAzmBins; i++) {
     scanReferences[scan][stagePos].azmRef[i] = (*azmAvg)[i]/imgNorm;
-    if (i==101) cout<<scan<<"  "<<(*azmAvg)[i]/imgNorm<<endl;
   }
 
   scanReferences[scan][stagePos].legRef.resize(NlegBins, 0);
@@ -584,7 +582,9 @@ void mergeClass::mergeScans() {
   /////////////////////////////////////////////////////////
 
   if (verbose) {
-    std::cout << "calculating time delays: " << stagePosInds.size() << std::endl;
+    std::cout << "INFO: Inside mergeScans\n";
+    std::cout << "\tcalculating time delays: " 
+      << stagePosInds.size() << std::endl;
   }
 
   int NtimeSteps = stagePosInds.size();
@@ -601,7 +601,7 @@ void mergeClass::mergeScans() {
   }
 
   save::saveDat<double>(timeDelays, NtimeSteps + 1,
-      "./plots/data/timeDelays["
+      "./results/timeDelays["
       + to_string(stagePosInds.size() + 1) + "].dat");
 
 
@@ -610,6 +610,8 @@ void mergeClass::mergeScans() {
   ///////////////////////////
 
   /////  Merging reference images  /////
+  if (verbose)
+    std::cout << "\tMerging legendres reference.\n";
   ///  Merging legendres  ///
   int rInd;
   double norm;
@@ -640,6 +642,8 @@ void mergeClass::mergeScans() {
   }
 
   ///  Merging azimuthal averages  ///
+  if (verbose)
+    std::cout << "\tMerging azimuthal average reference.\n";
   for (int ir=0; ir<NradAzmBins; ir++) {
     norm = 0;
     for (auto sRitr : scanReferences) {
@@ -681,6 +685,8 @@ void mergeClass::mergeScans() {
   }
 
   //  Merging loop
+  if (verbose)
+    std::cout << "\tMerging time dependent images.\n";
   for (int it=0; it<NtimeSteps; it++) {
 
     ///  Merging legendres  ///
@@ -752,7 +758,6 @@ void mergeClass::subtractT0andNormalize() {
       }
     }
 
-    cout<<"unp filled"<<endl;
     for (int ir=0; ir<NradLegBins; ir++) {
       for (uint tm=0; tm<legendres[ilg].size(); tm++) {
         if (legendres[ilg][tm][ir] != NANVAL) {
@@ -861,7 +866,7 @@ void mergeClass::smearTime() {
     }
 
     if (ilg == 0) {
-      save::saveDat<double>(unPumped, "./plots/data/data_unPumpedDiffractionL0Smeared["
+      save::saveDat<double>(unPumped, "./results/data_unPumpedDiffractionL0Smeared["
           + to_string(NradLegBins) + "].dat");
     }
 

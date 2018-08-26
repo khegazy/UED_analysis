@@ -69,7 +69,6 @@ class mergeClass : public parameterClass {
 
     // Output files and location
     string fileName = "mergedScans.txt";
-    string outputDir = "output/data/";
 
     std::vector<double> azmReference;
     std::vector< std::vector<double> > azimuthalAvg;

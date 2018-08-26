@@ -166,10 +166,11 @@ int main(int argc, char* argv[]) {
   //cout<<"removing outliers"<<endl;
   //merge.removeOutliers();
 
-  cout<<"merging scans"<<endl;
   merge.mergeScans();
 
   /////  Saving  /////
+  if (merge.verbose) 
+    std::cout << "INFO: saving merged references and before t0 subtraction.\n";
   // References
   save::saveDat<double>(merge.azmReference,
       "./results/referenceAzm-" + runName +
@@ -195,10 +196,8 @@ int main(int argc, char* argv[]) {
   */
   
 
-  cout<<"subtracting t0 and norm"<<endl;
   merge.subtractT0andNormalize();
 
-  cout<<"smearing time"<<endl;
   //merge.smearTime();
 
 
@@ -210,6 +209,9 @@ int main(int argc, char* argv[]) {
   }
 
 
+  /////  Saving and plotting  /////
+  if (merge.verbose) 
+    std::cout << "INFO: saving merged references and before t0 subtraction.\n";
   save::saveDat<double>(merge.azimuthalAvg, 
       merge.mergeScansOutputDir + "data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff["
