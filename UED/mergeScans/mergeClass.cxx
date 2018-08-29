@@ -560,13 +560,13 @@ void mergeClass::removeOutliers() {
         int imageNoise = 0;
         for (int ir=0; ir<NradAzmBins; ir++) {
           if (pItr.second.azmRef[ir] != NANVAL) {
-            if (fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
-                > mergeImageSTDScale*runAzmRefSTD[ir]) {
+            if ((fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
+                > mergeImageSTDScale*runAzmRefSTD[ir])
+                || ((pItr.second.azmRef[ir] == NANVAL) && (ir >= azmNANend))) {
               imageNoise++;
             }      
-            if ((fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
-                > mergeSTDscale*runAzmRefSTD[ir])
-                || ((pItr.second.azmRef[ir] == NANVAL) && (ir >= azmNANend))) {
+            if (fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
+                > mergeSTDscale*runAzmRefSTD[ir]) {
               pItr.second.azmRef[ir] = NANVAL;
             }      
           }
