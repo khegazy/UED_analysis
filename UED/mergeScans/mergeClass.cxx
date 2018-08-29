@@ -202,7 +202,12 @@ void mergeClass::addReference(int scan, int stagePos,
 
   scanReferences[scan][stagePos].legRef.resize(NlegBins, 0);
   for (int i=0; i<NlegBins; i++) {
-    scanReferences[scan][stagePos].legRef[i] = (*legCoeffs)[i]/imgNorm;
+    if ((*legCoeffs)[i] != NANVAL) {
+      scanReferences[scan][stagePos].legRef[i] = (*legCoeffs)[i]/imgNorm;
+    }
+    else {
+      scanReferences[scan][stagePos].legRef[i] = NANVAL;
+    }
   }
 }
 
@@ -277,9 +282,13 @@ void mergeClass::addEntry(int scan, int stagePos,
   for (uint i=0; i<(*legCoeffs).size(); i++) {
     scanLgndrs[scan][pInd][i] = (*legCoeffs)[i]/imgNorm;
   }
-  //cout<<"INFO: "<<scan<<"  "<<pInd<<"  "<<(*azmAvg).size()<<"  "<<scanAzmAvg[scan][pInd].size()<<endl;
   for (uint i=0; i<(*azmAvg).size(); i++) {
-    scanAzmAvg[scan][pInd][i] = (*azmAvg)[i]/imgNorm;
+    if ((*azmAvg)[i] != NANVAL) {
+      scanAzmAvg[scan][pInd][i] = (*azmAvg)[i]/imgNorm;
+    }
+    else {
+      scanAzmAvg[scan][pInd][i] = NANVAL;
+    }
   }
 
   
@@ -378,13 +387,21 @@ void mergeClass::removeLabTimeOutliers() {
 void mergeClass::removeOutliers() {
 
   /////  Remove time bins with few images and get mean  /////
+  double norm;
   std::vector<int32_t> removePos;
-  runLegMeans.clear(); runLegSTD.clear();
-  runAzmMeans.clear(); runAzmSTD.clear();
+  runLegMeans.clear();    runLegSTD.clear();
+  runAzmMeans.clear();    runAzmSTD.clear();
+  runLegRefMeans.clear(); runLegRefSTD.clear();
+  runAzmRefMeans.clear(); runAzmRefSTD.clear();
   runLegMeans.resize(stagePosInds.size());
   runAzmMeans.resize(stagePosInds.size());
   runLegSTD.resize(stagePosInds.size());
   runAzmSTD.resize(stagePosInds.size());
+  runLegRefMeans.resize(NlegBins, 0);
+  runAzmRefMeans.resize(NradAzmBins, 0);
+  runLegRefSTD.resize(NlegBins, 0);
+  runAzmRefSTD.resize(NradAzmBins, 0);
+ 
   for (uint i=0; i<stagePosInds.size(); i++) {
     runLegMeans[i].resize(NlegBins, 0);
     runAzmMeans[i].resize(NradAzmBins, 0);
@@ -392,11 +409,185 @@ void mergeClass::removeOutliers() {
     runAzmSTD[i].resize(NradAzmBins, 0);
   }
 
-  // looping over time bins
+  int legNANend = 0;
+  int azmNANend = 0;
+  for (auto i : scanLgndrs.begin()->second[0]) {
+    if (i == NANVAL) {
+      legNANend++;
+    }
+    else {
+      break;
+    }
+  }
+  for (auto i : scanAzmAvg.begin()->second[0]) {
+    if (i == NANVAL) {
+      azmNANend++;
+    }
+    else {
+      break;
+    }
+  }
+
+
+  
+  ///////////////////////////////////////
+  /////  Cleaning Reference Images  /////
+  ///////////////////////////////////////
+  if (verbose)
+    std::cout << "\tBeginning removing outliers in reference images.\n";
+  for (int k=0; k<3; k++) {
+    /////  Calculate mean  /////
+    // Legendre Reference
+    if (verbose && (k==0)) 
+      std::cout << "\tCalculating legendre mean.\n";
+    for (int ir=0; ir<NlegBins; ir++) {
+      norm = 0;
+      for (auto sRitr : scanReferences) {
+        for (auto pItr : sRitr.second) {
+          if (pItr.second.legRef[ir] != NANVAL) {
+            runLegRefMeans[ir] += pItr.second.legRef[ir];
+            norm += 1;
+          }
+        }
+      }
+      if (norm) {
+        runLegRefMeans[ir] /= norm;
+      }
+      else {
+        runLegRefMeans[ir] = 0;
+      }
+    }
+
+    // Azimuthal Reference
+    if (verbose && (k==0)) 
+      std::cout << "\tCalculating azimuthal mean.\n";
+    for (int ir=0; ir<NradAzmBins; ir++) {
+      norm = 0;
+      for (auto sRitr : scanReferences) {
+        for (auto pItr : sRitr.second) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            runAzmRefMeans[ir] += pItr.second.azmRef[ir];
+            norm += 1;
+          }
+        }
+      }
+      if (norm) {
+        runAzmRefMeans[ir] /= norm;
+      }
+      else {
+        runAzmRefMeans[ir] = 0;
+      }
+    }
+
+    /////  Calculate Standard Deviation  /////
+    // Legendre Reference
+    if (verbose && (k==0)) 
+      std::cout << "\tCalculating legendre std.\n";
+    for (int ir=0; ir<NlegBins; ir++) {
+      norm = 0;
+      for (auto sRitr : scanReferences) {
+        for (auto pItr : sRitr.second) {
+          if (pItr.second.legRef[ir] != NANVAL) {
+            runLegRefSTD[ir] 
+                += std::pow((pItr.second.legRef[ir] 
+                        - runLegRefMeans[ir]), 2);
+            norm += 1;
+          }
+        }
+      }
+      if (norm) {
+        runLegRefSTD[ir] = std::sqrt(runLegRefSTD[ir]/norm);
+      }
+      else {
+        runLegRefSTD[ir] = 0;
+      }
+    }
+
+    // Azimuthal Reference
+    if (verbose && (k==0)) 
+      std::cout << "\tCalculating azimuthal std.\n";
+    for (int ir=0; ir<NradAzmBins; ir++) {
+      norm = 0;
+      for (auto sRitr : scanReferences) {
+        for (auto pItr : sRitr.second) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            runAzmRefSTD[ir] 
+                += std::pow((pItr.second.azmRef[ir]
+                        - runAzmRefMeans[ir]), 2);
+            norm += 1;
+          }
+        }
+      }
+      if (norm) {
+        runAzmRefSTD[ir] = std::sqrt(runAzmRefSTD[ir]/norm);
+      }
+      else {
+        runAzmRefSTD[ir] = 0;
+      }
+    }
+
+    /////  Make Cut  /////
+    // Legendre Reference
+    if (verbose && (k==0)) 
+      std::cout << "\tMaking cuts on legendre.\n";
+    for (auto& sRitr : scanReferences) {
+      for (auto& pItr : sRitr.second) {
+        int imageNoise = 0;
+        for (int ir=0; ir<NlegBins; ir++) {
+          if (pItr.second.legRef[ir] != NANVAL) {
+            if ((fabs(pItr.second.legRef[ir] - runLegRefMeans[ir])
+                > mergeImageSTDScale*runLegRefSTD[ir]) 
+                || ((pItr.second.legRef[ir] == NANVAL) && (ir >= legNANend))) {
+              imageNoise++;
+            }      
+            if (fabs(pItr.second.legRef[ir] - runLegRefMeans[ir])
+                > mergeSTDscale*runLegRefSTD[ir]) {
+              pItr.second.legRef[ir] = NANVAL;
+            }      
+          }
+        }
+        if (imageNoise > legImageNoiseCut) {
+          pItr.second.imgNorm = 0;
+        }
+      }
+    }
+
+    // Azimuthal Reference
+    if (verbose && (k==0)) 
+      std::cout << "\tMaking cuts on azimuthal.\n";
+    for (auto& sRitr : scanReferences) {
+      for (auto& pItr : sRitr.second) {
+        int imageNoise = 0;
+        for (int ir=0; ir<NradAzmBins; ir++) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            if (fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
+                > mergeImageSTDScale*runAzmRefSTD[ir]) {
+              imageNoise++;
+            }      
+            if ((fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
+                > mergeSTDscale*runAzmRefSTD[ir])
+                || ((pItr.second.azmRef[ir] == NANVAL) && (ir >= azmNANend))) {
+              pItr.second.azmRef[ir] = NANVAL;
+            }      
+          }
+        }
+        if (imageNoise > azmImageNoiseCut) {
+          pItr.second.imgNorm = 0;
+        }
+      }
+    }
+  }
+
+
+  if (verbose) {
+    std::cout << "Finished removing reference outliers.\n";
+    std::cout << "Begin removing outliers from time dependent images.\n";
+  }
+
   std::vector<double> legNorms(NlegBins, 0);
   std::vector<double> azmNorms(NradAzmBins, 0);
   for (auto pItr : stagePosInds) {
-    for (int k=0; k<3; k++) {
+    for (int k=0; k<1; k++) {
       std::fill(legNorms.begin(), legNorms.end(), 0);
       std::fill(azmNorms.begin(), azmNorms.end(), 0);
       for (uint i=0; i<stagePosInds.size(); i++) {
@@ -408,6 +599,8 @@ void mergeClass::removeOutliers() {
 
       /////  Mean calculation  /////
       ///  Legendres  ///
+      if (verbose && (k == 0) && (pItr.second == 0)) 
+        std::cout << "\tCalculating legendre mean.\n";
       for (auto sLitr : scanLgndrs) {
         if (scanCounts[sLitr.first][pItr.second] > 0) {
           for (int i=0; i<NlegBins; i++) {
@@ -424,6 +617,8 @@ void mergeClass::removeOutliers() {
       }
 
       ///  Azimuthal  ///
+      if (verbose && (k == 0) && (pItr.second == 0)) 
+        std::cout << "\tCalculating azimuthal mean.\n";
       for (auto sAitr : scanAzmAvg) {
         if (scanCounts[sAitr.first][pItr.second] > 0) {
           for (int i=0; i<NradAzmBins; i++) {
@@ -435,7 +630,7 @@ void mergeClass::removeOutliers() {
         }
       }
 
-      for (int i=0; i<NlegBins; i++) {
+      for (int i=0; i<NradAzmBins; i++) {
         runAzmMeans[pItr.second][i] /= azmNorms[i];
       }
 
@@ -443,6 +638,8 @@ void mergeClass::removeOutliers() {
       /////  Standard deviation calculation  /////
 
       ///  Legendres  ///
+      if (verbose && (k == 0) && (pItr.second == 0)) 
+        std::cout << "\tCalculating legendre std.\n";
       for (auto sLitr : scanLgndrs) {
         if (scanCounts[sLitr.first][pItr.second]) {
           for (int i=0; i<NlegBins; i++) {
@@ -463,10 +660,11 @@ void mergeClass::removeOutliers() {
 
       for (int i=0; i<NlegBins; i++) {
         runLegSTD[pItr.second][i] = std::sqrt(runLegSTD[pItr.second][i]/legNorms[i]);
-        //cout<<runMeans[pItr.second][i]<<"/"<<runStdev[pItr.second][i]<<"\t"<<endl;
       }
 
       ///  Azimuthal  ///
+      if (verbose && (k == 0) && (pItr.second == 0)) 
+        std::cout << "\tCalculating azimuthal std.\n";
       for (auto sAitr : scanAzmAvg) {
         if (scanCounts[sAitr.first][pItr.second]) {
           for (int i=0; i<NradAzmBins; i++) {
@@ -487,22 +685,23 @@ void mergeClass::removeOutliers() {
 
       for (int i=0; i<NradAzmBins; i++) {
         runAzmSTD[pItr.second][i] = std::sqrt(runAzmSTD[pItr.second][i]/azmNorms[i]);
-        //cout<<runMeans[pItr.second][i]<<"/"<<runStdev[pItr.second][i]<<"\t"<<endl;
       }
 
       /////  Make cuts  /////
       ///  Legendres  ///
-      cout<<"\n\nTIME: "<<pItr.first<<endl<<endl;
-      for (auto sLitr : scanLgndrs) {
+      if (verbose && (k == 0) && (pItr.second == 0)) 
+        std::cout << "\tMaking cuts on legendre images.\n";
+      for (auto& sLitr : scanLgndrs) {
         int imageNoise = 0;
-        for (int rInd=0; rInd<NlegBins; rInd++) {
-          if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
-              < mergeImageSTDScale*runLegSTD[pItr.second][rInd]) {
+        for (int ir=0; ir<NlegBins; ir++) {
+          if ((fabs(sLitr.second[pItr.second][ir] - runLegMeans[pItr.second][ir])
+              > mergeImageSTDScale*runLegSTD[pItr.second][ir]) 
+              || ((sLitr.second[pItr.second][ir] == NANVAL) && (ir >= legNANend))) {
             imageNoise++;
           }
-          if (fabs(sLitr.second[pItr.second][rInd] - runLegMeans[pItr.second][rInd])
-              < mergeSTDscale*runLegSTD[pItr.second][rInd]) {
-            sLitr.second[pItr.second][rInd] = NANVAL;
+          if (fabs(sLitr.second[pItr.second][ir] - runLegMeans[pItr.second][ir])
+              > mergeSTDscale*runLegSTD[pItr.second][ir]) {
+            sLitr.second[pItr.second][ir] = NANVAL;
           }
         }
         if (imageNoise > legImageNoiseCut) {
@@ -510,18 +709,21 @@ void mergeClass::removeOutliers() {
         }
       }
 
+
       ///  Azimuthal  ///
-      cout<<"\n\nTIME: "<<pItr.first<<endl<<endl;
-      for (auto sAitr : scanAzmAvg) {
+      if (verbose && (k == 0) && (pItr.second == 0)) 
+        std::cout << "\tMaking cuts on azimuthal images.\n";
+      for (auto& sAitr : scanAzmAvg) {
         int imageNoise = 0;
-        for (int rInd=0; rInd<NradAzmBins; rInd++) {
-          if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
-              < mergeImageSTDScale*runAzmSTD[pItr.second][rInd]) {
+        for (int ir=0; ir<NradAzmBins; ir++) {
+          if ((fabs(sAitr.second[pItr.second][ir] - runAzmMeans[pItr.second][ir])
+              > mergeImageSTDScale*runAzmSTD[pItr.second][ir]) 
+              || ((sAitr.second[pItr.second][ir] == NANVAL) && (ir >= azmNANend))) {
             imageNoise++;
           }
-          if (fabs(sAitr.second[pItr.second][rInd] - runAzmMeans[pItr.second][rInd])
-              < mergeSTDscale*runAzmSTD[pItr.second][rInd]) {
-            sAitr.second[pItr.second][rInd] = NANVAL;
+          if (fabs(sAitr.second[pItr.second][ir] - runAzmMeans[pItr.second][ir])
+              > mergeSTDscale*runAzmSTD[pItr.second][ir]) {
+            sAitr.second[pItr.second][ir] = NANVAL;
           }
         }
         if (imageNoise > azmImageNoiseCut) {
@@ -529,8 +731,10 @@ void mergeClass::removeOutliers() {
         }
       }
     }
-
   }
+
+  if (verbose) 
+    std::cout << "Finished removing outliers from time dependent images.\n";
 
   //plt.printXY(runMeans, "testRunMeans", maximum, "5e2");
 
@@ -644,6 +848,8 @@ void mergeClass::mergeScans() {
   ///  Merging azimuthal averages  ///
   if (verbose)
     std::cout << "\tMerging azimuthal average reference.\n";
+  azmReference.clear();
+  azmReference.resize(NradAzmBins, 0);
   for (int ir=0; ir<NradAzmBins; ir++) {
     norm = 0;
     for (auto sRitr : scanReferences) {

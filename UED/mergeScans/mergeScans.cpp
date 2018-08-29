@@ -164,9 +164,17 @@ int main(int argc, char* argv[]) {
 
 
   //cout<<"removing outliers"<<endl;
-  //merge.removeOutliers();
+  merge.removeOutliers();
 
   merge.mergeScans();
+  // Clean up NANVAL for saving and plotting
+  for (int itm=0; itm<merge.azimuthalAvg.size(); itm++) {
+    for (int ir=0; ir<50; ir++) {
+      if (itm==10) cout<<ir<<"  "<<merge.azimuthalAvg[itm][ir]<<endl; 
+    }
+  }
+  cout<<"now subtracting T0"<<endl;
+
 
   /////  Saving  /////
   if (merge.verbose) 
@@ -205,6 +213,7 @@ int main(int argc, char* argv[]) {
   for (int itm=0; itm<merge.azimuthalAvg.size(); itm++) {
     for (int ir=0; ir<merge.azimuthalAvg[itm].size(); ir++) {
       if (merge.azimuthalAvg[itm][ir] == NANVAL) merge.azimuthalAvg[itm][ir] = 0;
+      if (itm==10) cout<<ir<<"  "<<merge.azimuthalAvg[itm][ir]<<endl; 
     }
   }
 

@@ -71,6 +71,8 @@ class mergeClass : public parameterClass {
     string fileName = "mergedScans.txt";
 
     std::vector<double> azmReference;
+    std::vector<double> runLegRefMeans, runAzmRefMeans;
+    std::vector<double> runLegRefSTD, runAzmRefSTD;
     std::vector< std::vector<double> > azimuthalAvg;
     std::vector< std::vector<double> > legReference;
     std::vector< std::vector< std::vector<double> > > legendres;
