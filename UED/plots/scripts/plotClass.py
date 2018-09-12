@@ -66,7 +66,7 @@ class plotCLASS:
 
 
   def print1d(self, fileNames, outputName, 
-      xRange=None, normalize=None, options=None):
+      xRange=None, normalize=None, scale=None, options=None):
 
     handles = []
     fig, ax = plt.subplots()
@@ -76,13 +76,22 @@ class plotCLASS:
       if xRange is not None:
         X = xRange[0] + X*(xRange[1] - xRange[0])/float(image.shape[0])
       if normalize is not None:
-        if normalize is "abs":
+        if normalize is "max":
+          if "normalize" in options:
+            image /= np.amax(image[options["normalize"][0]:options["normalize"][1]])
+          else:
+            print("in max", np.amax(image))
+            image /= np.amax(image)
+        elif normalize is "abs":
           image = np.abs(image)
         elif normalize is "0min":
           image -= np.amin(image)
         else:
           image -= np.mean(image[7:25])
           image /= max(image[7:20])
+      if scale is not None:
+        image *= scale[i]
+
       h, = ax.plot(X, image, color=self.colors[i], linestyle='-')
       handles.append(h)
 
@@ -146,9 +155,12 @@ class plotCLASS:
       scale=1, xRebin=None, yRebin=None, options=None):
 
     imageO,shape = self.importImage(fileName)
-    image = np.zeros((imageO.shape[0], 555/5), dtype=float)
-    for i in range(555/5):
-      image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
+    if "Diff" in fileName:
+      image = np.zeros((imageO.shape[0], 555/5), dtype=float)
+      for i in range(555/5):
+        image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
+    else :
+      image = imageO
     shape[0] = image.shape[0]
     shape[1] = image.shape[1]
     image *= scale
