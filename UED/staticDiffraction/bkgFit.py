@@ -21,7 +21,6 @@ if __name__ == '__main__':
 
   NdataBins = 50
   scaleSimBins = 1
-  NsimBins = NdataBins*scaleSimBins
 
   if args.QperPix:
     QperPix = args.QperPix
@@ -33,13 +32,13 @@ if __name__ == '__main__':
   screenDist = 4.
   beamCut    = 4
 
-  resultFolder = "/reg/neh/home5/khegazy/analysis/nitroBenzene/UED/qScale/results/"
+  resultFolder = "/reg/neh/home/khegazy/analysis/nitroBenzene/UED/qScale/results/"
   simFolder = "/reg/ued/ana/scratch/nitroBenzene/simulations/references/"
-  simExeFile = "/reg/neh/home5/khegazy/analysis/nitroBenzene/simulation/diffractionPattern/simulateRefPatterns.exe"
+  simExeFile = "/reg/neh/home/khegazy/analysis/nitrobenzene/simulation/diffractionPattern/simulateRefPatterns.exe"
 
   dataList = []
   #runs = ["20180701_0746", "20180629_1630"]#, "20180627_1551", "20180630_1925"]#, "20161102_LongScan1", "All"]
-  runs = ["20180629_1630", "20180627_1551", "20180630_1925", "20180701_0746"]#, "20161102_LongScan1", "All"]
+  runs = ["20180627_1551", "20180629_1630", "20180630_1925", "20180701_0746"]#, "20161102_LongScan1", "All"]
   #runs = ["20180627_1551", "20180630_1925"]#, "20161102_LongScan1", "All"]
   #runs = ["20180701_0746"]
   for rname in runs:
@@ -63,7 +62,8 @@ if __name__ == '__main__':
   ###  Find zero crossings  ###
   atmDiffFile, molDiffFile = getSimNames(simFolder, size, 
       maxQ, Iebeam, screenDist, elEnergy)
- 
+
+  print(atmDiffFile, molDiffFile)
   print("maxQ", maxQ)
   if not os.path.isfile(atmDiffFile):
     call([simExeFile,
@@ -84,6 +84,9 @@ if __name__ == '__main__':
   ################################
 
   for idt,data in enumerate(dataList):
+    figT, axT = plt.subplots()
+    axT.plot(data)
+    figT.savefig("test_"+str(idt)+".png")
     Q = np.arange(size)*maxQ/size
     diffXvals = np.zeros(zeroX.shape[0])
     res = np.zeros(zeroX.shape[0])
@@ -122,6 +125,7 @@ if __name__ == '__main__':
     nullst = zeroX
     null = res
     print("start fit")
+    print(null, nullst, Q)
     expfit = fit_scatt_bkg(null, nullst, Q)
     print("end fit")
 
@@ -164,4 +168,7 @@ if __name__ == '__main__':
     plt.grid()
     plt.xticks(range(0, int(maxQ), 1))
     plt.savefig("plots/compareFit-" + runs[idt] + ".png")
+
+    sMolexp.tofile("./results/staticDiffraction_" + runs[idt] + "[" + str(size) + "].dat");
+    sMolsim.tofile("./results/staticDiffraction_Sim_Bins[" + str(size) + "].dat");
 

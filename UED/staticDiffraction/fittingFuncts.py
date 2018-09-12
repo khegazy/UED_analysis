@@ -1,10 +1,11 @@
 import numpy as np
 
 def getSimNames(folderName, Nbins, maxQ, Iebeam, screenDist, elEnergy):
-  fileNameSuffix = "_Bins-" + str(Nbins) + "_Qmax-{:.6f}".format(maxQ)\
-                    + "_Ieb-{:.6f}".format(Iebeam)\
-                    + "_scrnD-{:.6f}".format(screenDist)\
-                    + "_elE-{:.6f}".format(elEnergy) + ".dat"
+  fileNameSuffix = "_Qmax-{:.6f}".format(maxQ)\
+      + "_Ieb-{:.6f}".format(Iebeam)\
+      + "_scrnD-{:.6f}".format(screenDist)\
+      + "_elE-{:.6f}".format(elEnergy)\
+      + "_Bins[" + str(Nbins) + "].dat";
 
   atmDiffFile = folderName + "/nitrobenzene_atmDiffractionPatternLineOut"\
                   + fileNameSuffix
