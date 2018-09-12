@@ -80,11 +80,12 @@ int main(int argc, char* argv[]) {
   // Get sms norms
   vector<double> atmAzmDiff(params.NradAzmBins, 0.0);
   vector<double> sMsAzmNorm(params.NradAzmBins, 0.0);
-  string simFileNameSuffix = "_Bins-" + to_string(params.NradAzmBins)
-                      + "_Qmax-" + to_string(params.maxQazm)
-                      + "_Ieb-" + to_string(params.Iebeam)
-                      + "_scrnD-" + to_string(params.screenDist)
-                      + "_elE-" + to_string(params.elEnergy) + ".dat";
+  string simFileNameSuffix = 
+      "_Qmax-" + to_string(params.maxQazm)
+      + "_Ieb-" + to_string(params.Iebeam)
+      + "_scrnD-" + to_string(params.screenDist)
+      + "_elE-" + to_string(params.elEnergy)
+      + "_Bins[" + to_string(params.NradAzmBins) + "].dat";
 
   save::importDat<double>(atmAzmDiff, params.simReferenceDir + "/"
               + params.molName + "_atmDiffractionPatternLineOut"
