@@ -28,11 +28,12 @@ void mergeClass::initializeVariables() {
   /////  Simulation results  /////
   atmLegDiff.resize(NradLegBins, 0.0);
   molLegDiff.resize(NradLegBins, 0.0);
-  simFileNameSuffix = "_Bins-" + to_string(NradLegBins) 
-                      + "_Qmax-" + to_string(maxQleg)
-                      + "_Ieb-" + to_string(Iebeam) 
-                      + "_scrnD-" + to_string(screenDist) 
-                      + "_elE-" + to_string(elEnergy) + ".dat";
+  simFileNameSuffix = 
+      "_Qmax-" + to_string(maxQleg)
+      + "_Ieb-" + to_string(Iebeam) 
+      + "_scrnD-" + to_string(screenDist) 
+      + "_elE-" + to_string(elEnergy) 
+      + "_Bins[" + to_string(NradLegBins) + "].dat"; 
   save::importDat<double>(atmLegDiff, simReferenceDir + "/" 
               + molName + "_atmDiffractionPatternLineOut"
               + simFileNameSuffix);
@@ -42,11 +43,12 @@ void mergeClass::initializeVariables() {
 
   atmAzmDiff.resize(NradAzmBins, 0.0);
   molAzmDiff.resize(NradAzmBins, 0.0);
-  simFileNameSuffix = "_Bins-" + to_string(NradAzmBins) 
-                      + "_Qmax-" + to_string(maxQazm)
-                      + "_Ieb-" + to_string(Iebeam) 
-                      + "_scrnD-" + to_string(screenDist) 
-                      + "_elE-" + to_string(elEnergy) + ".dat";
+  simFileNameSuffix = 
+      "_Qmax-" + to_string(maxQazm)
+      + "_Ieb-" + to_string(Iebeam) 
+      + "_scrnD-" + to_string(screenDist) 
+      + "_elE-" + to_string(elEnergy) 
+      + "_Bins[" + to_string(NradAzmBins) + "].dat";
   save::importDat<double>(atmAzmDiff, simReferenceDir + "/" 
               + molName + "_atmDiffractionPatternLineOut"
               + simFileNameSuffix);
@@ -409,6 +411,7 @@ void mergeClass::removeOutliers() {
     runAzmSTD[i].resize(NradAzmBins, 0);
   }
 
+  // End of initial NAN values from detector hole
   int legNANend = 0;
   int azmNANend = 0;
   for (auto i : scanLgndrs.begin()->second[0]) {
@@ -437,6 +440,7 @@ void mergeClass::removeOutliers() {
     std::cout << "\tBeginning removing outliers in reference images.\n";
   for (int k=0; k<3; k++) {
     /////  Calculate mean  /////
+    /*
     // Legendre Reference
     if (verbose && (k==0)) 
       std::cout << "\tCalculating legendre mean.\n";
@@ -457,6 +461,7 @@ void mergeClass::removeOutliers() {
         runLegRefMeans[ir] = 0;
       }
     }
+    */
 
     // Azimuthal Reference
     if (verbose && (k==0)) 
@@ -480,6 +485,7 @@ void mergeClass::removeOutliers() {
     }
 
     /////  Calculate Standard Deviation  /////
+    /*
     // Legendre Reference
     if (verbose && (k==0)) 
       std::cout << "\tCalculating legendre std.\n";
@@ -502,6 +508,7 @@ void mergeClass::removeOutliers() {
         runLegRefSTD[ir] = 0;
       }
     }
+    */
 
     // Azimuthal Reference
     if (verbose && (k==0)) 
@@ -527,6 +534,7 @@ void mergeClass::removeOutliers() {
     }
 
     /////  Make Cut  /////
+    /*
     // Legendre Reference
     if (verbose && (k==0)) 
       std::cout << "\tMaking cuts on legendre.\n";
@@ -551,6 +559,7 @@ void mergeClass::removeOutliers() {
         }
       }
     }
+    */
 
     // Azimuthal Reference
     if (verbose && (k==0)) 
@@ -587,7 +596,7 @@ void mergeClass::removeOutliers() {
   std::vector<double> legNorms(NlegBins, 0);
   std::vector<double> azmNorms(NradAzmBins, 0);
   for (auto pItr : stagePosInds) {
-    for (int k=0; k<1; k++) {
+    for (int k=0; k<3; k++) {
       std::fill(legNorms.begin(), legNorms.end(), 0);
       std::fill(azmNorms.begin(), azmNorms.end(), 0);
       for (uint i=0; i<stagePosInds.size(); i++) {
@@ -598,6 +607,7 @@ void mergeClass::removeOutliers() {
       }
 
       /////  Mean calculation  /////
+      /*
       ///  Legendres  ///
       if (verbose && (k == 0) && (pItr.second == 0)) 
         std::cout << "\tCalculating legendre mean.\n";
@@ -615,6 +625,7 @@ void mergeClass::removeOutliers() {
       for (int i=0; i<NlegBins; i++) {
         runLegMeans[pItr.second][i] /= legNorms[i];
       }
+      */
 
       ///  Azimuthal  ///
       if (verbose && (k == 0) && (pItr.second == 0)) 
@@ -637,6 +648,7 @@ void mergeClass::removeOutliers() {
 
       /////  Standard deviation calculation  /////
 
+      /*
       ///  Legendres  ///
       if (verbose && (k == 0) && (pItr.second == 0)) 
         std::cout << "\tCalculating legendre std.\n";
@@ -647,20 +659,22 @@ void mergeClass::removeOutliers() {
               runLegSTD[pItr.second][i]
                   += std::pow((sLitr.second[pItr.second][i]
                           - runLegMeans[pItr.second][i]), 2);
-              /*
-                  += scanCounts[sLitr.first][pItr.second]
-                        *std::pow((sLitr.second[pItr.second][i]
-                          /scanCounts[sLitr.first][pItr.second]
-                          - runMeans[pItr.second][i]), 2);
-                          */
+              
+                  //+= scanCounts[sLitr.first][pItr.second]
+                  //      *std::pow((sLitr.second[pItr.second][i]
+                  //        /scanCounts[sLitr.first][pItr.second]
+                  //        - runMeans[pItr.second][i]), 2);
+                  //        
             }
           }
         }
       }
+    
 
       for (int i=0; i<NlegBins; i++) {
         runLegSTD[pItr.second][i] = std::sqrt(runLegSTD[pItr.second][i]/legNorms[i]);
       }
+      */
 
       ///  Azimuthal  ///
       if (verbose && (k == 0) && (pItr.second == 0)) 
@@ -688,8 +702,9 @@ void mergeClass::removeOutliers() {
       }
 
       /////  Make cuts  /////
+      /*
       ///  Legendres  ///
-      if (verbose && (k == 0) && (pItr.second == 0)) 
+      if (verbose && (k == 0) || (pItr.second == 0)) 
         std::cout << "\tMaking cuts on legendre images.\n";
       for (auto& sLitr : scanLgndrs) {
         int imageNoise = 0;
@@ -708,6 +723,7 @@ void mergeClass::removeOutliers() {
           scanCounts[sLitr.first][pItr.second] = 0;
         }
       }
+      */
 
 
       ///  Azimuthal  ///

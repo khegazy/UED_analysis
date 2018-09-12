@@ -71,24 +71,6 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  cout<<"here1"<<endl;
-  std::vector<double> reference;
-  std::vector<double> referenceCount;
-
-  int FFTsize = merge.NradLegBins*2 + merge.NautCpadding + 1;
-  //int FFTsize = (NdiffInds + NautCpadding)*2 + 1;
-  int FTsize = (int)(FFTsize/2) + 1;
-  int indHR =  merge.holeRat*merge.NradLegBins;
-  int outSize = FTsize*merge.rMaxAzmRat;
-
-
-  double* qSpace = (double*) fftw_malloc(sizeof(double)*FFTsize);
-  fftw_complex* rSpace =
-        (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*(int)((FFTsize/2) + 1));
-  fftw_plan fftB;
-  fftB = fftw_plan_dft_r2c_1d(FFTsize, qSpace, rSpace, FFTW_MEASURE);
-
-  cout<<"here2"<<endl;
   /////  Plotting variables  /////
   std::vector<PLOToptions> opts(5);
   std::vector<std::string> vals(5);
@@ -177,9 +159,21 @@ int main(int argc, char* argv[]) {
 
 
   /////  Saving  /////
+
+  // Clean up NANVAL for saving and plotting
+  for (int ir=0; ir<merge.azmReference.size(); ir++) {
+    if (merge.azmReference[ir] == NANVAL) merge.azmReference[ir] = 0;
+  }
+  for (int ilg=0; ilg<merge.legReference.size(); ilg++) {
+    for (int ir=0; ir<merge.legReference[ilg].size(); ir++) {
+      if (merge.legReference[ilg][ir] == NANVAL) merge.legReference[ilg][ir] = 0;
+    }
+  }
+
   if (merge.verbose) 
     std::cout << "INFO: saving merged references and before t0 subtraction.\n";
   // References
+  plt.print1d(merge.azmReference, "tesingRef");
   save::saveDat<double>(merge.azmReference,
       "./results/referenceAzm-" + runName +
       "[" + to_string(merge.NradAzmBins) + "].dat");
@@ -188,12 +182,6 @@ int main(int argc, char* argv[]) {
       "[" + to_string(merge.Nlegendres) + 
       "," + to_string(merge.NradLegBins) + "].dat");
 
-  // Raw diffraction images
-  save::saveDat<double>(merge.azimuthalAvg, 
-      merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "sMsAzmAvgDiffRaw["
-      + to_string(merge.azimuthalAvg.size()) + ","
-      + to_string(merge.azimuthalAvg[0].size()) + "].dat");
  
   /*
   if (scanSearch || merge.pltVerbose) {
@@ -213,7 +201,6 @@ int main(int argc, char* argv[]) {
   for (int itm=0; itm<merge.azimuthalAvg.size(); itm++) {
     for (int ir=0; ir<merge.azimuthalAvg[itm].size(); ir++) {
       if (merge.azimuthalAvg[itm][ir] == NANVAL) merge.azimuthalAvg[itm][ir] = 0;
-      if (itm==10) cout<<ir<<"  "<<merge.azimuthalAvg[itm][ir]<<endl; 
     }
   }
 
@@ -238,103 +225,6 @@ int main(int argc, char* argv[]) {
   }
 
 
-  /*
-  for (int ilg=0; ilg<merge.Nlegendres; ilg++) {
-    ///  Saving data  ///
-    cout<<"111"<<endl;
-    save::saveDat<double>(merge.legendres[ilg], 
-        merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "sMsL"
-        + to_string(ilg) + "Diff["
-        + to_string(merge.legendres[ilg].size()) + ","
-        + to_string(merge.legendres[ilg][0].size()) + "].dat");
-    cout<<"222"<<endl;
-    save::saveDat<double>(merge.legendres[ilg][merge.legendres[ilg].size()-1], 
-        merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "sMsFinalL"
-        + to_string(ilg) + "Diff["
-        + to_string(merge.legendres[ilg][0].size()) + "].dat");
-
-
-    cout<<"333"<<endl;
-    save::saveDat<double>(merge.smearedImg[ilg], 
-        merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "sMsL"
-        + to_string(ilg) + "DiffSmear["
-        + to_string(merge.smearSTD) + "["
-        + to_string(merge.smearedImg[ilg].size()) + ","
-        + to_string(merge.smearedImg[ilg][0].size()) + "].dat");
-
-    cout<<"444"<<endl;
-    save::saveDat<double>(merge.smearedImg[ilg][merge.stagePosInds.size()-1],
-        merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "sMsFinalL"
-        + to_string(ilg) + "DiffSmear"
-        + to_string(merge.smearSTD) + "["
-        + to_string(merge.smearedImg[ilg][0].size()) + "].dat");
-  }
-  */
-
-
-
-  cout<<"start autocorrelation"<<endl;
-
-  ///////////////////////////////////////
-  /////  Pair correlation function  /////
-  ///////////////////////////////////////
-  if (merge.verbose) {
-    std::cout << "Begin calculating pair correlation functions\n";
-  }
-
-  int padding = 500;
-  //std::vector<double> fftInp(2*params.NradAzmBins + 2*padding + 1);
-
-
-
-  /*
-  std::vector< std::vector<double> > pairCorr(smearedImg[0].size()), pairCorr1d;
-  std::vector<double> powerSpct(outSize);
-  for (int it=0; it<NtimeSteps; it++) {
-    pairCorr[it].resize(outSize);
-
-    std::vector<double> inpDiff(smearedImg[0][0].size()*2+1, 0);
-    int centI = (int)(inpDiff.size()/2);
-    int indHR =  holeRat*smearedImg[0][it].size();
-    for (int ir=0; ir<(int)smearedImg[0][it].size(); ir++) {
-      if (ir < indHR) {
-        inpDiff[centI+1+ir] = smearedImg[0][it][indHR]
-              *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
-        //inpDiff[centI+1+ir] = smearedImg[0][it][ir]
-        //      *pow(sin((PI/2)*((ir+1)/((double)(indHR+1)))), 2);
-        inpDiff[centI-1-ir] = inpDiff[centI+1+ir];
-      }
-      else {
-        inpDiff[centI+1+ir] = smearedImg[0][it][ir];
-        inpDiff[centI-1-ir] = smearedImg[0][it][ir];
-      }
-    }
-
-    pairCorr1d = tools::fft1dRtoC(inpDiff, rMaxRat, NautCpadding, 
-          padDecayRat, fftB, qSpace, rSpace, false);
-
-    // Retrieve result and save results
-    for (int ir=0; ir<outSize; ir++) {
-      pairCorr[it][ir] = pairCorr1d[0][ir]; 
-    }
-  }
-
-  // Saving pair correlation
-  save::saveDat<double>(pairCorr, "./plots/data/data_pairCorrDiffSmear"
-      + to_string(stdev) + "["
-      + to_string(pairCorr.size()) + ","
-      + to_string(pairCorr[0].size()) + "].dat");
-  save::saveDat<double>(pairCorr[pairCorr.size()-1], 
-      "./plots/data/data_pairCorrFinalDiffSmear" 
-      + to_string(stdev) + "["
-      + to_string(pairCorr[0].size()) + "].dat");
-  */
-
-
   /////////////////////////
   /////  Cleaning up  /////
   /////////////////////////
@@ -343,8 +233,5 @@ int main(int argc, char* argv[]) {
     std::cout << "Cleaning up" << endl;
   }
 
-  fftw_destroy_plan(fftB);
-  fftw_free(rSpace);
-  fftw_free(qSpace);
   return 1;
 }
