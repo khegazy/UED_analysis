@@ -16,12 +16,15 @@ int main(int argc, char* argv[]) {
 
   PLOTclass plt;
   parameterClass params("simulateReference");
+  params.NradSimBins = 450;
   uint Nbins = 2*params.NradSimBins - 1;
   int Nmols = 1;
   int index = 0;
   double maxQ = params.NradSimBins*params.QperPix;
   double seed = (double)clock();
   std::string fileName = params.radicalNames[params.molecule];
+  if (params.verbose)
+    std::cout << "INFO: Parsing command line input\n";
   if (argc > 1) {
     for (int iarg=1; iarg<argc; iarg+=2) {
       if (strcmp(argv[iarg],"-Nmols")==0) 
@@ -53,6 +56,8 @@ int main(int argc, char* argv[]) {
   //////////////////////////////////////////////////
 
   /////  Building molecular ensembles  /////
+  if (params.verbose)
+    std::cout << "INFO: Building molecular ensembles\n";
   std::vector<MOLENSEMBLEMCclass*> molMCs;
   for (auto& fileName : params.xyzFiles) {
     MOLENSEMBLEMCclass* molMC = new MOLENSEMBLEMCclass(seed, 
@@ -65,8 +70,10 @@ int main(int argc, char* argv[]) {
   }
 
   /////  Make diffraction patterns and lineouts  /////
-  cout<<"begin looping mc"<<endl;
+  if (params.verbose)
+    std::cout << "INFO: Looping over MCs to make lineouts\n";
   //ofstream outtxt("cppSim.txt");
+  std::vector<double> pairCorr;
   std::vector< std::vector<double> > curLineOuts;
   std::map< std::string, std::vector<double> > lineOuts;
   std::map< std::string, std::vector< std::vector<double> > > diffPatterns;
@@ -81,7 +88,7 @@ int main(int argc, char* argv[]) {
     
     curLineOuts.clear();
     curLineOuts = diffP.azimuthalAvg_uniform();
-    diffP.diffPatternCalc_uniform();
+    //diffP.diffPatternCalc_uniform();
 
     // fill diffraction patterns
     if (diffPatterns.size() == 0) {
@@ -125,6 +132,27 @@ int main(int argc, char* argv[]) {
         lineOuts["atmDiffractionPattern"][i] += curLineOuts[2][i];
       }
     }
+
+    if (params.simPairCorr) {
+      std::vector<double> pCorr = mc->simulatePairCorr(500, params.maxR, false, NULL);
+
+      if (!pairCorr.size()) {
+        pairCorr.resize(pCorr.size(), 0);
+      }
+      for (uint i=0; i<pCorr.size(); i++) {
+        pairCorr[i] += pCorr[i];
+      }
+    }
+    plt.print1d(pairCorr, "./plots/testInit");
+
+  }
+
+  /////  Compute sMs pattern  /////
+  lineOuts["sMsPattern"].resize(lineOuts["sPattern"].size(), 0);
+  for (uint i=0; i<lineOuts["sPattern"].size(); i++) {
+    lineOuts["sMsPattern"][i] = lineOuts["sPattern"][i]
+        *lineOuts["molDiffractionPattern"][i]
+        /lineOuts["atmDiffractionPattern"][i];
   }
 
   cout<<"SIZES: "<<curLineOuts[0].size()<<endl;
@@ -133,17 +161,20 @@ int main(int argc, char* argv[]) {
   /////  Plotting and Saving Results  /////
   /////////////////////////////////////////
 
+  cout<<"testing qmax: "<<maxQ<<"  "<<params.NradSimBins<<"  "<<params.QperPix<<endl;
   std::string prefix = params.simReferenceDir + "/" + params.molName + "_";
-  std::string suffixLO = "Bins-" + to_string(params.NradSimBins) 
-                        + "_Qmax-" + to_string(maxQ)
-                        + "_Ieb-" + to_string(params.Iebeam) 
-                        + "_scrnD-" + to_string(params.screenDist) 
-                        + "_elE-" + to_string(params.elEnergy);
-  std::string suffixDP = "Bins-" + to_string(Nbins) 
-                        + "_Qmax-" + to_string(maxQ)
-                        + "_Ieb-" + to_string(params.Iebeam) 
-                        + "_scrnD-" + to_string(params.screenDist) 
-                        + "_elE-" + to_string(params.elEnergy);
+  std::string suffixLO = 
+      "Qmax-" + to_string(maxQ)
+      + "_Ieb-" + to_string(params.Iebeam) 
+      + "_scrnD-" + to_string(params.screenDist) 
+      + "_elE-" + to_string(params.elEnergy)
+      + "_Bins[" + to_string(params.NradSimBins) + "]"; 
+  std::string suffixDP = 
+      "Qmax-" + to_string(maxQ)
+      + "_Ieb-" + to_string(params.Iebeam) 
+      + "_scrnD-" + to_string(params.screenDist) 
+      + "_elE-" + to_string(params.elEnergy)
+      + "_Bins[" + to_string(Nbins) + "]";
 
   /////  Plotting  /////
   if (params.simPltVerbose) {
@@ -174,17 +205,40 @@ int main(int argc, char* argv[]) {
 
 
   /////  Saving  /////
+
+  save::saveDat<double>(lineOuts["diffractionPattern"], 
+      prefix + "diffractionPatternLineOut_" + suffixLO + ".dat");
+  save::saveDat<double>(lineOuts["molDiffractionPattern"],
+      prefix + "molDiffractionPatternLineOut_" + suffixLO + ".dat");
+  save::saveDat<double>(lineOuts["atmDiffractionPattern"],
+      prefix + "atmDiffractionPatternLineOut_" + suffixLO + ".dat");
+  save::saveDat<double>(lineOuts["sPattern"],
+      prefix + "sPatternLineOut_" + suffixLO + ".dat");
+  save::saveDat<double>(lineOuts["sMsPattern"],
+      prefix + "sMsPatternLineOut_" + suffixLO + ".dat");
+  save::saveDat<double>(pairCorr,
+      prefix + "pairCorr_Bins[" + to_string(pairCorr.size()) + "].dat");
+
   /*
   FILE* otpDp = fopen((prefix + "diffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
   FILE* otpAp = fopen((prefix + "atmDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
   FILE* otpMp = fopen((prefix + "molDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
   FILE* otpSp = fopen((prefix + "sPattern_" + suffixDP + ".dat").c_str(), "wb");
   */
+
+  /*
   cout<<"prefix: "<<prefix<<endl;
   FILE* otpDpLo = fopen((prefix + "diffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
   FILE* otpMpLo = fopen((prefix + "molDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
   FILE* otpApLo = fopen((prefix + "atmDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
   FILE* otpSpLo = fopen((prefix + "sPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
+  FILE* otpPcor;
+  if (params.simPairCorr) {
+    plt.print1d(pairCorr, "./plots/testFin");
+    otpPcor = fopen((prefix + "pairCorr_Bins[" + to_string(pairCorr.size()) + "].dat").c_str(), "wb");
+  }
+  */
+
 
   cout<<"writing to files"<<endl;
   /*
@@ -200,6 +254,8 @@ int main(int argc, char* argv[]) {
   }
   */
 
+
+  /*
   cout<<"closing files"<<endl;
   fwrite(&lineOuts["diffractionPattern"][0], sizeof(double), 
       lineOuts["diffractionPattern"].size(), otpDpLo);
@@ -212,7 +268,12 @@ int main(int argc, char* argv[]) {
   cout<<"closing files3"<<endl;
   fwrite(&lineOuts["sPattern"][0], sizeof(double), 
       lineOuts["sPattern"].size(), otpSpLo);
+  if (params.simPairCorr) {
+    fwrite(&pairCorr[0], sizeof(double), 
+        pairCorr.size(), otpPcor);
+  }
   cout<<"closing files4"<<endl;
+  */
 
 
   //////////////////////
@@ -231,11 +292,16 @@ int main(int argc, char* argv[]) {
   fclose(otpMp);
   fclose(otpSp);
   */
+  /*
   fclose(otpDpLo);
   fclose(otpApLo);
   fclose(otpMpLo);
   fclose(otpSpLo);
+  if (params.simPairCorr) {
+    fclose(otpPcor);
+  }
   cout<<"done"<<endl;
+  */
 
 
   return 1;
