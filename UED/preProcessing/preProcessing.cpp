@@ -367,6 +367,7 @@ int main(int argc, char* argv[]) {
     subFolder = "BKG";
   }
 
+  subFolder = "";
   rFileName =  params.preProcOutputDir + "/" + subFolder + "/"
   //rFileName =  "testing/" + subFolder + "/"
         + "Run-" + curRun + "_"
@@ -637,7 +638,7 @@ int main(int argc, char* argv[]) {
     if (params.pltVerbose) {
       //plt.printRC(outlierImage, "outlierSTD_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
       save::saveDat<double>(outlierImage, 
-            "plots/data/outlierSTD-" + runName
+            "./results/outlierSTD-" + runName
                 + "-" + to_string(imgINFO[ifl].scan)
                 + "-" + to_string(imgINFO[ifl].stagePos) + ".dat");
     }
@@ -659,7 +660,7 @@ int main(int argc, char* argv[]) {
     if (params.pltVerbose) {
       //plt.printRC(outlierBkg, "outlierBKG_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
       save::saveDat<double>(outlierBkg, 
-            "plots/data/outlierBackground-" + runName
+            "./results/outlierBackground-" + runName
                 + "-" + to_string(imgINFO[ifl].scan)
                 + "-" + to_string(imgINFO[ifl].stagePos) + ".dat");
       for (int ir=0; ir<imgSubBkg.size(); ir ++) {
@@ -670,7 +671,7 @@ int main(int argc, char* argv[]) {
       }
 
       save::saveDat<double>(imgSubBkg, 
-            "plots/data/image-" + runName
+            "./results/image-" + runName
                 + "-" + to_string(imgINFO[ifl].scan)
                 + "-" + to_string(imgINFO[ifl].stagePos) 
                 + "[" + to_string(imgSubBkg.size())
@@ -699,6 +700,11 @@ int main(int argc, char* argv[]) {
       readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
                         0.94*params.NradAzmBins, params.NradAzmBins,
                         params.buffer);
+
+      // Only use this when interested in reference images
+      //    background fit fails when subtracting readout
+      //    noise on the phosphor screen. Comment previous line.
+      //readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
     }
 
 
