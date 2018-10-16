@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
       + "_elE-" + to_string(params.elEnergy) 
       + "_Bins[" + to_string(params.NradAzmBins) + "].dat";
 
-  save::importDat<double>(atmAzmDiff, params.simReferenceDir + "/"
+  save::importDat<double>(atmAzmDiff, params.simOutputDir + "/"
               + params.molName + "_atmDiffractionPatternLineOut"
               + simFileNameSuffix);
 
