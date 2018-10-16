@@ -6,8 +6,8 @@ LINKLIBS=$(shell root-config --libs) -L/reg/g/psdm/sw/external/fftw/3.3.4/x86_64
 #CFLAGS=-I/reg/g/psdm/sw/external/root/5.30.06-python2.7/x86_64-rhel5-gcc41-opt/include/root  -I/reg/g/psdm/sw/external/fftw/3.3.4/x86_64-rhel5-gcc44-opt/include
 #LINKLIBS=-L/reg/g/psdm/sw/external/root/5.30.06-python2.7/x86_64-rhel5-gcc41-opt/lib -L/reg/g/psdm/sw/external/fftw/3.3.4/x86_64-rhel5-gcc44-opt/lib -lfftw3 #-L${ROOTSYS}/lib -lHist -lMatrix -lTree -lNet -lProofPlayer -lProof -lRIO -lThread -lMathCore -lPhysics
 
-DEP_HPP_FILES := $(wildcard $(BASEDIR)/*.h) ../parameters.h  
-DEP_CPP_FILES := $(wildcard $(BASEDIR)/*.cpp) ../parameters.cxx
+DEP_HPP_FILES := $(wildcard $(BASEDIR)/*.h) ../../parameters.h ../analysis.h 
+DEP_CPP_FILES := $(wildcard $(BASEDIR)/*.cpp) ../../parameters.cxx
 DEPS := $(DEP_HPP_FILES) $(DEP_CPP_FILES)
 #CPP_FILES := $(filter-out plotFunctions.cpp,$(ACPP_FILES))
 CPP_FILES := $(wildcard *.cpp)
