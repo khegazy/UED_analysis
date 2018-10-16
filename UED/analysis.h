@@ -65,6 +65,7 @@ using namespace std;
    vector<vector<double> > *imgSubBkg;
    vector<double>  *legCoeffs;
    vector<double>  *azmAvg;
+   vector<double>  *filtAzmAvg;
 
    // List of branches
    TBranch        *b_run;   //!
@@ -85,6 +86,7 @@ using namespace std;
    TBranch        *b_imgSubBkg;   //!
    TBranch        *b_legCoeffs;   //!
    TBranch        *b_azmAvg;   //!
+   TBranch        *b_filtAzmAvg;   //!
 
 
 
@@ -165,6 +167,7 @@ void analysisClass::initialize(string fileList, string treeName) {
    fChain->SetBranchAddress("imgSubBkg", &imgSubBkg, &b_imgSubBkg);
    fChain->SetBranchAddress("legCoeffs", &legCoeffs, &b_legCoeffs);
    fChain->SetBranchAddress("azmAvg", &azmAvg, &b_azmAvg);
+   fChain->SetBranchAddress("filtAzmAvg", &filtAzmAvg, &b_filtAzmAvg);
 
 }
 
