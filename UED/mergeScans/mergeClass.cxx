@@ -34,10 +34,10 @@ void mergeClass::initializeVariables() {
       + "_scrnD-" + to_string(screenDist) 
       + "_elE-" + to_string(elEnergy) 
       + "_Bins[" + to_string(NradLegBins) + "].dat"; 
-  save::importDat<double>(atmLegDiff, simReferenceDir + "/" 
+  save::importDat<double>(atmLegDiff, simOutputDir + "/" 
               + molName + "_atmDiffractionPatternLineOut"
               + simFileNameSuffix);
-  save::importDat<double>(molLegDiff, simReferenceDir + "/" 
+  save::importDat<double>(molLegDiff, simOutputDir + "/" 
               + molName + "_molDiffractionPatternLineOut"
               + simFileNameSuffix);
 
@@ -49,16 +49,23 @@ void mergeClass::initializeVariables() {
       + "_scrnD-" + to_string(screenDist) 
       + "_elE-" + to_string(elEnergy) 
       + "_Bins[" + to_string(NradAzmBins) + "].dat";
-  save::importDat<double>(atmAzmDiff, simReferenceDir + "/" 
+  save::importDat<double>(atmAzmDiff, simOutputDir + "/" 
               + molName + "_atmDiffractionPatternLineOut"
               + simFileNameSuffix);
-  save::importDat<double>(molAzmDiff, simReferenceDir + "/" 
+  save::importDat<double>(molAzmDiff, simOutputDir + "/" 
               + molName + "_molDiffractionPatternLineOut"
               + simFileNameSuffix);
 
 
-  plt->print1d(atmAzmDiff, "TestingAzmAtm");
   // Calculate normalization coefficients for modified molecular scattering
+  Qazm.resize(NradAzmBins);
+  for (int iq=0; iq<NradAzmBins; iq++) {
+    Qazm[iq] = maxQazm*(iq + 0.5)/NradAzmBins;
+  }
+  Qleg.resize(NradLegBins);
+  for (int iq=0; iq<NradLegBins; iq++) {
+    Qleg[iq] = maxQleg*(iq + 0.5)/NradLegBins;
+  }
   calculateSMS();
 
   // Reference
@@ -68,19 +75,12 @@ void mergeClass::initializeVariables() {
     v.resize(NradLegBins, 0);
   }
 
-  /*
-  if (subtractT0) {
-    save::importDat(referenceAzm, 
-        "staticDiffraction/results/references-" 
-        + runName + ".dat");
-  }
-  */
-
 
   // Output files and location
   fileName = "mergedScans.txt";
 
   legendres.resize(Nlegendres);
+  legendresMs.resize(Nlegendres);
 }
 
 
@@ -92,13 +92,12 @@ void mergeClass::calculateSMS() {
 
   sMsLegNorm.resize(NradLegBins, 0.0);
   for (int ir=0; ir<NradLegBins; ir++) {
-    sMsLegNorm[ir] = (maxQleg*(ir+0.5)/NradLegBins)/(atmLegDiff[ir]);
+    sMsLegNorm[ir] = Qleg[ir]/(atmLegDiff[ir]);
   }
 
   sMsAzmNorm.resize(NradAzmBins, 0.0);
   for (int ir=0; ir<NradAzmBins; ir++) {
-    sMsAzmNorm[ir] = (maxQazm*(ir+0.5)/NradAzmBins)
-                        /(atmAzmDiff[ir]);
+    sMsAzmNorm[ir] = Qazm[ir]/(atmAzmDiff[ir]);
   }
 }
 
@@ -120,7 +119,7 @@ void mergeClass::compareSimulations(std::vector<std::string> radicals) {
 
       // Import data
       refLineOut[name].resize(NradLegBins, 0);
-      save::importDat(refLineOut[name], simReferenceDir + "/" 
+      save::importDat(refLineOut[name], simOutputDir + "/" 
                         + name + "_molDiffractionPatternLineOut"
                         + simFileNameSuffix); 
       
@@ -199,7 +198,12 @@ void mergeClass::addReference(int scan, int stagePos,
   scanReferences[scan][stagePos].imgNorm = imgNorm;
   scanReferences[scan][stagePos].azmRef.resize(NradAzmBins, 0);
   for (int i=0; i<NradAzmBins; i++) {
-    scanReferences[scan][stagePos].azmRef[i] = (*azmAvg)[i]/imgNorm;
+    if ((*azmAvg)[i] != NANVAL) {
+      scanReferences[scan][stagePos].azmRef[i] = (*azmAvg)[i]/imgNorm;
+    }
+    else {
+      scanReferences[scan][stagePos].azmRef[i] = NANVAL;
+    }
   }
 
   scanReferences[scan][stagePos].legRef.resize(NlegBins, 0);
@@ -892,18 +896,25 @@ void mergeClass::mergeScans() {
   // Initialize variables
   auto pItr = stagePosInds.begin();
   legendres.clear();
+  legendresMs.clear();
   legendres.resize(Nlegendres);
+  legendresMs.resize(Nlegendres);
   for (int ilg=0; ilg<Nlegendres; ilg++) {
     legendres[ilg].resize(stagePosInds.size());
+    legendresMs[ilg].resize(stagePosInds.size());
     for (uint it=0; it<stagePosInds.size(); it++) {
       legendres[ilg][it].resize(NradLegBins, 0);
+      legendresMs[ilg][it].resize(NradLegBins, 0);
     }
   }
 
   azimuthalAvg.clear();
+  azimuthalsMs.clear();
   azimuthalAvg.resize(stagePosInds.size());
+  azimuthalsMs.resize(stagePosInds.size());
   for (uint it=0; it<stagePosInds.size(); it++) {
     azimuthalAvg[it].resize(NradAzmBins, 0);
+    azimuthalsMs[it].resize(NradAzmBins, 0);
   }
 
   //  Merging loop
@@ -955,11 +966,11 @@ void mergeClass::mergeScans() {
 }
 
 
-void mergeClass::subtractT0andNormalize() {
+void mergeClass::subtractT0() {
 
   for (int ilg=0; ilg<Nlegendres; ilg++) {
-    // Mean/t0 subtraction and normalizing by atomic scattering
-    if (!subtractT0) {
+    // Subtract reference or time early from legendres
+    if (!subtractReference) {
       // Raw data
       std::fill(legReference[ilg].begin(), legReference[ilg].end(), 0.0);
       std::vector<int> count(NradLegBins, 0);
@@ -983,33 +994,14 @@ void mergeClass::subtractT0andNormalize() {
     for (int ir=0; ir<NradLegBins; ir++) {
       for (uint tm=0; tm<legendres[ilg].size(); tm++) {
         if (legendres[ilg][tm][ir] != NANVAL) {
-          legendres[ilg][tm][ir] -= legReference[ilg][ir];
-          //legendres[ilg][tm][ir] *= sMsLegNorm[ir];
+          legendres[ilg][tm][ir]  -= legReference[ilg][ir];
         }
       }
     }
-
-    ///  Saving data  ///
-    /*
-    save::saveDat<double>(legendres[ilg], "./plots/data/data_sMsL"
-        + to_string(ilg) + "Diff["
-        + to_string(legendres[ilg].size()) + ","
-        + to_string(legendres[ilg][0].size()) + "].dat");
-    save::saveDat<double>(legendres[ilg][legendres[ilg].size()-1], "./plots/data/data_sMsFinalL"
-        + to_string(ilg) + "Diff["
-        + to_string(legendres[ilg][0].size()) + "].dat");
-
-
-    // Save raw unpumped data to fit background
-    if (ilg == 0) {
-      save::saveDat<double>(unPumped, "./qScale/results/unPumpedDiffractionL0["
-          + to_string(unPumped.size()) + "].dat");
-      plt.print1d(unPumped, "unPumpedRaw");
-    }
-    */
   }
 
-  if (!subtractT0) {
+  // Subtract reference or time early from azimuthal average
+  if (!subtractReference) {
     std::vector<int> count(NradAzmBins, 0);
     count.resize(NradAzmBins,0);
     std::fill(azmReference.begin(), azmReference.end(), 0);
@@ -1035,7 +1027,6 @@ void mergeClass::subtractT0andNormalize() {
     for (int tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
         azimuthalAvg[tm][ir] -= azmReference[ir];
-        //azimuthalAvg[tm][ir] *= sMsAzmNorm[ir];
       }
     }
   }
@@ -1043,7 +1034,33 @@ void mergeClass::subtractT0andNormalize() {
 }
 
 
-void mergeClass::smearTime() {
+
+void mergeClass::normalize() {
+
+  /////  Normalizing legendres  /////
+  for (int ilg=0; ilg<Nlegendres; ilg++) {
+    for (int ir=0; ir<NradLegBins; ir++) {
+      for (uint tm=0; tm<legendres[ilg].size(); tm++) {
+        if (legendres[ilg][tm][ir] != NANVAL) {
+          legendresMs[ilg][tm][ir] = legendres[ilg][tm][ir]*sMsLegNorm[ir];
+        }
+      }
+    }
+  }
+
+  /////  Normalizing azimuthal average  /////
+  for (int ir=0; ir<NradAzmBins; ir++) {
+    for (int tm=0; tm<stagePosInds.size(); tm++) {
+      if (azimuthalAvg[tm][ir] != NANVAL) {
+        azimuthalsMs[tm][ir] = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
+      }
+    }
+  }
+
+}
+
+
+void mergeClass::smearTimeGaussian() {
   if (verbose) {
     std::cout << "Begin smearing legendres in time\n";
   }
@@ -1117,11 +1134,54 @@ void mergeClass::smearTime() {
 }
 
 
+/*
+void mergeClass::smearTimeFFT() {
+  /////  Rebinning into smallest bins  /////
+
+  // Find smallest difference
+  double minDist = 1000;
+  for (int it=0; it<NtimeBins-1; it++) {
+    if (timeDelays[it+1] - timeDelays[it] < minDist) {
+      minDist = timeDelays[it+1] - timeDelays[it];
+    }
+  }
+
+  double totalTime = timeDelays[NtimeBins] - timeDelays[0];
+  int NfineTimeBins = totalTime/minDist;
+  std::vector<double> fineTimeBins(NfineTimeBins);
+  for (int it=0; it<NfineTimeBins; it++) {
+    fineTimeBins[it] = it*minDist;
+  }
+
+  /////  Fourier Transform  /////
+  for (int iq=0; iq<NradAzmBins; iq++) {
+    for (int it=0; it<NfineTimeBins; it++) {
+      tSpace[it] = azimuthalAvg[it][iq];
+    }
 
 
 
 
 
+
+
+    smearedImg[ilg].resize(stagePosInds.size());
+    for (uint ir=0; ir<stagePosInds.size(); ir++) {
+      smearedImg[ilg][ir].resize(NradLegBins, 0);
+    }
+    for (int ir=0; ir<NradLegBins; ir++) {
+      for (int tm=0; tm<(int)stagePosInds.size(); tm++) {
+        sum = 0;
+        for (int tmm=0; tmm<(int)stagePosInds.size(); tmm++) {
+          smearedImg[ilg][tm][ir] += legendres[ilg][tmm][ir]
+                                    *std::exp(-1*std::pow(timeDelays[tm] - timeDelays[tmm], 2)/(2*std::pow(smearSTD, 2)));
+          sum += exp(-1*std::pow(timeDelays[tm] - timeDelays[tmm], 2)/(2*std::pow(smearSTD, 2)));
+        }
+        smearedImg[ilg][tm][ir] /= sum;
+      }
+    }
+
+*/
 
 
 

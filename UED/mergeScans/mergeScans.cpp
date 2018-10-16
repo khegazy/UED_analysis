@@ -121,6 +121,13 @@ int main(int argc, char* argv[]) {
 
     if (std::find(merge.badScans.begin(), merge.badScans.end(), scan) 
           != merge.badScans.end()) continue;
+    auto badImgItr = merge.badImages.find(scan);
+    if (badImgItr != merge.badImages.end()) {
+      if (std::find(badImgItr->second.begin(), badImgItr->second.end(), stagePos) 
+            != badImgItr->second.end()) {
+        continue;
+      }
+    }
 
     merge.addLabTimeParameter(timeStamp, scan, stagePos, imgNorm);
 
@@ -128,12 +135,24 @@ int main(int argc, char* argv[]) {
     if (imgIsRef) {
       if (merge.verbose) std::cout << "INFO: Adding reference image.\n";
 
-      merge.addReference(scan, stagePos, azmAvg, legCoeffs, imgNorm);
+      merge.addReference(scan, stagePos, filtAzmAvg, legCoeffs, 1);
+      //merge.addReference(scan, stagePos, azmAvg, legCoeffs, imgNorm);
       continue;
     }
 
     ///  Insert entries to respective maps  ///
-    merge.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
+    
+    bool skip = false;
+    for (int iq=0; iq<100; iq++) {
+      if (fabs((*filtAzmAvg)[iq]) > 0.1) {
+        skip = true;
+        break;
+      }
+    }
+    if (true || !skip) {
+      merge.addEntry(scan, stagePos, filtAzmAvg, legCoeffs, 1);
+    }
+    //merge.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
 
   }
 
@@ -187,12 +206,13 @@ int main(int argc, char* argv[]) {
   if (scanSearch || merge.pltVerbose) {
     plt.printRC(merge.azimuthalAvg, 
         "data-"
-        + runName + "-" + prefix + "sMsAzmAvgDiffRaw", maximum, "1e-18");
+        + runName + "-" + prefix + "azmAvgDiffRaw", maximum, "1e-18");
   }
   */
   
 
-  merge.subtractT0andNormalize();
+  merge.subtractT0();
+  merge.normalize();
 
   //merge.smearTime();
 
@@ -208,7 +228,17 @@ int main(int argc, char* argv[]) {
   /////  Saving and plotting  /////
   if (merge.verbose) 
     std::cout << "INFO: saving merged references and before t0 subtraction.\n";
+
   save::saveDat<double>(merge.azimuthalAvg, 
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "azmAvgDiff["
+      + to_string(merge.azimuthalAvg.size()) + ","
+      + to_string(merge.azimuthalAvg[0].size()) + "].dat");
+  plt.printRC(merge.azimuthalAvg, 
+      "./plots/data-"
+      + runName + "-" + prefix + "azmAvgDiff", opts, vals);
+
+  save::saveDat<double>(merge.azimuthalsMs, 
       merge.mergeScansOutputDir + "data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff["
       + to_string(merge.azimuthalAvg.size()) + ","
@@ -217,11 +247,12 @@ int main(int argc, char* argv[]) {
       "./plots/data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
 
+
   if (scanSearch) {
-    cout<<"plotting to "<<merge.mergeScansOutputDir + "/plots/data-"+ runName + "-" + prefix + "sMsAzmAvgDiff";
+    cout<<"plotting to "<<merge.mergeScansOutputDir + "/plots/data-"+ runName + "-" + prefix + "azmAvgDiff";
     plt.printRC(merge.azimuthalAvg, 
         merge.mergeScansOutputDir + "/plots/data-"
-        + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
+        + runName + "-" + prefix + "azmAvgDiff", opts, vals);
   }
 
 

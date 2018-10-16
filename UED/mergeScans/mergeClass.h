@@ -37,6 +37,8 @@ class mergeClass : public parameterClass {
     std::vector<double> atmLegDiff, atmAzmDiff;
     std::vector<double> molLegDiff, molAzmDiff;
 
+    std::vector<double> Qazm;
+    std::vector<double> Qleg;
     std::vector<double> sMsLegNorm;
     std::vector<double> sMsAzmNorm;
 
@@ -73,9 +75,9 @@ class mergeClass : public parameterClass {
     std::vector<double> azmReference;
     std::vector<double> runLegRefMeans, runAzmRefMeans;
     std::vector<double> runLegRefSTD, runAzmRefSTD;
-    std::vector< std::vector<double> > azimuthalAvg;
+    std::vector< std::vector<double> > azimuthalAvg, azimuthalsMs;
     std::vector< std::vector<double> > legReference;
-    std::vector< std::vector< std::vector<double> > > legendres;
+    std::vector< std::vector< std::vector<double> > > legendres, legendresMs;
     std::vector< std::vector< std::vector<double> > > smearedImg;
     std::map< int32_t, int > stagePosInds;
     std::map< int, std::vector<double> > scanCounts;
@@ -113,8 +115,9 @@ class mergeClass : public parameterClass {
     void removeLabTimeOutliers();
     void removeOutliers();
     void mergeScans();
-    void subtractT0andNormalize();
-    void smearTime();
+    void subtractT0();
+    void normalize();
+    void smearTimeGaussian();
 
 
     /*
