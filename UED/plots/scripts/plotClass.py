@@ -5,12 +5,14 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.animation as animation
 from matplotlib.lines import Line2D
+import scipy.ndimage.filters as filters
+import scipy.interpolate as interpolate
 
 class plotCLASS: 
 
   def __init__(self):
     self.NANVAL = 1.234567e-10
-    self.colors = ['k', 'b', 'r', 'g', 'c', 'y']
+    self.colors = ['k', 'b', 'r', 'g', 'c', 'y', 'm', 'orangered', 'navy']
 
   def getShape(self, fileName):
     shape = []
@@ -106,7 +108,7 @@ class plotCLASS:
 
 
   def printLineOut(self, fileName, axis, inds, outputName, 
-      X=None, xRange=None, options=None):
+      X=None, xRange=None, samePlot=True, options=None):
 
     image,shape = self.importImage(fileName)
     print(image.shape)
@@ -125,6 +127,10 @@ class plotCLASS:
     fig, ax = plt.subplots()
     for i,ind in enumerate(inds):
 
+      if not samePlot:
+        plt.close()
+        fig, ax = plt.subplots()
+
       print("ind",ind)
       if axis is 0:
         inp = np.reshape(image[ind,:], (-1))
@@ -134,17 +140,31 @@ class plotCLASS:
         print("ERROR: Does not support axis = {}".format(axis))
         sys.exit(0)
 
-      print("SHAOE", X.shape, inp.shape)
-      h, = ax.plot(X, inp, color=self.colors[i], linestyle='-')
-      handles.append(h)
+      if options is not None:
+        if "Qscale" in options:
+          inp *= options["Qscale"]
+        if "smooth" in options:
+          inp = filters.gaussian_filter1d(inp, options["smooth"])
 
-    ax.set_xlim(X[0], X[-1])
+      if samePlot:
+        print("color", self.colors[i])
+        print("shapes", X.shape, inp.shape)
+        h, = ax.plot(X, inp, color=self.colors[i], linestyle='-')
+        handles.append(h)
+      else:
+        h, = ax.plot(X, inp, linestyle='-')
+        ax.set_xlim(X[0], X[-1])
+        if options is not None:
+          fig, ax = self.beautify(fig, ax, options, handles)
+        fig.savefig(outputName + "_" + str(ind) + ".png")
 
+    if samePlot:
+      ax.set_xlim(X[0], X[-1])
 
-    if options is not None:
-      fig, ax = self.beautify(fig, ax, options, handles)
-    fig.savefig(outputName + ".png")
-    plt.close()
+      if options is not None:
+        fig, ax = self.beautify(fig, ax, options, handles)
+      fig.savefig(outputName + ".png")
+      plt.close()
 
 
 
@@ -210,11 +230,23 @@ class plotCLASS:
           print("VMM ",vMin, vMax)
           cNorm = colors.LogNorm(vMin, vMax)
 
+      if "interpolate" in options:
+        print("shapes", X.shape, Y.shape, image.shape)
+        print(X[0,0], X[0,-1])
+        tck = interpolate.bisplrep(X[:,:-1], Y[:,:-1], image.transpose(), s=0.01)
+        X = np.linspace(X[0,0], X[0,-1], options["interpolate"][0])
+        Y = np.linspace(Y[0,0], Y[-1,0], options["interpolate"][1])
+        X,Y = np.meshgrid(X,Y)
+        print("shapes2 ",X.shape, Y.shape)
+        print(X[0,:], Y[:,-1])
+        image = interpolate.bisplev(X[0,:], Y[:,0], tck)
+
     else:
       vMin = np.amin(image)
       vMax = np.amax(image)
       cMap = 'jet'
 
+    print("plotting", X.shape, Y.shape, image.shape)
     plot = ax.pcolor(X, Y, image.transpose(), 
               norm=cNorm,
               cmap=cMap, 
@@ -238,6 +270,8 @@ class plotCLASS:
   def beautify(self, fig, ax, options, handles=None):
     if "yLim" in options:
       ax.set_ylim(options["yLim"])
+    if "xLim" in options:
+      ax.set_xlim(options["xLim"])
     if "yTitle" in options:
       ax.set_ylabel(options["yTitle"])
     if "xTitle" in options:
