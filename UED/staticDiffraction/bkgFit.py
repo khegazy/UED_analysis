@@ -33,7 +33,7 @@ if __name__ == '__main__':
   beamCut    = 4
 
   resultFolder = "/reg/neh/home/khegazy/analysis/nitroBenzene/UED/qScale/results/"
-  simFolder = "/reg/ued/ana/scratch/nitroBenzene/simulations/references/"
+  simFolder = "/reg/ued/ana/scratch/nitroBenzene/simulations/"
   simExeFile = "/reg/neh/home/khegazy/analysis/nitrobenzene/simulation/diffractionPattern/simulateRefPatterns.exe"
 
   dataList = []
