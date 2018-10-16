@@ -16,7 +16,6 @@ int main(int argc, char* argv[]) {
 
   PLOTclass plt;
   parameterClass params("simulateReference");
-  params.NradSimBins = 450;
   uint Nbins = 2*params.NradSimBins - 1;
   int Nmols = 1;
   int index = 0;
@@ -35,7 +34,7 @@ int main(int argc, char* argv[]) {
       else if (strcmp(argv[iarg],"-Ofile")==0) 
           {string str(argv[iarg+1]); fileName=str;}
       else if (strcmp(argv[iarg],"-Odir")==0) 
-          {string str(argv[iarg+1]); params.simReferenceDir=str;}
+          {string str(argv[iarg+1]); params.simOutputDir=str;}
       else if (strcmp(argv[iarg],"-QperPix")==0) 
           {params.QperPix = atof(argv[iarg+1]); 
            maxQ = params.NradSimBins*params.QperPix;}
@@ -162,7 +161,7 @@ int main(int argc, char* argv[]) {
   /////////////////////////////////////////
 
   cout<<"testing qmax: "<<maxQ<<"  "<<params.NradSimBins<<"  "<<params.QperPix<<endl;
-  std::string prefix = params.simReferenceDir + "/" + params.molName + "_";
+  std::string prefix = params.simOutputDir + "/" + params.molName + "_";
   std::string suffixLO = 
       "Qmax-" + to_string(maxQ)
       + "_Ieb-" + to_string(params.Iebeam) 
@@ -219,62 +218,6 @@ int main(int argc, char* argv[]) {
   save::saveDat<double>(pairCorr,
       prefix + "pairCorr_Bins[" + to_string(pairCorr.size()) + "].dat");
 
-  /*
-  FILE* otpDp = fopen((prefix + "diffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
-  FILE* otpAp = fopen((prefix + "atmDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
-  FILE* otpMp = fopen((prefix + "molDiffractionPattern_" + suffixDP + ".dat").c_str(), "wb");
-  FILE* otpSp = fopen((prefix + "sPattern_" + suffixDP + ".dat").c_str(), "wb");
-  */
-
-  /*
-  cout<<"prefix: "<<prefix<<endl;
-  FILE* otpDpLo = fopen((prefix + "diffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
-  FILE* otpMpLo = fopen((prefix + "molDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
-  FILE* otpApLo = fopen((prefix + "atmDiffractionPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
-  FILE* otpSpLo = fopen((prefix + "sPatternLineOut_" + suffixLO + ".dat").c_str(), "wb");
-  FILE* otpPcor;
-  if (params.simPairCorr) {
-    plt.print1d(pairCorr, "./plots/testFin");
-    otpPcor = fopen((prefix + "pairCorr_Bins[" + to_string(pairCorr.size()) + "].dat").c_str(), "wb");
-  }
-  */
-
-
-  cout<<"writing to files"<<endl;
-  /*
-  for (uint ir=0; ir<diffPatterns["diffractionPattern"].size(); ir++) {
-    fwrite(&diffPatterns["diffractionPattern"][ir][0], sizeof(double), 
-        diffPatterns["diffractionPattern"][ir].size(), otpDp);
-    fwrite(&diffPatterns["molDiffractionPattern"][ir][0], sizeof(double), 
-        diffPatterns["molDiffractionPattern"][ir].size(), otpMp);
-    fwrite(&diffPatterns["atmDiffractionPattern"][ir][0], sizeof(double), 
-        diffPatterns["atmDiffractionPattern"][ir].size(), otpAp);
-    fwrite(&diffPatterns["sPattern"][ir][0], sizeof(double), 
-        diffPatterns["sPattern"][ir].size(), otpSp);
-  }
-  */
-
-
-  /*
-  cout<<"closing files"<<endl;
-  fwrite(&lineOuts["diffractionPattern"][0], sizeof(double), 
-      lineOuts["diffractionPattern"].size(), otpDpLo);
-  cout<<"closing files1"<<endl;
-  fwrite(&lineOuts["molDiffractionPattern"][0], sizeof(double), 
-      lineOuts["molDiffractionPattern"].size(), otpMpLo);
-  cout<<"closing files2"<<endl;
-  fwrite(&lineOuts["atmDiffractionPattern"][0], sizeof(double), 
-      lineOuts["atmDiffractionPattern"].size(), otpApLo);
-  cout<<"closing files3"<<endl;
-  fwrite(&lineOuts["sPattern"][0], sizeof(double), 
-      lineOuts["sPattern"].size(), otpSpLo);
-  if (params.simPairCorr) {
-    fwrite(&pairCorr[0], sizeof(double), 
-        pairCorr.size(), otpPcor);
-  }
-  cout<<"closing files4"<<endl;
-  */
-
 
   //////////////////////
   /////  Clean up  /////
@@ -284,25 +227,6 @@ int main(int argc, char* argv[]) {
   for (auto& mc : molMCs) {
     delete mc;
   }
-  cout<<"files"<<endl;
-
-  /*
-  fclose(otpDp);
-  fclose(otpAp);
-  fclose(otpMp);
-  fclose(otpSp);
-  */
-  /*
-  fclose(otpDpLo);
-  fclose(otpApLo);
-  fclose(otpMpLo);
-  fclose(otpSpLo);
-  if (params.simPairCorr) {
-    fclose(otpPcor);
-  }
-  cout<<"done"<<endl;
-  */
-
 
   return 1;
 }
