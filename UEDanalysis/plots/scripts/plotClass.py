@@ -67,13 +67,30 @@ class plotCLASS:
 
 
 
-  def print1d(self, fileNames, outputName, 
-      xRange=None, normalize=None, scale=None, options=None):
+  def print1d(self, 
+      inpImages, outputName, 
+      xRange=None, normalize=None, 
+      scale=None, isFile=False,
+      options=None):
+
+    Nimages = 0
+    if isFile:
+      Nimages = len(inpImages)
+    else:
+      if len(inpImages.shape) is 1:
+        Nimages = 1
+        inpImages = np.reshape(inpImages, (1,-1))
+      else:
+        Nimages = inpImages.shape[0]
+
 
     handles = []
     fig, ax = plt.subplots()
-    for i in range(len(fileNames)):
-      image,_ = self.importImage(fileNames[i], False)
+    for i in range(Nimages):
+      if isFile:
+        image,_ = self.importImage(inpImages[i], False)
+      else:
+        image = inpImages[i,:]
       X = np.arange(image.shape[0])
       if xRange is not None:
         X = xRange[0] + X*(xRange[1] - xRange[0])/float(image.shape[0])
@@ -170,19 +187,26 @@ class plotCLASS:
 
 
   #subplot(aspect='equal')
-  def print2d(self, fileName, outputName, 
-      X=None, xRange=None, Y=None, yRange=None, 
-      scale=1, xRebin=None, yRebin=None, options=None):
+  def print2d(self, 
+      inpImage, outputName, 
+      X=None, xRange=None, 
+      Y=None, yRange=None, 
+      xRebin=None, yRebin=None, 
+      scale=1, isFile=False,
+      options=None):
 
-    imageO,shape = self.importImage(fileName)
-    if "Diff" in fileName:
-      image = np.zeros((imageO.shape[0], 555/5), dtype=float)
-      for i in range(555/5):
-        image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
-    else :
-      image = imageO
-    shape[0] = image.shape[0]
-    shape[1] = image.shape[1]
+    if isFile:
+      imageO,shape = self.importImage(inpImage)
+      if "Diff" in fileName:
+        image = np.zeros((imageO.shape[0], 555/5), dtype=float)
+        for i in range(555/5):
+          image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
+      else :
+        image = imageO
+    else:
+      image = inpImage
+
+    shape = np.array(image.shape)
     image *= scale
 
     
