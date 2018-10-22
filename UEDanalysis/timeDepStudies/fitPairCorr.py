@@ -254,7 +254,7 @@ class fitPairCorr():
     print("Sargs ", self.Sargs.shape.as_list())
 
     self.sinusiods    = tf.sin(self.Sargs)
-    self.sinusiodsDR  = tf.multiply(
+    self.sinusiodsDR  = tf.divide(
                               self.sinusiods,
                               self.rVals)
     self.fitFxns      = tf.multiply(
