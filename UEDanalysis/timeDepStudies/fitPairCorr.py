@@ -1,5 +1,6 @@
 import sys
 sys.path.append("../plots/scripts/")
+import os
 from plotClass import plotCLASS
 import tensorflow as tf
 import numpy as np
@@ -11,16 +12,44 @@ import matplotlib.pyplot as plt
 
 class fitPairCorr():
 
-  def __init__(self):
+  def __init__(self, parameters):
 
-    self.q_per_pixel        = 0.0223
-    self.electron_energy    = 3.7e6  #eV
+    ###############################
+    #####  Import Parameters  #####
+    ###############################
 
-
-    self.atoms        = ["carbon", "nitrogen", "oxygen"]
-    self.singleAtoms  = ["nitrogen"]
-    self.NfitFxns     = 1000
-    self.Nbins        = 555
+    if "maxTrain" in parameters:
+      self.maxTrainIters = parameters["maxTrain"] 
+    else:
+      raise RuntimeError("Must provide parameter `maxTrain`.")
+    if "saveEvery" in parameters:
+      self.saveEvery = parameters["saveEvery"]
+    else:
+      raise RuntimeError("Must provide parameter `saveEvery`.")
+    if "atoms" in parameters:
+      self.atoms = parameters["atoms"]
+    else:
+      raise RuntimeError("Must provide parameter `atoms`.")
+    if "singleAtoms" in parameters:
+      self.singleAtoms  = parameters["singleAtoms"]
+    else:
+      raise RuntimeError("Must provide parameter `singleAtoms`.")
+    if "Nbins" in parameters:
+      self.Nbins = parameters["Nbins"]
+    else:
+      raise RuntimeError("Must provide parameter `Nbins`.")
+    if "NfitFxns" in parameters:
+      self.NfitFxns = parameters["NfitFxns"]
+    else:
+      raise RuntimeError("Must provide parameter `NfitFxns`.")
+    if "qPerPix" in parameters:
+      self.q_per_pixel = parameters["qPerPix"] 
+    else:
+      raise RuntimeError("Must provide parameter `qPerPix`.")
+    if "elEnergy" in parameters: 
+      self.electron_energy = parameters["elEnergy"]  #eV
+    else:
+      raise RuntimeError("Must provide parameter `elEnergy`.")
     self.NbinsSkip    = 0
     self.NbondTypes   = np.math.factorial(len(self.atoms))\
                             - len(self.singleAtoms)
@@ -28,21 +57,38 @@ class fitPairCorr():
     self.bondTypes    = []
 
 
+    #####  Training  #####
+    self.beta1 = 0.99
+    self.beta2 = 0.999
+    self.learning_rate = 1e-4
+
+
     #####  Variables  #####
-    self.qPerPix  = tf.get_variable(
-                        "qPerPix",
-                        initializer=self.q_per_pixel,
-                        trainable=False)
-    self.elEnergy = tf.get_variable(
-                        "elEnergy",
-                        initializer=self.electron_energy,
-                        trainable=False)
+    self.mask         = None
+    self.global_step  = tf.Variable(
+                            0, 
+                            name="global_step", 
+                            trainable=False)
+    self.qPerPix      = tf.get_variable(
+                            "qPerPix",
+                            initializer=self.q_per_pixel,
+                            trainable=False)
+    self.elEnergy     = tf.get_variable(
+                            "elEnergy",
+                            initializer=self.electron_energy,
+                            trainable=False)
+    self.fitCoeffs    = tf.get_variable(
+                          "fitCoeff", 
+                          initializer=np.zeros((self.NbondTypes, self.NfitFxns),
+                              dtype=np.float32))
+
 
 
     #####  Constants  #####
     self.scatAngs   = None
     self.scatAmps   = None
     self.atomicNorm = None
+    self.NANVAL     = 1.234567e-10
     self.C  = tf.constant(299792458, dtype=tf.float32)
     self.h  = tf.constant(4.135667e-15, dtype=tf.float32)
     self.PI = tf.constant(np.pi, dtype=tf.float32)
@@ -63,14 +109,16 @@ class fitPairCorr():
                      dtype=tf.float32)
 
 
-    #####  Get Data  #####
+    #####  Placeholders  #####
+    self.fitData    = tf.placeholder(tf.float32, [self.Nbins], name="data")
+    self.fitDataVar = tf.placeholder(tf.float32, [self.Nbins], name="var")
+    self.fitMask    = tf.placeholder(tf.float32, [self.Nbins], name="mask")
+
+
+    #####  Get Simulations  #####
     simDir = "/reg/ued/ana/scratch/nitroBenzene/simulations/"
-    phnxy = "phenoxyRadical_sMsPatternLineOut_Qmax-12.376500_Ieb-5.000000_scrnD-4.000000_elE-3700000.000000_Bins[555].dat"
-    refer = "nitrobenzene_sMsPatternLineOut_Qmax-12.376500_Ieb-5.000000_scrnD-4.000000_elE-3700000.000000_Bins[555].dat"
     atmc  = "nitrobenzene_atmDiffractionPatternLineOut_Qmax-12.376500_Ieb-5.000000_scrnD-4.000000_elE-3700000.000000_Bins[555].dat"
 
-    self.data = np.fromfile(simDir+phnxy, dtype=np.double)\
-                    - np.fromfile(simDir+refer, dtype=np.double)
 
     self.atomicScat = np.fromfile(simDir+atmc)
     self.atomicNorm = tf.constant(
@@ -80,14 +128,14 @@ class fitPairCorr():
 
     _scatAmps = None
     inpAngs = []
-    with open("/reg/neh/home/khegazy/simulations/scatteringAmplitudes/3.7MeV/"
+    with open("/reg/neh/home/khegazy/baseTools/simulation/scatteringAmplitudes/3.7MeV/"
         + "interpolationAngs.dat", 'r') as inpFile:
       for line in inpFile:
         inpAngs.append(line)
 
     for atm in self.atoms:
       inpAmps = []
-      with open("/reg/neh/home/khegazy/simulations/scatteringAmplitudes/3.7MeV/"
+      with open("/reg/neh/home/khegazy/baseTools/simulation/scatteringAmplitudes/3.7MeV/"
           + atm + "_interpolation.dat", 'r') as inpFile:
         for line in inpFile:
           inpAmps.append(line)
@@ -129,16 +177,36 @@ class fitPairCorr():
     self.scatAmps = tf.constant(np.expand_dims(_scatAmps, axis=2),
                         dtype=tf.float32)
         
-    
+   
 
+    #########################
+    #####  Build Model  #####
+    #########################
+
+    ##### Build Graph  #####
+    self.makeFit()
+
+    ##### Optimization  #####
+    self.add_loss()
+    self.add_optimizer()
+
+
+  def add_data(self, data, variance):
+    if data.shape[0] != self.Nbins:
+      raise RuntimeError("Length of data (%i) and self.Nbins (%i) must match" 
+          % (data.shape[0], self.Nbins))
+
+    self.data = data
+    self.var  = variance
+    self.mask = np.ones(self.Nbins)
+
+    ind = 0
+    while self.data[ind] is self.NANVAL:
+      self.mask[ind] = 0;
+      ind += 1
 
           
   def makeFit(self):
-
-    self.fitCoeffs  = tf.get_variable(
-                        "fitCoeff", 
-                        initializer=np.zeros((self.NbondTypes, self.NfitFxns),
-                            dtype=np.float32))
 
     self.deBrogW    = self.h*self.C/tf.sqrt(
                         tf.square(self.elEnergy + self.eMass)
@@ -149,9 +217,6 @@ class fitPairCorr():
 
     self.qEval      = self.qPerPix*self.qBins
 
-    print("SHAPE", self.qInp.shape.as_list())
-    print("SHAPE", self.scatAmps.shape.as_list())
-    print("SHAPE", self.qEval.shape.as_list())
     self.interp     = tf.contrib.image.interpolate_spline(
                           self.qInp,
                           self.scatAmps,
@@ -203,57 +268,71 @@ class fitPairCorr():
                           self.fitCoeffs)
 
 
+  def add_loss(self):
+
+    self.loss = tf.reduce_sum(
+                    tf.divide(
+                      tf.multiply(
+                        self.fitMask,
+                        tf.square(self.prediction - self.fitData)),
+                      self.fitDataVar)
+                    )
+    self.loss /= tf.reduce_sum(self.fitMask)
 
 
-if __name__ == "__main__":
- 
-  plc = plotCLASS()
-  debug = True
+  def add_optimizer(self):
 
-  fitCls = fitPairCorr()
-  fitCls.makeFit()
+    with tf.variable_scope("optimizer"):
+      self.solver = tf.train.AdamOptimizer(
+                        learning_rate = self.learning_rate,
+                        beta1         = self.beta1,
+                        beta2         = self.beta2)
 
-  
-  with tf.Session() as sess:
+      self.update = self.solver.minimize(self.loss, global_step=self.global_step)
 
-    sess.run(tf.global_variables_initializer())
-    sess.run(tf.local_variables_initializer())
 
-    if debug:
-      output = [
-          fitCls.deBrogW,
-          fitCls.atomicNorm,
-          fitCls.scatAmps,
-          fitCls.qInp,
-          fitCls.qEval,
-          fitCls.bondScatAmps,
-          fitCls.bondNormAmps,
-          fitCls.interp,
-          fitCls.Sargs,
-          fitCls.sinusiods,
-          fitCls.sinusiodsDR]
+  def run_fit_step(self, sess):
 
-      deBrog, atmNorm, scatAmps, qInp, qEval, bondScatAmps,\
-      bondNormAmps, interp, Sargs, sinusiods, sinusiodsDR\
-          = sess.run(output)
+    feed_dict = {
+        self.fitData    : self.data,
+        self.fitDataVar : self.var,
+        self.fitMask    : self.mask}
 
-      opts = {"yLog" : True}
-      print("shape qs", qInp.shape, qEval.shape, bondScatAmps.shape)
-      print("DeBroglie Wavelength (angs): ", deBrog) # forgot to m->angs
-      plc.print1d(atmNorm, "./plots/testFit_atomicNorm", options=opts, isFile=False)
-      opts["labels"] = fitCls.atoms
-      plc.print1d(scatAmps, "./plots/testFit_scatteringAmps", options=opts, isFile=False)
-      plc.print1d(qInp[0,:,0], "./plots/testFit_qInp", isFile=False)
-      plc.print1d(qEval[0,:,0], "./plots/testFit_qEval", isFile=False)
-      opts["labels"] = fitCls.bondTypes
-      plc.print1d(bondScatAmps, "./plots/testFit_bondScatAmps", 
-          options=opts, isFile=False)
-      opts["labels"] = fitCls.bondTypes
-      plc.print1d(bondNormAmps, "./plots/testFit_bondNormAmps", isFile=False)
-      opts["labels"] = fitCls.atoms
-      plc.print1d(interp, "./plots/testFit_interp", options=opts, isFile=False)
-      plc.print2d(Sargs, "./plots/testFit_Sargs", isFile=False)
-      plc.print2d(sinusiods, "./plots/testFit_sinusiods", isFile=False)
+    output = [
+        self.global_step,
+        self.loss,
+        self.update]
+
+    global_step, currentLoss, _ = sess.run(output, feed_dict)
+
+    return global_step, currentLoss
+
+
+  def fit(self, sess):
+
+    self.history = []
+
+    global_step = 0
+    while (global_step < self.maxTrainIters) or (self.maxTrainIters is 0):
+      global_step, currentLoss = self.run_fit_step(sess)
+      self.history.append(currentLoss)
+      print("Loss %i: \t%f" % (global_step, currentLoss))
+
+      if global_step % self.saveEvery is 0:
+        self.saver.save(sess,
+            fileName=self.checkpointPath + "/fitting",
+            global_step=global_step)
+
+        pl.dump(self.history, 
+            open(self.checkpointPath 
+              + "/fitting-history-" 
+              + str(global_step)+".pl", "wb"))
+
+        if global_step is not 0:
+          os.remove(self.checkpointPath 
+              + "/fitting-history-"
+              + str(global_step - self.saveEvery) + ".pl")
+
 
 
 
