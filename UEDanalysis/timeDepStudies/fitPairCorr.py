@@ -343,3 +343,13 @@ class fitPairCorr():
         self.fitMask    : self.mask}
 
     return sess.run(self.fitCoeffs, feed_dict)
+
+
+  def get_fit(self, sess):
+
+    feed_dict = {
+        self.fitData    : self.data,
+        self.fitDataVar : self.var,
+        self.fitMask    : self.mask}
+
+    return sess.run(self.prediction, feed_dict)
