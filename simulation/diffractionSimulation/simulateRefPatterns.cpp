@@ -1,11 +1,11 @@
-#include "/reg/neh/home/khegazy/baseScripts/atomClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/moleculeClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/molEnsembleMC.h"
-#include "/reg/neh/home/khegazy/baseScripts/diffractionClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/imageProcessing.h"
-#include "/reg/neh/home/khegazy/baseScripts/saveClass.h"
-#include "../../parameters.h"
+#include "simulationTools/atomClass.h"
+#include "simulationTools/moleculeClass.h"
+#include "simulationTools/molEnsembleMC.h"
+#include "simulationTools/diffractionClass.h"
+#include "../../tools/imageProcessing.h"
+#include "../../tools/saveClass.h"
+#include "../../tools/plotClass.h"
+#include "../../tools/parameters.h"
 
 
 int main(int argc, char* argv[]) {
@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
         params.screenDist, 
         params.elEnergy, 
         Nbins,
-        "/reg/neh/home/khegazy/simulations/scatteringAmplitudes/3.7MeV/");
+        "/reg/neh/home5/khegazy/baseTools/simulation/scatteringAmplitudes/3.7MeV/");
     
     curLineOuts.clear();
     curLineOuts = diffP.azimuthalAvg_uniform();
