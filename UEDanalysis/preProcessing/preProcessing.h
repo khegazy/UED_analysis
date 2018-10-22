@@ -1,10 +1,10 @@
 #ifndef PREPROCESSING_H
 #define PREPROCESSING_H
 
-#include "/reg/neh/home/khegazy/baseScripts/imageProcessing.h"
-#include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/tools.h"
-#include "../../parameters.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/imageProcessing.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/plotClass.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/tools.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
 #include <fftw3.h>
 #include <dirent.h>
 

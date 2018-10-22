@@ -11,12 +11,12 @@
 #include <ctime>
 
 //Home Grown
-#include "/reg/neh/home/khegazy/baseScripts/tools.h"
-#include "/reg/neh/home/khegazy/baseScripts/imageProcessing.h"
-#include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/saveClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/saving.h"
-#include "../../parameters.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/tools.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/imageProcessing.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/plotClass.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/saveClass.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/saving.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
 
 
 class mergeClass : public parameterClass {
