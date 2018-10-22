@@ -23,11 +23,11 @@
 #include <opencv2/contrib/contrib.hpp>
 
 //Home Grown
-#include "/reg/neh/home/khegazy/baseScripts/tools.h"
-#include "/reg/neh/home/khegazy/baseScripts/imageProcessing.h"
-#include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
-#include "/reg/neh/home/khegazy/baseScripts/saveClass.h"
-#include "../parameters.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/tools.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/imageProcessing.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/plotClass.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/saveClass.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
 
 
 using namespace std;

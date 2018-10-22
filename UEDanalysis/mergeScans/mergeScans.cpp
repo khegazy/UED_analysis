@@ -1,5 +1,5 @@
 #include "../analysis.h"
-#include "mergeClass.h"
+#include "mergeTools/mergeClass.h"
 #include <TLegend.h>
 
 using namespace std;
