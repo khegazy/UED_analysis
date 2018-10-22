@@ -70,7 +70,7 @@ class plotCLASS:
   def print1d(self, 
       inpImages, outputName, 
       xRange=None, normalize=None, 
-      scale=None, isFile=False,
+      scale=None, isFile=True,
       options=None):
 
     Nimages = 0
@@ -192,7 +192,7 @@ class plotCLASS:
       X=None, xRange=None, 
       Y=None, yRange=None, 
       xRebin=None, yRebin=None, 
-      scale=1, isFile=False,
+      scale=1, isFile=True,
       options=None):
 
     if isFile:
