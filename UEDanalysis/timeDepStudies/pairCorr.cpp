@@ -1,5 +1,5 @@
 #include "../analysis.h"
-#include "../../parameters.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
 
 using namespace std;
 
