@@ -120,7 +120,7 @@ class fitPairCorr():
     self.rVals = tf.constant(
                      np.reshape(
                        np.linspace(1, 9, self.NfitFxns),
-                       (1,-1)),
+                       (-1,1)),
                      dtype=tf.float32)
     self.qBins = tf.constant(
                      np.tile(
@@ -139,8 +139,6 @@ class fitPairCorr():
 
 
     #####  Get Simulations  #####
-
-
     _scatAmps = None
     inpAngs = []
     with open("/reg/neh/home/khegazy/baseTools/simulation/scatteringAmplitudes/3.7MeV/"
@@ -248,9 +246,9 @@ class fitPairCorr():
 
 
     self.Sargs = tf.einsum(
-                    'ij,jk->ik',
-                    self.qEval[0],
+                    'ij,kj->ik',
                     self.rVals,
+                    self.qEval[0],
                     name = "Sargs")
     print("Sargs ", self.Sargs.shape.as_list())
 
@@ -260,7 +258,7 @@ class fitPairCorr():
                               self.rVals)
     self.fitFxns      = tf.multiply(
                             tf.expand_dims(self.sinusiodsDR, 0),
-                            tf.expand_dims(self.bondNormAmps,2))
+                            tf.expand_dims(self.bondNormAmps,1))
     print("fitFxns ", self.fitFxns.shape.as_list())
 
     if self.doNormalEqn:
@@ -272,7 +270,7 @@ class fitPairCorr():
       """
     else:
       self.prediction = tf.einsum(
-                            'ijk,ik->j',
+                            'ijk,ij->k',
                             self.fitFxns,
                             self.fitCoeffs)
 
