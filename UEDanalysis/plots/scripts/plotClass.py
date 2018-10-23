@@ -197,7 +197,7 @@ class plotCLASS:
 
     if isFile:
       imageO,shape = self.importImage(inpImage)
-      if "Diff" in fileName:
+      if "Diff" in inpImage:
         image = np.zeros((imageO.shape[0], 555/5), dtype=float)
         for i in range(555/5):
           image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
