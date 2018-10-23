@@ -12,7 +12,11 @@ import matplotlib.pyplot as plt
 
 class fitPairCorr():
 
-  def __init__(self, parameters):
+  def __init__(self, 
+      parameters, 
+      fitData, 
+      variance,
+      atomicScat):
 
     ###############################
     #####  Import Parameters  #####
@@ -46,6 +50,10 @@ class fitPairCorr():
       self.q_per_pixel = parameters["qPerPix"] 
     else:
       raise RuntimeError("Must provide parameter `qPerPix`.")
+    if "doNormalEqn" in parameters:
+      self.doNormalEqn = parameters["doNormalEqn"]
+    else:
+      raise RuntimeError("Must provide parameter `doNormalEqn`.")
     if "elEnergy" in parameters: 
       self.electron_energy = parameters["elEnergy"]  #eV
     else:
@@ -57,6 +65,25 @@ class fitPairCorr():
     self.bondTypes    = []
 
 
+    #####  Data  #####
+    self.NANVAL     = 1.234567e-10
+    if fitData.shape[0] != self.Nbins:
+      raise RuntimeError("Length of data (%i) and self.Nbins (%i) must match" 
+          % (fitData.shape[0], self.Nbins))
+
+    self.startBin = 0
+    while fitData[self.startBin] is self.NANVAL:
+      self.startBin += 1
+
+    print("start", self.startBin)
+    self.data = fitData[self.startBin:]
+    self.var  = variance[self.startBin:]
+    self.atomicNorm = tf.constant(
+                          1./np.expand_dims(
+                            atomicScat[self.startBin:], 0),
+                          dtype=tf.float32)
+
+
     #####  Training  #####
     self.beta1 = 0.99
     self.beta2 = 0.999
@@ -64,7 +91,6 @@ class fitPairCorr():
 
 
     #####  Variables  #####
-    self.mask         = None
     self.global_step  = tf.Variable(
                             0, 
                             name="global_step", 
@@ -87,8 +113,6 @@ class fitPairCorr():
     #####  Constants  #####
     self.scatAngs   = None
     self.scatAmps   = None
-    self.atomicNorm = None
-    self.NANVAL     = 1.234567e-10
     self.C  = tf.constant(299792458, dtype=tf.float32)
     self.h  = tf.constant(4.135667e-15, dtype=tf.float32)
     self.PI = tf.constant(np.pi, dtype=tf.float32)
@@ -102,7 +126,7 @@ class fitPairCorr():
                      np.tile(
                        np.expand_dims(
                          np.expand_dims(
-                           np.arange(self.NbinsSkip, self.Nbins),
+                           np.arange(self.startBin, self.Nbins),
                            1),
                          0),
                        (len(self.atoms), 1, 1)),
@@ -112,18 +136,9 @@ class fitPairCorr():
     #####  Placeholders  #####
     self.fitData    = tf.placeholder(tf.float32, [self.Nbins], name="data")
     self.fitDataVar = tf.placeholder(tf.float32, [self.Nbins], name="var")
-    self.fitMask    = tf.placeholder(tf.float32, [self.Nbins], name="mask")
 
 
     #####  Get Simulations  #####
-    simDir = "/reg/ued/ana/scratch/nitroBenzene/simulations/"
-    atmc  = "nitrobenzene_atmDiffractionPatternLineOut_Qmax-12.376500_Ieb-5.000000_scrnD-4.000000_elE-3700000.000000_Bins[555].dat"
-
-
-    self.atomicScat = np.fromfile(simDir+atmc)
-    self.atomicNorm = tf.constant(
-                          1./np.expand_dims(self.atomicScat, 0),
-                          dtype=tf.float32)
 
 
     _scatAmps = None
@@ -191,20 +206,6 @@ class fitPairCorr():
     self.add_optimizer()
 
 
-  def add_data(self, data, variance):
-    if data.shape[0] != self.Nbins:
-      raise RuntimeError("Length of data (%i) and self.Nbins (%i) must match" 
-          % (data.shape[0], self.Nbins))
-
-    self.data = data
-    self.var  = variance
-    self.mask = np.ones(self.Nbins)
-
-    ind = 0
-    while self.data[ind] is self.NANVAL:
-      self.mask[ind] = 0;
-      ind += 1
-
           
   def makeFit(self):
 
@@ -262,22 +263,27 @@ class fitPairCorr():
                             tf.expand_dims(self.bondNormAmps,2))
     print("fitFxns ", self.fitFxns.shape.as_list())
 
-    self.prediction = tf.einsum(
-                          'ijk,ik->j',
-                          self.fitFxns,
-                          self.fitCoeffs)
+    if self.doNormalEqn:
+      print("fill in")
+      """
+      1/(XtWX) XtWy
+      Xth = y
+      s, u, v = tf.svd(
+      """
+    else:
+      self.prediction = tf.einsum(
+                            'ijk,ik->j',
+                            self.fitFxns,
+                            self.fitCoeffs)
 
 
   def add_loss(self):
 
-    self.loss = tf.reduce_sum(
+    self.loss = tf.reduce_mean(
                     tf.divide(
-                      tf.multiply(
-                        self.fitMask,
-                        tf.square(self.prediction - self.fitData)),
+                      tf.square(self.prediction - self.fitData),
                       self.fitDataVar)
                     )
-    self.loss /= tf.reduce_sum(self.fitMask)
 
 
   def add_optimizer(self):
@@ -295,8 +301,7 @@ class fitPairCorr():
 
     feed_dict = {
         self.fitData    : self.data,
-        self.fitDataVar : self.var,
-        self.fitMask    : self.mask}
+        self.fitDataVar : self.var}
 
     output = [
         self.global_step,
@@ -339,8 +344,7 @@ class fitPairCorr():
 
     feed_dict = {
         self.fitData    : self.data,
-        self.fitDataVar : self.var,
-        self.fitMask    : self.mask}
+        self.fitDataVar : self.var}
 
     return sess.run(self.fitCoeffs, feed_dict)
 
@@ -349,7 +353,6 @@ class fitPairCorr():
 
     feed_dict = {
         self.fitData    : self.data,
-        self.fitDataVar : self.var,
-        self.fitMask    : self.mask}
+        self.fitDataVar : self.var}
 
     return sess.run(self.prediction, feed_dict)
