@@ -14,9 +14,9 @@ class fitPairCorr():
 
   def __init__(self, 
       parameters, 
-      fitData, 
-      variance,
-      atomicScat):
+      _fitData, 
+      _variance,
+      _atomicScat):
 
     ###############################
     #####  Import Parameters  #####
@@ -39,7 +39,7 @@ class fitPairCorr():
     else:
       raise RuntimeError("Must provide parameter `singleAtoms`.")
     if "Nbins" in parameters:
-      self.Nbins = parameters["Nbins"]
+      self.NinpBins = parameters["Nbins"]
     else:
       raise RuntimeError("Must provide parameter `Nbins`.")
     if "NfitFxns" in parameters:
@@ -67,20 +67,22 @@ class fitPairCorr():
 
     #####  Data  #####
     self.NANVAL     = 1.234567e-10
-    if fitData.shape[0] != self.Nbins:
-      raise RuntimeError("Length of data (%i) and self.Nbins (%i) must match" 
-          % (fitData.shape[0], self.Nbins))
+    if _fitData.shape[0] != self.NinpBins:
+      raise RuntimeError("Length of data (%i) and self.NinpBins (%i) must match" 
+          % (_fitData.shape[0], self.NinpBins))
 
     self.startBin = 0
-    while fitData[self.startBin] is self.NANVAL:
+    while _fitData[self.startBin] is self.NANVAL:
       self.startBin += 1
 
+    self.Nbins = self.NinpBins - self.startBin
+
     print("start", self.startBin)
-    self.data = fitData[self.startBin:]
-    self.var  = variance[self.startBin:]
+    self.data = _fitData[self.startBin:].astype(np.float32)
+    self.var  = _variance[self.startBin:].astype(np.float32)
     self.atomicNorm = tf.constant(
                           1./np.expand_dims(
-                            atomicScat[self.startBin:], 0),
+                            _atomicScat[self.startBin:], 0),
                           dtype=tf.float32)
 
 
@@ -99,11 +101,10 @@ class fitPairCorr():
                             "qPerPix",
                             initializer=self.q_per_pixel,
                             trainable=False)
-    self.elEnergy     = tf.get_variable(
-                            "elEnergy",
-                            initializer=self.electron_energy,
-                            trainable=False)
-    self.fitCoeffs    = tf.get_variable(
+    self.fitCoeffs    = None
+
+    if not self.doNormalEqn:
+      self.fitCoeffs  = tf.get_variable(
                           "fitCoeff", 
                           initializer=np.zeros((self.NbondTypes, self.NfitFxns),
                               dtype=np.float32))
@@ -116,21 +117,22 @@ class fitPairCorr():
     self.C  = tf.constant(299792458, dtype=tf.float32)
     self.h  = tf.constant(4.135667e-15, dtype=tf.float32)
     self.PI = tf.constant(np.pi, dtype=tf.float32)
-    self.eMass = tf.constant(0.510999e6, dtype=tf.float32)
-    self.rVals = tf.constant(
-                     np.reshape(
-                       np.linspace(1, 9, self.NfitFxns),
-                       (-1,1)),
-                     dtype=tf.float32)
-    self.qBins = tf.constant(
-                     np.tile(
-                       np.expand_dims(
-                         np.expand_dims(
-                           np.arange(self.startBin, self.Nbins),
-                           1),
-                         0),
-                       (len(self.atoms), 1, 1)),
-                     dtype=tf.float32)
+    self.eMass    = tf.constant(0.510999e6, dtype=tf.float32)
+    self.elEnergy = tf.constant(self.electron_energy)
+    self.rVals    = tf.constant(
+                      np.reshape(
+                        np.linspace(1, 9, self.NfitFxns),
+                        (-1,1)),
+                      dtype=tf.float32)
+    self.qBins    = tf.constant(
+                      np.tile(
+                        np.expand_dims(
+                          np.expand_dims(
+                            np.arange(self.startBin, self.NinpBins),
+                            1),
+                          0),
+                        (len(self.atoms), 1, 1)),
+                      dtype=tf.float32)
 
 
     #####  Placeholders  #####
@@ -201,7 +203,8 @@ class fitPairCorr():
 
     ##### Optimization  #####
     self.add_loss()
-    self.add_optimizer()
+    if not self.doNormalEqn:
+      self.add_optimizer()
 
 
           
@@ -262,17 +265,34 @@ class fitPairCorr():
     print("fitFxns ", self.fitFxns.shape.as_list())
 
     if self.doNormalEqn:
-      print("fill in")
-      """
-      1/(XtWX) XtWy
-      Xth = y
-      s, u, v = tf.svd(
-      """
-    else:
-      self.prediction = tf.einsum(
-                            'ijk,ij->k',
-                            self.fitFxns,
-                            self.fitCoeffs)
+      self.X    = tf.reshape(self.fitFxns, 
+                    (self.NbondTypes*self.NfitFxns, self.Nbins))
+      self.varM = tf.eye(self.Nbins) #tf.diag(1./(self.var + 1e-3))
+      self.NE_norm    = tf.matrix_inverse(tf.matmul(self.X,
+                            tf.einsum('ij,kj->ik', self.varM, self.X)),
+                          name="normEqnNorm")
+      print("X / varM / NE_norm  ", 
+          (self.X.shape.as_list(),
+            self.varM.shape.as_list(),
+            self.NE_norm.shape.as_list()))
+      self.flatCoeffs = tf.matmul(self.NE_norm,
+                          tf.matmul(self.X,
+                            tf.matmul(self.varM, 
+                              tf.expand_dims(self.fitData,1))),
+                          name="flatCoeffs")
+      self.fitCoeffs  = tf.reshape(self.flatCoeffs, 
+                          (self.NbondTypes, self.NfitFxns),
+                          name="fitCoeffs")
+      print("fitCoeffs ", self.fitCoeffs.shape.as_list())
+
+    self.prediction = tf.einsum(
+                       'ijk,ij->k',
+                        self.fitFxns,
+                        self.fitCoeffs,
+                        name="prediction")
+
+    print("prediction ", self.prediction.shape.as_list())
+
 
 
   def add_loss(self):
