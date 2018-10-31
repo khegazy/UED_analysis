@@ -303,6 +303,32 @@ std::vector<double> MOLENSEMBLEMCclass::simulatePairCorr(int Nbins, float maxR, 
 
   return counts;
 }
+ 
+
+std::map< std::string, std::vector<double> > MOLENSEMBLEMCclass::getBonds() {
+
+  MOLECULEclass &molecule = molecules[0]; 
+  float dist;
+  std::string bondType;
+  std::map< std::string, std::vector<double> > bonds;
+  for (int iatm=0; iatm<NmolAtoms; iatm++) {
+    for (int jatm=iatm+1; jatm<NmolAtoms; jatm++) {
+      if (molecule.atoms[iatm]->atomType < molecule.atoms[jatm]->atomType) {
+        bondType  = atomNames[molecule.atoms[iatm]->atomType] + "-"
+                      + atomNames[molecule.atoms[jatm]->atomType];
+      }
+      else {
+        bondType  = atomNames[molecule.atoms[jatm]->atomType] + "-"
+                      + atomNames[molecule.atoms[iatm]->atomType];
+      }
+      dist = (molecule.atoms[iatm]->location 
+          - molecule.atoms[jatm]->location).norm();
+      bonds[bondType].push_back(dist);
+    }
+  }
+ 
+  return bonds;
+}
    
 TGraph2D* MOLENSEMBLEMCclass::testBuildMolecule() {
   std::map<std::string, double> empty;

@@ -68,6 +68,7 @@ class MOLENSEMBLEMCclass : public PDFclass{
 	void makeMolEnsemble();
 	void makeMolEnsemble(std::map<std::string, double> inpVals);
 
+        std::map< std::string, std::vector<double> > getBonds();
         std::vector<double> simulatePairCorr(
             int Nbins, 
             float maxR,
