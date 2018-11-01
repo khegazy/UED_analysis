@@ -76,6 +76,7 @@ int main(int argc, char* argv[]) {
   std::vector< std::vector<double> > curLineOuts;
   std::map< std::string, std::vector<double> > lineOuts;
   std::map< std::string, std::vector< std::vector<double> > > diffPatterns;
+  std::map< std::string, std::vector<double> > bonds;
   for (auto mc : molMCs) {
     DIFFRACTIONclass diffP(mc, 
         maxQ, 
@@ -132,6 +133,7 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    /////  Simulate pair correlation  /////
     if (params.simPairCorr) {
       std::vector<double> pCorr = mc->simulatePairCorr(500, params.maxR, false, NULL);
 
@@ -142,9 +144,14 @@ int main(int argc, char* argv[]) {
         pairCorr[i] += pCorr[i];
       }
     }
-    plt.print1d(pairCorr, "./plots/testInit");
 
+    /////  Save bond distances according to bond types  /////
+    if (params.getBonds) {
+      mc->getBonds(&bonds);
+    }
+ 
   }
+
 
   /////  Compute sMs pattern  /////
   lineOuts["sMsPattern"].resize(lineOuts["sPattern"].size(), 0);
@@ -215,9 +222,17 @@ int main(int argc, char* argv[]) {
       prefix + "sPatternLineOut_" + suffixLO + ".dat");
   save::saveDat<double>(lineOuts["sMsPattern"],
       prefix + "sMsPatternLineOut_" + suffixLO + ".dat");
-  save::saveDat<double>(pairCorr,
-      prefix + "pairCorr_Bins[" + to_string(pairCorr.size()) + "].dat");
-
+  if (params.simPairCorr) {
+    save::saveDat<double>(pairCorr,
+        prefix + "pairCorr_Bins[" + to_string(pairCorr.size()) + "].dat");
+  }
+  if (params.getBonds) {
+    for (auto& itr : bonds) {
+      save::saveDat<double>(itr.second,
+          prefix + "bonds_" + itr.first + ".dat");
+          //+ "_Bins[" + to_string(itr.second.size()) + "].dat");
+    }
+  }
 
   //////////////////////
   /////  Clean up  /////
