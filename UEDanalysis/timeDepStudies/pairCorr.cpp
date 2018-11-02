@@ -27,10 +27,13 @@ int main(int argc, char* argv[]) {
   bool fillLowQ           = true;
   bool fillLowQtheory     = false;
   bool removeSkippedBins  = true;
-  std::string fileName  = "NULL";
-  std::string inputDir  = "NULL";
-  std::string outPrefix = "data-" + runName;
-  std::string outSuffix = "";
+  bool fitPC              = false;
+  std::string fileName    = "NULL";
+  std::string inputDir    = "NULL";
+  std::string outPrefix   = "data-" + runName;
+  std::string outSuffix   = "";
+  std::string lowQtheory  = "NULL";
+  std::string saveLowQtheory  = "NULL";
   int fitTstep = -1;
 
   /////  Importing variables from command line  /////
@@ -58,6 +61,24 @@ int main(int argc, char* argv[]) {
       string str(argv[iarg+1]);
       outSuffix = str;
     }
+    else if (strcmp(argv[iarg], "-lowQtheory") == 0) {
+      string str(argv[iarg+1]);
+      lowQtheory = str;
+      fillLowQtheory = true;
+    }
+    else if (strcmp(argv[iarg], "-saveLowQtheory") == 0) {
+      string str(argv[iarg+1]);
+      saveLowQtheory = str;
+    }
+    else if (strcmp(argv[iarg], "-FitPC") == 0) {
+      string str(argv[iarg+1]);
+      if (str.compare("true") == 0) fitPC = true;
+      else {
+        std::cerr << "ERROR: Do not understand FitPC option " << str << endl;
+        exit(0);
+      }
+    }
+ 
     else if (strcmp(argv[iarg], "-FillQ") == 0) {
       string str(argv[iarg+1]);
       if (str.compare("false") == 0) fillLowQ = false;
@@ -134,7 +155,6 @@ int main(int argc, char* argv[]) {
   else {
     assert(strcmp(inputDir.c_str(), "NULL") != 0);
 
-
     shape = save::getShape(inputDir, fileName);
     if (shape.size() == 1) {
       shape.insert(shape.begin(), 1);
@@ -164,24 +184,32 @@ int main(int argc, char* argv[]) {
     plt.printRC(tmdDiff, "./plots/importedTDdiff", pOpts, pVals);
   }
 
-  // Importing Simulation
+  std::string sMsSimName;
   std::vector<double> sMsSim(shape[1]), sMsSimDer(shape[1]);
-  std::string sMsSimName = 
-      params.simOutputDir + "nitrobenzene_sMsPatternLineOut_Qmax-"
-      + to_string(params.maxQazm) + "_Ieb-"
-      + to_string(params.Iebeam) + "_scrnD-"
-      + to_string(params.screenDist) + "_elE-"
-      + to_string(params.elEnergy) + "_Bins["
-      + to_string(shape[1]) + "].dat";
-  if (!tools::fileExists(sMsSimName)) {
-    std::cerr << "ERROR: sMs simulation file " + sMsSimName + " does not exist!!!\n";
-    exit(0);
+  if (subtractReference || fillLowQtheory) { 
+    // Importing Simulation
+    if (lowQtheory.compare("NULL") == 0) {
+      sMsSimName = 
+          params.simOutputDir + "nitrobenzene_sMsPatternLineOut_Qmax-"
+          + to_string(params.maxQazm) + "_Ieb-"
+          + to_string(params.Iebeam) + "_scrnD-"
+          + to_string(params.screenDist) + "_elE-"
+          + to_string(params.elEnergy) + "_Bins["
+          + to_string(shape[1]) + "].dat";
+    }
+    else {
+      sMsSimName = lowQtheory;
+    }
+    if (!tools::fileExists(sMsSimName)) {
+      std::cerr << "ERROR: sMs simulation file " + sMsSimName + " does not exist!!!\n";
+      exit(0);
+    }
+
+    if (params.verbose)
+      std::cout << "Importing simulation\n";
+
+    save::importDat<double>(sMsSim, sMsSimName);
   }
-
-  if (params.verbose)
-    std::cout << "Importing simulation\n";
-
-  save::importDat<double>(sMsSim, sMsSimName);
 
 
   // Subtract Reference if specified
@@ -192,6 +220,23 @@ int main(int argc, char* argv[]) {
       }
     }
   }
+
+  // Saving lowQ theory
+  if (saveLowQtheory.compare("NULL") != 0) {
+    std::string fName = "./results/theoryLowQ_" 
+                          + params.molName
+                          + outSuffix;
+    if (tmdDiff.size() == 1) {
+      save::saveDat(tmdDiff[0], 
+          fName + "[" + to_string(tmdDiff[0].size()) + "].dat");
+    }
+    else {
+      save::saveDat(tmdDiff, fName 
+          + "[" + to_string(tmdDiff[0].size())
+          + to_string(tmdDiff[0].size()) + "].dat");
+    }
+  }
+
 
   // Importing low Q fit coefficients
   if (params.verbose)
@@ -275,16 +320,16 @@ int main(int argc, char* argv[]) {
   std::vector<double> smoothed(params.NradAzmBins, 0);
   std::vector<double> filter(params.NradAzmBins, 0);
   std::vector< std::vector<double> > results;
-  std::vector< std::vector<double> > pairCorr(shape[0]);
+  std::vector< std::vector<double> > pairCorrEven(shape[0]);
   std::vector< std::vector<double> > pairCorrOdd(shape[0]);
   for (int i=0; i<shape[0]; i++) {
-    pairCorr[i].resize(outSize);
+    pairCorrEven[i].resize(outSize);
     pairCorrOdd[i].resize(outSize);
   }
 
 
   double filterScale = 1;
-  int maxFitInd = 150; 
+  int maxFitInd = 100; 
   Eigen::MatrixXd fit, bestFit;
   Eigen::Matrix<double, Eigen::Dynamic, 4> X;
   Eigen::Matrix<double, Eigen::Dynamic, 1> Y;
@@ -391,16 +436,18 @@ int main(int argc, char* argv[]) {
     for (iq=0; iq<params.NradAzmBins; iq++) {
       if (fillLowQ) {
         if (iq < params.NbinsSkip) {
-          for (uint i=0; i<lowQw[itm].size(); i++) {
-            if (i == 0) {
-              tmdDiff[itm][iq] = lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
-              continue;
-            }
-            tmdDiff[itm][iq] += lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
-          }
           if (fillLowQtheory) {
-            tmdDiff[itm][iq] = sMsSim[iq]
-                *(tmdDiff[itm][params.NbinsSkip]/sMsSim[params.NbinsSkip]);
+            tmdDiff[itm][iq] = sMsSim[iq];
+                //*(tmdDiff[0][params.NbinsSkip]/sMsSim[params.NbinsSkip]);
+          }
+          else {
+            for (uint i=0; i<lowQw[itm].size(); i++) {
+              if (i == 0) {
+                tmdDiff[itm][iq] = lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+                continue;
+              }
+              tmdDiff[itm][iq] += lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+            }
           }
         }
       }
@@ -441,17 +488,21 @@ int main(int argc, char* argv[]) {
       plt.print1d(fftInp, "./plots/fftFuncInp_" + to_string(itm));
 
     for (int ir=0; ir<outSize; ir++) {
-      pairCorr[itm][ir] = std::pow(results[0][ir], 1);
+      pairCorrEven[itm][ir] = std::pow(results[0][ir], 1);
       pairCorrOdd[itm][ir] = std::pow(results[1][ir], 1);
     }
   }
 
   if (true || params.pltVerbose) {
     vals[5] = "0," + to_string(params.rMaxAzmRat*outFFTsize*(2*PI/(params.QperPix*inpFFTsize)));
-    plt.printRC(pairCorr, "./plots/pairCorr", opts, vals);
-    plt.printRC(pairCorrOdd, "./plots/pairCorrOdd", opts, vals);
-    //plt.print1d(pairCorr[0], "./plots/pairCorr");
-    //plt.print1d(pairCorrOdd[0], "./plots/pairCorrOdd");
+    if (pairCorrEven.size() == 1) {
+      plt.print1d(pairCorrEven[0], "./plots/pairCorrEven");
+      plt.print1d(pairCorrOdd[0], "./plots/pairCorrOdd");
+    }
+    else {
+      plt.printRC(pairCorrEven, "./plots/pairCorrEven", opts, vals);
+      plt.printRC(pairCorrOdd, "./plots/pairCorrOdd", opts, vals);
+    }
   }
 
 
@@ -469,26 +520,34 @@ int main(int argc, char* argv[]) {
   }
 
   if (shape[0] != 1) {
-    save::saveDat<double>(pairCorr, 
+    save::saveDat<double>(pairCorrEven, 
         "./results/" + outPrefix 
-        + outSuffix + "-pairCorr["
-        + to_string(pairCorr.size()) + ","
-        + to_string(pairCorr[0].size()) + "].dat");
+        + outSuffix + "-pairCorrEven["
+        + to_string(pairCorrEven.size()) + ","
+        + to_string(pairCorrEven[0].size()) + "].dat");
     save::saveDat<double>(pairCorrOdd, 
         "./results/" + outPrefix   
         + outSuffix + "-pairCorrOdd["
-        + to_string(pairCorr.size()) + ","
-        + to_string(pairCorr[0].size()) + "].dat");
+        + to_string(pairCorrOdd.size()) + ","
+        + to_string(pairCorrOdd[0].size()) + "].dat");
   }
   else {
-    save::saveDat<double>(pairCorr[0], 
+    save::saveDat<double>(pairCorrEven[0], 
         "./results/" + outPrefix 
-        + outSuffix + "-pairCorr["
-        + to_string(pairCorr[0].size()) + "].dat");
+        + outSuffix + "-pairCorrEven["
+        + to_string(pairCorrEven[0].size()) + "].dat");
     save::saveDat<double>(pairCorrOdd[0], 
         "./results/" + outPrefix 
         + outSuffix + "-pairCorrOdd["
-        + to_string(pairCorr[0].size()) + "].dat");
+        + to_string(pairCorrOdd[0].size()) + "].dat");
+    if (fitPC) {
+      save::saveDat<double>(pairCorrOdd, 
+          "./results/fitPairCorr"    
+          + outSuffix + "_maxR-"
+          + to_string(params.maxR) + "["
+          + to_string(pairCorrOdd[0].size()) + "].dat");
+    }
+
   }
 
 
