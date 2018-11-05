@@ -206,7 +206,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (params.verbose)
-      std::cout << "Importing simulation\n";
+      std::cout << "Importing simulation from " << sMsSimName << endl;
 
     save::importDat<double>(sMsSim, sMsSimName);
   }
