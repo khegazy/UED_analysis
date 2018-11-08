@@ -13,14 +13,18 @@ import matplotlib.pyplot as plt
 class fitPairCorr():
 
   def __init__(self, 
-      parameters, 
+      parameters,
       _fitData, 
       _variance,
-      _atomicScat):
+      _sineFit,
+      debug=False):
 
     ###############################
     #####  Import Parameters  #####
     ###############################
+
+    self.sineFit    = _sineFit
+    self.parameters = parameters
 
     if "maxTrain" in parameters:
       self.maxTrainIters = parameters["maxTrain"] 
@@ -34,8 +38,13 @@ class fitPairCorr():
       self.atoms = parameters["atoms"]
     else:
       raise RuntimeError("Must provide parameter `atoms`.")
-    if "singleAtoms" in parameters:
-      self.singleAtoms  = parameters["singleAtoms"]
+    if "Natoms" in parameters:
+      self.Natoms = parameters["Natoms"]
+    else:
+      raise RuntimeError("Must provide parameter `Natoms`.")
+    if "Rrange" in parameters:
+      self.minR = parameters["Rrange"][0]
+      self.maxR = parameters["Rrange"][1]
     else:
       raise RuntimeError("Must provide parameter `singleAtoms`.")
     if "Nbins" in parameters:
@@ -59,10 +68,19 @@ class fitPairCorr():
     else:
       raise RuntimeError("Must provide parameter `elEnergy`.")
     self.NbinsSkip    = 0
-    self.NbondTypes   = np.math.factorial(len(self.atoms))\
-                            - len(self.singleAtoms)
     self.scatAmps     = {}
     self.bondTypes    = []
+
+    for i in range(len(self.atoms)):
+      if self.atoms[i] == "hydrogen":
+        continue
+      for j in range(i, len(self.atoms)):
+        if self.atoms[j] == "hydrogen":
+          continue
+        if (i == j) and (self.Natoms[i] == 1):
+          continue
+        self.bondTypes.append(self.atoms[i] + "-" + self.atoms[j])
+    self.NbondTypes = len(self.bondTypes)
 
 
     #####  Data  #####
@@ -74,17 +92,32 @@ class fitPairCorr():
     self.startBin = 0
     while _fitData[self.startBin] is self.NANVAL:
       self.startBin += 1
+    if "startBin" in parameters:
+      self.startBin = parameters["startBin"]
 
     self.Nbins = self.NinpBins - self.startBin
 
     print("start", self.startBin)
     self.data = _fitData[self.startBin:].astype(np.float32)
     self.var  = _variance[self.startBin:].astype(np.float32)
-    self.atomicNorm = tf.constant(
-                          1./np.expand_dims(
-                            _atomicScat[self.startBin:], 0),
-                          dtype=tf.float32)
 
+
+    #####  Get Sine Transform  #####
+    STfileName = parameters["sineTransFile"]
+    STmaxR  = float(STfileName[STfileName.find("maxR")+5:\
+                STfileName.find("[")])
+    STbins  = int(STfileName[STfileName.find("[")+1:\
+                STfileName.find("]")])
+    print(STmaxR)
+    self.inputSineTransform = np.fromfile(STfileName, dtype=np.double)
+    self.sineTransformIntrp = interp1d(
+                                np.linspace(0, 1, STbins)*STmaxR, 
+                                self.inputSineTransform)
+    self.sineTransform      = tf.constant(
+                                self.sineTransformIntrp(
+                                  np.linspace(self.minR, self.maxR, self.NfitFxns)),
+                                dtype=tf.float32)
+ 
 
     #####  Training  #####
     self.beta1 = 0.99
@@ -103,12 +136,6 @@ class fitPairCorr():
                             trainable=False)
     self.fitCoeffs    = None
 
-    if not self.doNormalEqn:
-      self.fitCoeffs  = tf.get_variable(
-                          "fitCoeff", 
-                          initializer=np.zeros((self.NbondTypes, self.NfitFxns),
-                              dtype=np.float32))
-
 
 
     #####  Constants  #####
@@ -119,9 +146,10 @@ class fitPairCorr():
     self.PI = tf.constant(np.pi, dtype=tf.float32)
     self.eMass    = tf.constant(0.510999e6, dtype=tf.float32)
     self.elEnergy = tf.constant(self.electron_energy)
+    self.atomMult = tf.constant(self.Natoms, dtype=tf.float32)
     self.rVals    = tf.constant(
                       np.reshape(
-                        np.linspace(1, 9, self.NfitFxns),
+                        np.linspace(self.minR, self.maxR, self.NfitFxns),
                         (-1,1)),
                       dtype=tf.float32)
     self.qBins    = tf.constant(
@@ -138,6 +166,23 @@ class fitPairCorr():
     #####  Placeholders  #####
     self.fitData    = tf.placeholder(tf.float32, [self.Nbins], name="data")
     self.fitDataVar = tf.placeholder(tf.float32, [self.Nbins], name="var")
+
+
+      
+    if not self.doNormalEqn:
+
+      if self.sineFit:
+        self.fitCoeffs  = tf.get_variable(
+                            "fitCoeff",
+                            initializer=np.zeros((1, self.NfitFxns), 
+                                        dtype=np.float32))
+      else:
+        self.fitCoeffs  = tf.get_variable(
+                            "fitCoeff", 
+                            initializer=np.zeros(
+                              (self.NbondTypes, self.NfitFxns), 
+                              dtype=np.float32))
+
 
 
     #####  Get Simulations  #####
@@ -227,24 +272,34 @@ class fitPairCorr():
                           name="interpolation")
 
     self.bondScatAmpsList = []
-    self.bondTypes        = []
+    self.atomicScat       = []
+    bondItr               = 0
     for i in range(len(self.atoms)):
+      if self.atoms[i] == "hydrogen":
+        continue
+      self.atomicScat.append(self.atomMult[i]*tf.square(self.interp[i,:,0]))
       for j in range(i, len(self.atoms)):
-        if (i == j) and (self.atoms[i] in self.singleAtoms):
+        if self.atoms[j] == "hydrogen":
           continue
-        self.bondTypes.append(self.atoms[i] + "-" + self.atoms[j])
-        print(self.bondTypes[-1])
+        if (i == j) and (self.Natoms[i] == 1):
+          continue
         self.bondScatAmpsList.append(
             tf.multiply(
               self.interp[i,:,0], 
               self.interp[j,:,0],
-              name="bondSA_" + self.bondTypes[-1]))
+              name="bondSA_" + self.bondTypes[bondItr]))
+        bondItr += 1
+
 
     self.bondScatAmps   = tf.stack(self.bondScatAmpsList)
+    self.molAtomicScat  = tf.reduce_sum(tf.stack(self.atomicScat), 
+                              0, 
+                              keepdims=True)
     print("bondScatAmps ", self.bondScatAmps.shape.as_list())
-    self.bondNormAmps = tf.multiply(
+    print("molAtomicScat ", self.molAtomicScat.shape.as_list())
+    self.bondNormAmps = tf.divide(
                             self.bondScatAmps,
-                            self.atomicNorm)
+                            self.molAtomicScat)
     print("bondNormAmps ", self.bondNormAmps.shape.as_list())
 
 
@@ -255,11 +310,15 @@ class fitPairCorr():
                     name = "Sargs")
     print("Sargs ", self.Sargs.shape.as_list())
 
-    self.sinusiods    = tf.sin(self.Sargs)
-    self.sinusiodsDR  = tf.divide(
-                              self.sinusiods,
-                              self.rVals)
-    self.fitFxns      = tf.multiply(
+    if self.sineFit:
+      self.fitFxns = tf.expand_dims(tf.sin(self.Sargs), 0)
+
+    else:
+      self.sinusiods    = tf.sin(self.Sargs)
+      self.sinusiodsDR  = tf.divide(
+                            self.sinusiods,
+                            self.rVals)
+      self.fitFxns      = tf.multiply(
                             tf.expand_dims(self.sinusiodsDR, 0),
                             tf.expand_dims(self.bondNormAmps,1))
     print("fitFxns ", self.fitFxns.shape.as_list())
@@ -268,9 +327,12 @@ class fitPairCorr():
       self.X    = tf.reshape(self.fitFxns, 
                     (self.NbondTypes*self.NfitFxns, self.Nbins))
       self.varM = tf.eye(self.Nbins) #tf.diag(1./(self.var + 1e-3))
+      self.NE = tf.matmul(self.X, tf.einsum('ij,kj->ik', self.varM, self.X))
       self.NE_norm    = tf.matrix_inverse(tf.matmul(self.X,
                             tf.einsum('ij,kj->ik', self.varM, self.X)),
                           name="normEqnNorm")
+      self.Linv = tf.matmul(self.NE_norm, self.NE)
+      self.Rinv = tf.matmul(self.NE, self.NE_norm)
       print("X / varM / NE_norm  ", 
           (self.X.shape.as_list(),
             self.varM.shape.as_list(),
@@ -297,11 +359,52 @@ class fitPairCorr():
 
   def add_loss(self):
 
-    self.loss = tf.reduce_mean(
+    self.chiSq = tf.reduce_mean(
                     tf.divide(
                       tf.square(self.prediction - self.fitData),
-                      self.fitDataVar)
-                    )
+                      self.fitDataVar))
+    self.sineT = tf.reduce_mean(
+                    tf.divide(
+                      tf.square(
+                        self.sineTransform - tf.reduce_sum(self.fitCoeffs, 0)),
+                      tf.abs(self.sineTransform) + 1e-10))
+    self.lowR  = tf.reduce_mean(
+                    tf.matmul(
+                      tf.abs(self.fitCoeffs),
+                      self.rVals))
+
+    self.smooth =   tf.reduce_mean(
+                      tf.abs(
+                        self.fitCoeffs[:,:-1] - self.fitCoeffs[:,1:]))
+    self.smooth +=  0.5*tf.reduce_mean(
+                      tf.abs(
+                        self.fitCoeffs[:,:-2] - self.fitCoeffs[:,2:]))
+    self.smooth *= 100*self.chiSq
+    self.nonZero  = tf.reduce_mean(
+                      tf.minimum(tf.zeros_like(self.fitCoeffs), 
+                        self.fitCoeffs))
+    self.nonZero  *= -1000
+ 
+    self.noise    = tf.reduce_mean(
+                      tf.square(
+                        tf.where(
+                          tf.less(self.fitCoeffs, 
+                            0.01*tf.ones_like(self.fitCoeffs)), 
+                          1 + tf.abs(self.fitCoeffs), 
+                          tf.zeros_like(self.fitCoeffs))))
+    """
+    self.noise    = tf.reduce_mean(
+                      tf.abs(
+                        1./(0.0051 - tf.where(
+                          tf.less(self.fitCoeffs, 
+                            0.005*tf.ones_like(self.fitCoeffs)), 
+                          tf.abs(self.fitCoeffs), 
+                          tf.zeros_like(self.fitCoeffs)))))
+    self.noise    /= 10000
+    """
+
+    #self.loss = self.chiSq + 100*self.sineT + self.lowR*tf.square(self.chiSq)
+    self.loss = self.chiSq + self.smooth# + self.nonZero #+ self.noise
 
 
   def add_optimizer(self):
@@ -324,11 +427,20 @@ class fitPairCorr():
     output = [
         self.global_step,
         self.loss,
+        self.chiSq,
+        self.sineT,
+        self.lowR,
+        self.smooth,
+        self.nonZero,
+        self.noise,
         self.update]
 
-    global_step, currentLoss, _ = sess.run(output, feed_dict)
+    global_step, currentLoss,\
+    currentChiSq, currentSineT,\
+    currentLowR, currentSmooth,\
+    currentNonZero, currentNoise, _ = sess.run(output, feed_dict)
 
-    return global_step, currentLoss
+    return global_step, currentLoss, currentChiSq, 100*currentSineT, currentLowR, currentSmooth, currentNonZero, currentNoise
 
 
   def fit(self, sess):
@@ -337,9 +449,13 @@ class fitPairCorr():
 
     global_step = 0
     while (global_step < self.maxTrainIters) or (self.maxTrainIters is 0):
-      global_step, currentLoss = self.run_fit_step(sess)
+      global_step, currentLoss,\
+      currentChiSq, currentSineT,\
+      currentLowR, currentSmooth,\
+      currentNonZero, currentNoise = self.run_fit_step(sess)
       self.history.append(currentLoss)
-      print("Loss %i: \t%f" % (global_step, currentLoss))
+      print("Loss %i: \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E" % 
+          (global_step, currentLoss, currentChiSq, currentSineT, currentSmooth, currentNonZero, currentNoise))
 
       if global_step % self.saveEvery is 0:
         self.saver.save(sess,
@@ -373,4 +489,31 @@ class fitPairCorr():
         self.fitData    : self.data,
         self.fitDataVar : self.var}
 
-    return sess.run(self.prediction, feed_dict)
+    if "startBin" in self.parameters:
+      fit = np.zeros(self.parameters["Nbins"])
+      fit[self.parameters["startBin"]:] = sess.run(self.prediction, feed_dict)
+      return fit
+    else:
+      return sess.run(self.prediction, feed_dict)
+
+  
+  def evaluate(self, sess, output):
+    
+    feed_dict = {
+        self.fitData    : self.data,
+        self.fitDataVar : self.var}
+
+    return sess.run(output, feed_dict)
+
+
+  def debugFxn(self, sess):
+    
+    feed_dict = {
+        self.fitData    : self.data,
+        self.fitDataVar : self.var}
+
+    output = [self.Linv, self.Rinv]
+
+    return sess.run(output, feed_dict)
+
+
