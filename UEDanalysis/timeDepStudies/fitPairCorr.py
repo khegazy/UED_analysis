@@ -85,21 +85,25 @@ class fitPairCorr():
 
     #####  Data  #####
     self.NANVAL     = 1.234567e-10
-    if _fitData.shape[0] != self.NinpBins:
+    if len(_fitData.shape) == 1:
+      _fitData  = np.reshape(_fitData, (1,-1))
+      _variance = np.reshape(_variance, (1,-1))
+    if _fitData.shape[1] != self.NinpBins:
       raise RuntimeError("Length of data (%i) and self.NinpBins (%i) must match" 
-          % (_fitData.shape[0], self.NinpBins))
+          % (_fitData.shape[1], self.NinpBins))
 
     self.startBin = 0
-    while _fitData[self.startBin] is self.NANVAL:
+    while self.NANVAL in _fitData[:,self.startBin]:
       self.startBin += 1
     if "startBin" in parameters:
       self.startBin = parameters["startBin"]
 
     self.Nbins = self.NinpBins - self.startBin
+    self.Nfits = _fitData.shape[0]
 
     print("start", self.startBin)
-    self.data = _fitData[self.startBin:].astype(np.float32)
-    self.var  = _variance[self.startBin:].astype(np.float32)
+    self.data = _fitData[:,self.startBin:].astype(np.float32)
+    self.var  = _variance[:,self.startBin:].astype(np.float32)
 
 
     #####  Get Sine Transform  #####
@@ -164,8 +168,8 @@ class fitPairCorr():
 
 
     #####  Placeholders  #####
-    self.fitData    = tf.placeholder(tf.float32, [self.Nbins], name="data")
-    self.fitDataVar = tf.placeholder(tf.float32, [self.Nbins], name="var")
+    self.fitData    = tf.placeholder(tf.float32, [self.Nfits, self.Nbins], name="data")
+    self.fitDataVar = tf.placeholder(tf.float32, [self.Nfits, self.Nbins], name="var")
 
 
       
@@ -174,13 +178,13 @@ class fitPairCorr():
       if self.sineFit:
         self.fitCoeffs  = tf.get_variable(
                             "fitCoeff",
-                            initializer=np.zeros((1, self.NfitFxns), 
+                            initializer=np.zeros((self.Nfits, 1, self.NfitFxns), 
                                         dtype=np.float32))
       else:
         self.fitCoeffs  = tf.get_variable(
                             "fitCoeff", 
                             initializer=np.zeros(
-                              (self.NbondTypes, self.NfitFxns), 
+                              (self.Nfits, self.NbondTypes, self.NfitFxns), 
                               dtype=np.float32))
 
 
@@ -345,14 +349,14 @@ class fitPairCorr():
       self.fitCoeffs  = tf.reshape(self.flatCoeffs, 
                           (self.NbondTypes, self.NfitFxns),
                           name="fitCoeffs")
-      print("fitCoeffs ", self.fitCoeffs.shape.as_list())
 
     self.prediction = tf.einsum(
-                       'ijk,ij->k',
+                       'ijk,nij->nk',
                         self.fitFxns,
                         self.fitCoeffs,
                         name="prediction")
 
+    print("fitCoeffs ", self.fitCoeffs.shape.as_list())
     print("prediction ", self.prediction.shape.as_list())
 
 
@@ -363,27 +367,55 @@ class fitPairCorr():
                     tf.divide(
                       tf.square(self.prediction - self.fitData),
                       self.fitDataVar))
+
     self.sineT = tf.reduce_mean(
                     tf.divide(
                       tf.square(
-                        self.sineTransform - tf.reduce_sum(self.fitCoeffs, 0)),
+                        tf.expand_dims(self.sineTransform, 0) 
+                        - tf.reduce_sum(self.fitCoeffs, 0)),
                       tf.abs(self.sineTransform) + 1e-10))
+
     self.lowR  = tf.reduce_mean(
-                    tf.matmul(
+                    tf.einsum(
+                      'nij,jk->nik',
                       tf.abs(self.fitCoeffs),
                       self.rVals))
 
+    self.nnDiff   = tf.divide(
+                      self.fitCoeffs[:,:,:-1]
+                        -self.fitCoeffs[:,:,1:],
+                      (tf.abs(self.fitCoeffs[:,:,:-1])
+                        +tf.abs(self.fitCoeffs[:,:,1:]))/2+1e-7)
+    self.nnnDiff  = tf.divide(
+                      self.fitCoeffs[:,:,:-2]
+                        -self.fitCoeffs[:,:,2:],
+                      (tf.abs(self.fitCoeffs[:,:,:-2])
+                        +tf.abs(self.fitCoeffs[:,:,2:]))/2+1e-7)
+    self.smoothVariance = (0.5)**2
+    self.smooth   = tf.reduce_mean(
+                      1 - (tf.exp(-1*tf.square(self.nnDiff)
+                        /(2*self.smoothVariance))))
+    #self.smooth   += 0.75*tf.reduce_mean(
+    #                  1./tf.exp(-1*tf.square(self.nnnDiff)
+    #                    /(2*self.smoothVariance)))
+    """
     self.smooth =   tf.reduce_mean(
-                      tf.abs(
-                        self.fitCoeffs[:,:-1] - self.fitCoeffs[:,1:]))
+                      tf.where(
+                        tf.less(self.nnDiff, self.nnCut),
+                        tf.zeros_like(self.nnDiff),
+                        self.nnDiff))
     self.smooth +=  0.5*tf.reduce_mean(
-                      tf.abs(
-                        self.fitCoeffs[:,:-2] - self.fitCoeffs[:,2:]))
-    self.smooth *= 100*self.chiSq
-    self.nonZero  = tf.reduce_mean(
+                      tf.where(
+                        tf.less(self.nnnDiff, self.nnnCut),
+                        tf.zeros_like(self.nnnDiff),
+                        self.nnnDiff))
+    """
+    self.smooth *= 10*self.chiSq
+
+    self.nonNeg  = tf.reduce_mean(
                       tf.minimum(tf.zeros_like(self.fitCoeffs), 
                         self.fitCoeffs))
-    self.nonZero  *= -1000
+    self.nonNeg  *= -1000
  
     self.noise    = tf.reduce_mean(
                       tf.square(
@@ -403,8 +435,7 @@ class fitPairCorr():
     self.noise    /= 10000
     """
 
-    #self.loss = self.chiSq + 100*self.sineT + self.lowR*tf.square(self.chiSq)
-    self.loss = self.chiSq + self.smooth# + self.nonZero #+ self.noise
+    self.loss = self.chiSq + self.smooth + self.nonNeg #+ self.noise
 
 
   def add_optimizer(self):
@@ -431,16 +462,16 @@ class fitPairCorr():
         self.sineT,
         self.lowR,
         self.smooth,
-        self.nonZero,
+        self.nonNeg,
         self.noise,
         self.update]
 
     global_step, currentLoss,\
     currentChiSq, currentSineT,\
     currentLowR, currentSmooth,\
-    currentNonZero, currentNoise, _ = sess.run(output, feed_dict)
+    currentNonNeg, currentNoise, _ = sess.run(output, feed_dict)
 
-    return global_step, currentLoss, currentChiSq, 100*currentSineT, currentLowR, currentSmooth, currentNonZero, currentNoise
+    return global_step, currentLoss, currentChiSq, 100*currentSineT, currentLowR, currentSmooth, currentNonNeg, currentNoise
 
 
   def fit(self, sess):
@@ -449,13 +480,14 @@ class fitPairCorr():
 
     global_step = 0
     while (global_step < self.maxTrainIters) or (self.maxTrainIters is 0):
+      
       global_step, currentLoss,\
       currentChiSq, currentSineT,\
       currentLowR, currentSmooth,\
-      currentNonZero, currentNoise = self.run_fit_step(sess)
+      currentNonNeg, currentNoise = self.run_fit_step(sess)
       self.history.append(currentLoss)
       print("Loss %i: \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E" % 
-          (global_step, currentLoss, currentChiSq, currentSineT, currentSmooth, currentNonZero, currentNoise))
+          (global_step, currentLoss, currentChiSq, currentSineT, currentSmooth, currentNonNeg, currentNoise))
 
       if global_step % self.saveEvery is 0:
         self.saver.save(sess,
@@ -490,8 +522,8 @@ class fitPairCorr():
         self.fitDataVar : self.var}
 
     if "startBin" in self.parameters:
-      fit = np.zeros(self.parameters["Nbins"])
-      fit[self.parameters["startBin"]:] = sess.run(self.prediction, feed_dict)
+      fit = np.zeros((self.Nfits, self.parameters["Nbins"]))
+      fit[:,self.parameters["startBin"]:] = sess.run(self.prediction, feed_dict)
       return fit
     else:
       return sess.run(self.prediction, feed_dict)
