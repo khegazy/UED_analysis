@@ -4,6 +4,7 @@ import os
 from plotClass import plotCLASS
 import tensorflow as tf
 import numpy as np
+import pickle as pl
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
@@ -107,21 +108,22 @@ class fitPairCorr():
 
 
     #####  Get Sine Transform  #####
-    STfileName = parameters["sineTransFile"]
-    STmaxR  = float(STfileName[STfileName.find("maxR")+5:\
-                STfileName.find("[")])
-    STbins  = int(STfileName[STfileName.find("[")+1:\
-                STfileName.find("]")])
-    print(STmaxR)
-    self.inputSineTransform = np.fromfile(STfileName, dtype=np.double)
-    self.sineTransformIntrp = interp1d(
-                                np.linspace(0, 1, STbins)*STmaxR, 
-                                self.inputSineTransform)
-    self.sineTransform      = tf.constant(
-                                self.sineTransformIntrp(
-                                  np.linspace(self.minR, self.maxR, self.NfitFxns)),
-                                dtype=tf.float32)
- 
+    if parameters["sineTransFile"] is not None:
+      STfileName = parameters["sineTransFile"]
+      STmaxR  = float(STfileName[STfileName.find("maxR")+5:\
+                  STfileName.find("[")])
+      STbins  = int(STfileName[STfileName.find("[")+1:\
+                  STfileName.find("]")])
+      print(STmaxR)
+      self.inputSineTransform = np.fromfile(STfileName, dtype=np.double)
+      self.sineTransformIntrp = interp1d(
+                                  np.linspace(0, 1, STbins)*STmaxR, 
+                                  self.inputSineTransform)
+      self.sineTransform      = tf.constant(
+                                  self.sineTransformIntrp(
+                                    np.linspace(self.minR, self.maxR, self.NfitFxns)),
+                                  dtype=tf.float32)
+   
 
     #####  Training  #####
     self.beta1 = 0.99
@@ -228,7 +230,6 @@ class fitPairCorr():
                         (1,-1))),
                       axis=0)
 
-    print("Ishapes", len(inpAngs), _scatAmps.shape)
     self.scatAngs = tf.constant(
                         np.tile(
                           np.expand_dims(
@@ -254,6 +255,13 @@ class fitPairCorr():
     self.add_loss()
     if not self.doNormalEqn:
       self.add_optimizer()
+
+
+    ###################
+    #####  Saver  #####
+    ###################
+
+    self.saver = tf.train.Saver()
 
 
           
@@ -363,24 +371,20 @@ class fitPairCorr():
 
   def add_loss(self):
 
+    # Chi Squared
     self.chiSq = tf.reduce_mean(
                     tf.divide(
                       tf.square(self.prediction - self.fitData),
                       self.fitDataVar))
 
-    self.sineT = tf.reduce_mean(
-                    tf.divide(
-                      tf.square(
-                        tf.expand_dims(self.sineTransform, 0) 
-                        - tf.reduce_sum(self.fitCoeffs, 0)),
-                      tf.abs(self.sineTransform) + 1e-10))
-
+    # Minimize large R contribution
     self.lowR  = tf.reduce_mean(
                     tf.einsum(
                       'nij,jk->nik',
                       tf.abs(self.fitCoeffs),
                       self.rVals))
 
+    # Smooth fit coefficient distribution
     self.nnDiff   = tf.divide(
                       self.fitCoeffs[:,:,:-1]
                         -self.fitCoeffs[:,:,1:],
@@ -391,32 +395,23 @@ class fitPairCorr():
                         -self.fitCoeffs[:,:,2:],
                       (tf.abs(self.fitCoeffs[:,:,:-2])
                         +tf.abs(self.fitCoeffs[:,:,2:]))/2+1e-7)
-    self.smoothVariance = (0.5)**2
+    self.nnVariance  = (0.5)**2
+    self.nnnVariance = (0.7)**2
     self.smooth   = tf.reduce_mean(
-                      1 - (tf.exp(-1*tf.square(self.nnDiff)
-                        /(2*self.smoothVariance))))
-    #self.smooth   += 0.75*tf.reduce_mean(
-    #                  1./tf.exp(-1*tf.square(self.nnnDiff)
-    #                    /(2*self.smoothVariance)))
-    """
-    self.smooth =   tf.reduce_mean(
-                      tf.where(
-                        tf.less(self.nnDiff, self.nnCut),
-                        tf.zeros_like(self.nnDiff),
-                        self.nnDiff))
-    self.smooth +=  0.5*tf.reduce_mean(
-                      tf.where(
-                        tf.less(self.nnnDiff, self.nnnCut),
-                        tf.zeros_like(self.nnnDiff),
-                        self.nnnDiff))
-    """
-    self.smooth *= 10*self.chiSq
+                      1 - tf.exp(-1*tf.square(self.nnDiff)
+                        /(2*self.nnVariance)))
+    #self.smooth   += tf.reduce_mean(
+    #                  1 - tf.exp(-1*tf.square(self.nnnDiff)
+    #                    /(2*self.nnnVariance)))
+    self.smooth *= 20*self.chiSq
 
+    # Remove negative coefficients
     self.nonNeg  = tf.reduce_mean(
                       tf.minimum(tf.zeros_like(self.fitCoeffs), 
                         self.fitCoeffs))
     self.nonNeg  *= -1000
  
+    # Dampen coefficients with small values (noise)
     self.noise    = tf.reduce_mean(
                       tf.square(
                         tf.where(
@@ -435,7 +430,14 @@ class fitPairCorr():
     self.noise    /= 10000
     """
 
-    self.loss = self.chiSq + self.smooth + self.nonNeg #+ self.noise
+    self.loss = self.chiSq 
+    
+    if self.parameters["smoothLoss"]:
+      self.loss += self.smooth 
+    if self.parameters["nonNegLoss"]:
+      self.loss += self.nonNeg 
+    if self.parameters["noiseLoss"]:
+      self.loss += self.noise
 
 
   def add_optimizer(self):
@@ -459,7 +461,6 @@ class fitPairCorr():
         self.global_step,
         self.loss,
         self.chiSq,
-        self.sineT,
         self.lowR,
         self.smooth,
         self.nonNeg,
@@ -467,11 +468,11 @@ class fitPairCorr():
         self.update]
 
     global_step, currentLoss,\
-    currentChiSq, currentSineT,\
+    currentChiSq,\
     currentLowR, currentSmooth,\
     currentNonNeg, currentNoise, _ = sess.run(output, feed_dict)
 
-    return global_step, currentLoss, currentChiSq, 100*currentSineT, currentLowR, currentSmooth, currentNonNeg, currentNoise
+    return global_step, currentLoss, currentChiSq, currentLowR, currentSmooth, currentNonNeg, currentNoise
 
 
   def fit(self, sess):
@@ -482,28 +483,20 @@ class fitPairCorr():
     while (global_step < self.maxTrainIters) or (self.maxTrainIters is 0):
       
       global_step, currentLoss,\
-      currentChiSq, currentSineT,\
+      currentChiSq,\
       currentLowR, currentSmooth,\
       currentNonNeg, currentNoise = self.run_fit_step(sess)
       self.history.append(currentLoss)
-      print("Loss %i: \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E" % 
-          (global_step, currentLoss, currentChiSq, currentSineT, currentSmooth, currentNonNeg, currentNoise))
+      print("Loss %i: \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E" % 
+          (global_step, currentLoss, currentChiSq, currentSmooth, currentNonNeg, currentNoise))
 
-      if global_step % self.saveEvery is 0:
-        self.saver.save(sess,
-            fileName=self.checkpointPath + "/fitting",
-            global_step=global_step)
+    self.saver.save(sess,
+        self.parameters["checkpointPath"]+"/fitting")
 
-        pl.dump(self.history, 
-            open(self.checkpointPath 
-              + "/fitting-history-" 
-              + str(global_step)+".pl", "wb"))
-
-        if global_step is not 0:
-          os.remove(self.checkpointPath 
-              + "/fitting-history-"
-              + str(global_step - self.saveEvery) + ".pl")
-
+    pl.dump(self.history, 
+        open(self.parameters["checkpointPath"]
+          + "/fitting-history-" 
+          + str(global_step)+".pl", "wb"))
 
 
   def get_fitCoeff(self, sess):
