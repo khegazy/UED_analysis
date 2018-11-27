@@ -39,13 +39,11 @@ class mergeClass : public parameterClass {
 
     std::vector<double> Qazm;
     std::vector<double> Qleg;
-    std::vector<double> sMsLegNorm;
-    std::vector<double> sMsAzmNorm;
 
     struct LTparamStruct {
       int scan;
-      int stagePos;
-      double imgNorm;
+      int64_t stagePos;
+      double  imgNorm;
     };
 
     struct referenceStruct {
@@ -72,6 +70,8 @@ class mergeClass : public parameterClass {
     // Output files and location
     string fileName = "mergedScans.txt";
 
+    std::vector<double> sMsLegNorm;
+    std::vector<double> sMsAzmNorm;
     std::vector<double> azmReference;
     std::vector<double> runLegRefMeans, runAzmRefMeans;
     std::vector<double> runLegRefSTD, runAzmRefSTD;
@@ -79,7 +79,7 @@ class mergeClass : public parameterClass {
     std::vector< std::vector<double> > legReference;
     std::vector< std::vector< std::vector<double> > > legendres, legendresMs;
     std::vector< std::vector< std::vector<double> > > smearedImg;
-    std::map< int32_t, int > stagePosInds;
+    std::map< int64_t, int > stagePosInds;
     std::map< int, std::vector<double> > scanCounts;
     std::map< int, std::vector< std::vector<double> > > scanLgndrs;
     std::map< int, std::vector< std::vector<double> > > scanAzmAvg;
@@ -99,25 +99,27 @@ class mergeClass : public parameterClass {
     std::vector<double> smoothImgNorm, smoothImgNormSTD;
 
     void compareSimulations(std::vector<std::string> radicals);
-    void addEntry(int scan, int stagePos,
+    void addEntry(int scan, int64_t stagePos,
                   std::vector<double>* azmAvg, 
                   std::vector<double>* legCoeffs,
                   double imgNorm);
     void addLabTimeParameter(int timeStamp,
-                  int scan, int stagePos,
+                  int scan, int64_t stagePos,
                   double imgNorm);
-    void addReference(int scan, int stagePos,
+    void addReference(int scan, int64_t stagePos,
                   std::vector<double>* azmAvg,
                   std::vector<double>* legCoeffs,
                   double imgNorm);
    
-
+    void removeLowPolynomials();
     void removeLabTimeOutliers();
     void removeOutliers();
-    void mergeScans();
+    void getMeanSTD();
+    void mergeScans(bool refOnly=false, bool tdOnly=false);
     void subtractT0();
     void normalize();
     void smearTimeGaussian();
+    void smearTimeFFT();
 
 
     /*
