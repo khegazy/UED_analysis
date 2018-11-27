@@ -41,7 +41,6 @@ int main(int argc, char* argv[]) {
   std::string runName = fileList.substr(iPos, 13); //fPos - iPos);
   cout<<"RunName: "<<runName<<endl;
   mergeClass merge(runName);
-  //parameterClass params(runName);
 
   std::string prefix = "";
   bool scanSearch = false;
@@ -141,22 +140,21 @@ int main(int argc, char* argv[]) {
     }
 
     ///  Insert entries to respective maps  ///
-    
-    bool skip = false;
-    for (int iq=0; iq<100; iq++) {
-      if (fabs((*filtAzmAvg)[iq]) > 0.1) {
-        skip = true;
-        break;
-      }
-    }
-    if (true || !skip) {
-      merge.addEntry(scan, stagePos, filtAzmAvg, legCoeffs, 1);
-    }
+   
+    merge.addEntry(scan, stagePos, filtAzmAvg, legCoeffs, 1);
     //merge.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
 
   }
 
 
+  ////////////////////////////////////////////
+  /////  Subtract low order polynomials  /////
+  ////////////////////////////////////////////
+ 
+  if (merge.verbose) {
+    std::cout << "INFO: Removing low order polynomials.\n";
+  }
+  merge.removeLowPolynomials();
 
 
   ///////////////////////////////////////////////////////////
@@ -168,13 +166,9 @@ int main(int argc, char* argv[]) {
   merge.removeOutliers();
 
   merge.mergeScans();
-  // Clean up NANVAL for saving and plotting
-  for (int itm=0; itm<merge.azimuthalAvg.size(); itm++) {
-    for (int ir=0; ir<50; ir++) {
-      if (itm==10) cout<<ir<<"  "<<merge.azimuthalAvg[itm][ir]<<endl; 
-    }
-  }
-  cout<<"now subtracting T0"<<endl;
+
+  // Get Mean and STD
+  merge.getMeanSTD();
 
 
   /////  Saving  /////
@@ -192,27 +186,46 @@ int main(int argc, char* argv[]) {
   if (merge.verbose) 
     std::cout << "INFO: saving merged references and before t0 subtraction.\n";
   // References
-  plt.print1d(merge.azmReference, "tesingRef");
+  plt.print1d(merge.azmReference, "testingRef");
   save::saveDat<double>(merge.azmReference,
-      "./results/referenceAzm-" + runName +
-      "[" + to_string(merge.NradAzmBins) + "].dat");
+      merge.mergeScansOutputDir + 
+      "/data-" + runName + "-" + prefix+ 
+      "referenceAzm[" +
+      to_string(merge.NradAzmBins) + "].dat");
   save::saveDat<double>(merge.legReference,
-      "./results/referenceLeg-" + runName + 
-      "[" + to_string(merge.Nlegendres) + 
+      merge.mergeScansOutputDir + 
+      "/data-" + runName + "-" + prefix+ 
+      "referenceLeg[" + 
+      to_string(merge.Nlegendres) + 
       "," + to_string(merge.NradLegBins) + "].dat");
+  save::saveDat<double>(merge.runAzmRefMeans,
+      merge.mergeScansOutputDir + 
+      "/data-" + runName + "-" + prefix + 
+      "referenceAzmMean[" +
+      to_string(merge.NradAzmBins) + "].dat");
+  save::saveDat<double>(merge.runAzmRefSTD,
+      merge.mergeScansOutputDir + 
+      "/data-" + runName + "-" + prefix +
+      "referenceAzmStandardDev[" +
+      to_string(merge.NradAzmBins) + "].dat");
+  save::saveDat<double>(merge.runAzmMeans,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "mean[" 
+      + to_string(merge.runAzmMeans.size()) + ","
+      + to_string(merge.runAzmMeans[0].size()) + "].dat");
+  save::saveDat<double>(merge.runAzmSTD,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "standardDev[" 
+      + to_string(merge.runAzmSTD.size()) + ","
+      + to_string(merge.runAzmSTD[0].size()) + "].dat");
 
  
-  /*
-  if (scanSearch || merge.pltVerbose) {
-    plt.printRC(merge.azimuthalAvg, 
-        "data-"
-        + runName + "-" + prefix + "azmAvgDiffRaw", maximum, "1e-18");
-  }
-  */
-  
 
   merge.subtractT0();
   merge.normalize();
+
+  // Get Mean and STD
+  merge.getMeanSTD();
 
   //merge.smearTime();
 
@@ -246,6 +259,29 @@ int main(int argc, char* argv[]) {
   plt.printRC(merge.azimuthalAvg, 
       "./plots/data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
+
+  save::saveDat<double>(merge.runAzmMeans,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "sMsMean[" 
+      + to_string(merge.runAzmMeans.size()) + ","
+      + to_string(merge.runAzmMeans[0].size()) + "].dat");
+  save::saveDat<double>(merge.runAzmSTD,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "sMsStandardDev[" 
+      + to_string(merge.runAzmSTD.size()) + ","
+      + to_string(merge.runAzmSTD[0].size()) + "].dat");
+
+  save::saveDat<double>(merge.runAzmRefMeans,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix
+      + "referenceAzmsMsMean[" 
+      + to_string(merge.NradAzmBins) + "].dat");
+  save::saveDat<double>(merge.runAzmRefSTD,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix
+      + "referenceAzmsMsStandardDev[" 
+      + to_string(merge.NradAzmBins) + "].dat");
+ 
 
 
   if (scanSearch) {
