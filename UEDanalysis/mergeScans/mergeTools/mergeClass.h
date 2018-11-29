@@ -24,7 +24,10 @@ class mergeClass : public parameterClass {
   private :
 
     PLOTclass* plt;
-    
+  
+    bool _compareReference;
+    std::vector<double> compReference;
+
     int curScan;
     int NlegBins;
     int NrefBins;
@@ -60,8 +63,9 @@ class mergeClass : public parameterClass {
 
   public :
 
-    // Constructor
+    // Constructors/Destructor
     mergeClass(std::string runName);
+    void compareReference(std::string);
     ~mergeClass();
 
     std::string runName;

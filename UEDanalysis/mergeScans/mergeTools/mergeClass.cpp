@@ -22,6 +22,7 @@ void mergeClass::initializeVariables() {
   runInd   = "";
   curDate  = "";
   curRun   = "";
+  _compareReference = false;
 
   timeDelays = NULL;
 
@@ -83,6 +84,14 @@ void mergeClass::initializeVariables() {
   legendresMs.resize(Nlegendres);
 }
 
+
+void mergeClass::compareReference(std::string refAddr) {
+
+  _compareReference = true;
+
+  compReference.resize(NradAzmBins);
+  save::importDat<double>(compReference, refAddr);
+}
 
 void mergeClass::calculateSMS() {
 
@@ -461,8 +470,8 @@ void mergeClass::getMeanSTD() {
     std::cout << "\tCalculating azimuthal mean.\n";
   for (int ir=0; ir<NradAzmBins; ir++) {
     norm = 0;
-    for (auto sRitr : scanReferences) {
-      for (auto pItr : sRitr.second) {
+    for (auto const & sRitr : scanReferences) {
+      for (auto const &pItr : sRitr.second) {
         if (pItr.second.azmRef[ir] != NANVAL) {
           runAzmRefMeans[ir] += pItr.second.azmRef[ir];
           norm += 1;
@@ -484,8 +493,8 @@ void mergeClass::getMeanSTD() {
     std::cout << "\tCalculating legendre std.\n";
   for (int ir=0; ir<NlegBins; ir++) {
     norm = 0;
-    for (auto sRitr : scanReferences) {
-      for (auto pItr : sRitr.second) {
+    for (auto const & sRitr : scanReferences) {
+      for (auto const & pItr : sRitr.second) {
         if (pItr.second.legRef[ir] != NANVAL) {
           runLegRefSTD[ir] 
               += std::pow((pItr.second.legRef[ir] 
@@ -508,8 +517,8 @@ void mergeClass::getMeanSTD() {
     std::cout << "\tCalculating azimuthal std.\n";
   for (int ir=0; ir<NradAzmBins; ir++) {
     norm = 0;
-    for (auto sRitr : scanReferences) {
-      for (auto pItr : sRitr.second) {
+    for (auto const & sRitr : scanReferences) {
+      for (auto const & pItr : sRitr.second) {
         if (pItr.second.azmRef[ir] != NANVAL) {
           runAzmRefSTD[ir] 
               += std::pow((pItr.second.azmRef[ir]
@@ -531,7 +540,7 @@ void mergeClass::getMeanSTD() {
   /////  Time Dependent Images  /////
   ///////////////////////////////////
  
-  for (auto pItr : stagePosInds) {
+  for (auto const & pItr : stagePosInds) {
     /////  Mean calculation  /////
     std::fill(azmNorms.begin(), azmNorms.end(), 0);
     std::fill(legNorms.begin(), legNorms.end(), 0);
@@ -559,7 +568,7 @@ void mergeClass::getMeanSTD() {
     ///  Azimuthal  ///
     if (verbose && (pItr.second == 0)) 
       std::cout << "\tCalculating azimuthal mean.\n";
-    for (auto sAitr : scanAzmAvg) {
+    for (auto const & sAitr : scanAzmAvg) {
       if (scanCounts[sAitr.first][pItr.second] > 0) {
         for (int i=0; i<NradAzmBins; i++) {
           if (sAitr.second[pItr.second][i] != NANVAL) {
@@ -581,7 +590,7 @@ void mergeClass::getMeanSTD() {
     ///  Legendres  ///
     if (verbose && (k == 0) && (pItr.second == 0)) 
       std::cout << "\tCalculating legendre std.\n";
-    for (auto sLitr : scanLgndrs) {
+    for (auto const & sLitr : scanLgndrs) {
       if (scanCounts[sLitr.first][pItr.second]) {
         for (int i=0; i<NlegBins; i++) {
           if (sLitr.secondpItr.second][i] != NANVAL) {
@@ -603,7 +612,7 @@ void mergeClass::getMeanSTD() {
     ///  Azimuthal  ///
     if (verbose && (pItr.second == 0)) 
       std::cout << "\tCalculating azimuthal std.\n";
-    for (auto sAitr : scanAzmAvg) {
+    for (auto const & sAitr : scanAzmAvg) {
       if (scanCounts[sAitr.first][pItr.second]) {
         for (int i=0; i<NradAzmBins; i++) {
           if (sAitr.second[pItr.second][i] != NANVAL) {
@@ -624,14 +633,11 @@ void mergeClass::getMeanSTD() {
 }
 
 
-
-//std::vector<int> mergeClass::alignScanTime() {
-
-//  for (long int i=0; i<NalignTimeSamples; i++) {
-
 void mergeClass::removeLowPolynomials() {
 
-  mergeScans(true, false);
+  if (!_compareReference) {
+    mergeScans(true, false);
+  }
   getMeanSTD();
 
   int mInd, Nnans;
@@ -645,8 +651,8 @@ void mergeClass::removeLowPolynomials() {
   /////  Subtracting from references  /////
   if (verbose)
     std::cout << "\tRemoving low order polynomials from references.\n";
-  for (auto sRitr : scanReferences) {
-    for (auto pItr : sRitr.second) {
+  for (auto& sRitr : scanReferences) {
+    for (auto& pItr : sRitr.second) {
       if (pItr.second.imgNorm) {
         Nnans = 0;
         for (int ir=NbinsSkip; ir<NradAzmBins; ir++) {
@@ -658,10 +664,13 @@ void mergeClass::removeLowPolynomials() {
         mInd = 0;
         for (int ir=NbinsSkip; ir<NradAzmBins; ir++) {
           if (pItr.second.azmRef[ir] != NANVAL) {
-            for (int p=0; p<Npoly; p++) {
-              X(mInd,p) = std::pow(maxQazm-ir*delta, p+4);
+            X(mInd,0) = std::pow(maxQazm-ir*delta, 6);
+            if (_compareReference) {
+              Y(mInd,0) = pItr.second.azmRef[ir] - compReference[ir];
             }
-            Y(mInd,0) = pItr.second.azmRef[ir] - azmReference[ir];
+            else {
+              Y(mInd,0) = pItr.second.azmRef[ir] - azmReference[ir];
+            }
             w(mInd)   = std::pow(1/runAzmRefSTD[ir], 2);
             mInd += 1;
           }
@@ -671,9 +680,7 @@ void mergeClass::removeLowPolynomials() {
 
         for (int ir=0; ir<NradAzmBins; ir++) {
           if (pItr.second.azmRef[ir] != NANVAL) {
-            for (int p=0; p<Npoly; p++) {
-              pItr.second.azmRef[ir] -= weights(p)*std::pow(maxQazm-ir*delta, p+4);
-            }
+            pItr.second.azmRef[ir] -= weights(0)*std::pow(maxQazm-ir*delta, 6);
           }
         }
 
@@ -685,7 +692,9 @@ void mergeClass::removeLowPolynomials() {
   if (verbose)
     std::cout << "\tRemoving low order polynomials from td images.\n";
 
-  mergeScans(true, false);
+  if (!_compareReference) {
+    mergeScans(true, false);
+  }
 
   std::vector<PLOToptions> opts(2);
   std::vector<string> vals(2);
@@ -696,7 +705,7 @@ void mergeClass::removeLowPolynomials() {
   std::vector<double> fit(NradAzmBins);
   std::vector<TH1*> h(2);
   for (uint it=0; it<stagePosInds.size(); it++) {
-    for (auto sAzml : scanAzmAvg) {
+    for (auto& sAzml : scanAzmAvg) {
       if (scanCounts[sAzml.first][it] != 0) {
         Nnans = 0;
         for (int ir=NbinsSkip; ir<NradAzmBins; ir++) {
@@ -708,10 +717,13 @@ void mergeClass::removeLowPolynomials() {
         mInd = 0;
         for (int ir=NbinsSkip; ir<NradAzmBins; ir++) {
           if (sAzml.second[it][ir] != NANVAL) {
-            for (int p=0; p<Npoly; p++) {
-              X(mInd,p) = std::pow(maxQazm-ir*delta, p+4);
+            X(mInd,0) = std::pow(maxQazm-ir*delta, 6);
+            if (_compareReference) {
+              Y(mInd,0) = sAzml.second[it][ir] - compReference[ir];
             }
-            Y(mInd,0) = sAzml.second[it][ir] - azmReference[ir];
+            else {
+              Y(mInd,0) = sAzml.second[it][ir] - azmReference[ir];
+            }
             w(mInd)   = std::pow(1/runAzmSTD[it][ir], 2);
             mInd += 1;
           }
@@ -722,18 +734,27 @@ void mergeClass::removeLowPolynomials() {
         std::fill(fit.begin(), fit.end(), 0);
         for (int ir=0; ir<NradAzmBins; ir++) {
           if (sAzml.second[it][ir]!= NANVAL) {
-            plotme1[ir] = sAzml.second[it][ir] - azmReference[ir];
-            for (int p=0; p<Npoly; p++) {
-              sAzml.second[it][ir] -= weights(p)*std::pow(maxQazm-ir*delta, p+4);
-              fit[ir] += weights(p)*std::pow(maxQazm-ir*delta, p+4);
+            if (_compareReference) {
+              plotme1[ir] = sAzml.second[it][ir] - compReference[ir];
             }
-            plotme2[ir] = sAzml.second[it][ir] - azmReference[ir];
+            else {
+              plotme1[ir] = sAzml.second[it][ir] - azmReference[ir];
+            }
+            sAzml.second[it][ir] -= weights(0)*std::pow(maxQazm-ir*delta, 6);
+            fit[ir] += weights(0)*std::pow(maxQazm-ir*delta, 6);
+            if (_compareReference) {
+              plotme2[ir] = sAzml.second[it][ir] - compReference[ir];
+            }
+            else {
+              plotme2[ir] = sAzml.second[it][ir] - azmReference[ir];
+            }
           }
           else{
             plotme1[ir] = 0;
             plotme2[ir] = 0;
           }
         }
+        /*
         h[0] = plt->plot1d(plotme1, "testLowPolyRemoval-"
             + to_string(sAzml.first) + "-" + to_string(it),
             opts, vals);
@@ -748,6 +769,7 @@ void mergeClass::removeLowPolynomials() {
             opts, vals);
         delete h[0];
         delete h[1];
+        */
       }
     }
   }
@@ -846,6 +868,7 @@ void mergeClass::removeOutliers() {
         }
       }
     }
+    
 
     if (verbose) {
       std::cout << "Finished removing reference outliers.\n";
@@ -996,8 +1019,8 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
       for (int ir=0; ir<NradLegBins; ir++) {
         norm = 0;
         rInd = ilg*NradLegBins + ir;
-        for (auto sRitr : scanReferences) {
-          for (auto pItr : sRitr.second) {
+        for (auto const & sRitr : scanReferences) {
+          for (auto const & pItr : sRitr.second) {
             if (pItr.second.imgNorm) {
               if (pItr.second.legRef[rInd] != NANVAL) {
                 legReference[ilg][ir] += pItr.second.legRef[rInd];
@@ -1022,8 +1045,8 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
     std::fill(azmReference.begin(), azmReference.end(), 0);
     for (int ir=0; ir<NradAzmBins; ir++) {
       norm = 0;
-      for (auto sRitr : scanReferences) {
-        for (auto pItr : sRitr.second) {
+      for (auto const & sRitr : scanReferences) {
+        for (auto const & pItr : sRitr.second) {
           if (pItr.second.imgNorm) {
             if (pItr.second.azmRef[ir] != NANVAL) {
               azmReference[ir]    += pItr.second.azmRef[ir];
@@ -1101,7 +1124,7 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
       ///  Merging azimuthal averages  ///
       for (int iazm=0; iazm<NradAzmBins; iazm++) {
         norm = 0;
-        for (auto sAzml : scanAzmAvg) {
+        for (auto const & sAzml : scanAzmAvg) {
           if ((sAzml.second[it][iazm] != NANVAL) 
               && (scanCounts[sAzml.first][it] != 0)) {
             azimuthalAvg[it][iazm]  += sAzml.second[it][iazm];
