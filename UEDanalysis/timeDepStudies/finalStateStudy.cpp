@@ -19,7 +19,8 @@ int main(int argc, char* argv[]) {
   auto sPos = filePath.find_last_of("/");
   std::string folder = filePath.substr(0, sPos);
   std::string fileName = filePath.substr(sPos+1, sPos-filePath.size());
-  cout<<"folder / file: "<<folder<<"  "<<fileName<<endl;
+
+  bool findBestTheoryMatch = false;
 
   // Get run name
   auto iPos = filePath.find("-20");
@@ -30,6 +31,7 @@ int main(int argc, char* argv[]) {
   parameterClass params(runName);
 
 
+  // Import Data
   std::vector<int> shape = save::getShape(folder, fileName);
   std::vector< std::vector<double> > tdDiffraction(shape[0]);
   for (int it=0; it<shape[0]; it++) {
@@ -75,25 +77,33 @@ int main(int argc, char* argv[]) {
  
 
   std::vector<TH1*> hists(2);
+  std::vector<PLOToptions> opts(2);
+  std::vector<std::string> vals(2);
+  opts[0] = xLabel;   vals[0] = "Q [#AA^{-1}]";
+  opts[1] = xSpan;    vals[1] = to_string(0) + "," + to_string(params.maxQazm);
   std::vector<double> finalState(params.NradAzmBins, 0);
   ///// Loop through events in the file /////
   for (int it=shape[0]-1; it>shape[0]-1-params.NfinalPoints; it--) {
-    if (it==24 || it==22) continue;
-    cout<<"it: "<<it<<endl;
+    //if (it == 22 || it == 24) {
+    //  continue;
+    //}
     std::transform(tdDiffraction[it].begin(), tdDiffraction[it].end(),
         finalState.begin(), finalState.begin(),
         std::plus<double>());
-  hists[0] = plt.print1d(simFinalState, "simFinalDiff");
-  hists[1] = plt.print1d(tdDiffraction[it], "dataFinalDiff");
-  plt.print1d(hists, "./compareFinalStateDiffraction_" + to_string(it));
+  //hists[0] = plt.print1d(simFinalState, "simFinalDiff");
+  //hists[1] = plt.print1d(tdDiffraction[it], "dataFinalDiff");
+  //plt.print1d(hists, "./compareFinalStateDiffraction_" + to_string(it), opts, vals);
   }
+  delete hists[0];
+  delete hists[1];
 
   for (int iq=0; iq<params.NradAzmBins; iq++) {
-    finalState[iq] /= params.NfinalPoints-2;
+    finalState[iq] /= params.NfinalPoints;
   }
 
-  std::string finalStateDataFname = params.molecule 
-      + "_sMsFinalState["
+  std::string finalStateDataFname = 
+      "data-" + runName 
+      + "-sMsFinalState["
       + to_string(shape[1]) + "].dat";
 
   save::saveDat<double>(finalState, 
@@ -112,69 +122,95 @@ int main(int argc, char* argv[]) {
 
   Eigen::MatrixXd fit = tools::normalEquation(Xq, Yq);
 
-  cout<<"FIT: "<<fit<<endl;
   for (int iq=0; iq<shape[1]; iq++) {
     //simFinalState[iq] = simFinalState[iq]*fit(1) + fit(0);
   }
 
-  save::saveDat<double>(simFinalState, "./results/" + finalStateSimFname);
+  //save::saveDat<double>(simFinalState, "./results/" + finalStateSimFname);
 
-  hists[0] = plt.print1d(simFinalState, "simFinalDiff");
-  hists[1] = plt.print1d(finalState, "dataFinalDiff");
-  plt.print1d(hists, "./plots/compareFinalStateDiffraction_" + params.molecule + params.finalState);
+  //hists[0] = plt.print1d(simFinalState, "simFinalDiff");
+  //hists[1] = plt.print1d(finalState, "dataFinalDiff");
+  //plt.print1d(hists, "./plots/compareFinalStateDiffraction_" + params.molName + params.finalState, opts, vals);
 
   ///////////////////////////////
   /////  Pair Correlations  /////
   ///////////////////////////////
 
   // Final State
-  system(("./pairCorr.exe simulateReference -Idir "
-      + params.simOutputDir + " -Fname "
-      + finalStateSimFname + " -Osuf "
-      + params.finalState + "Final -FillQ false").c_str());
+  if (params.fillLowQtheory) {
+    system(("./pairCorr.exe simulateReference -Idir "
+        + params.simOutputDir + " -Fname "
+        + finalStateSimFname + " -Osuf "
+        + params.finalState + " -lowQtheory "
+        + params.fillLowQfile).c_str());
+    system(("./pairCorr.exe " + runName + " -Idir "
+        + params.mergeScansOutputDir + " -Fname "
+        + finalStateDataFname + " -Osuf -finalState"
+        + " -lowQtheory " + params.fillLowQfile).c_str());
 
-  std::vector<double> scales = 
-      {0.2, 0.3, 0.4, 0.5, 0.6, 
-        0.7, 0.8, 0.9, 1, 1.1, 
-        1.2, 1.3, 1.4, 1.5};
-  std::vector<double> currentSim(params.NradAzmBins);
-  std::string currentSimName = "./results/currentLowQSim["
-      + to_string(params.NradAzmBins) + "].dat";
-  for (auto& scl : scales) {
-    for (int iq=0; iq<shape[1]; iq++) {
-      currentSim[iq] = scl*simFinalState[iq];
-    }
-    save::saveDat<double>(currentSim, currentSimName);
-
-    system(("./pairCorr.exe " + runName 
-        + " -Osuf -FinalStateDiff -lowQtheory "
-        + currentSimName).c_str());
-
-    system(("mv ./results/data-" + runName 
-        + "-FinalStateDiff-pairCorrEven[" 
-        + to_string(shape[0]) + ","
-        + to_string(params.maxRbins) 
-        + "].dat ./results/data-" + runName
-        + "-lowQscale-" 
-        + to_string(scl) + "-pairCorrEven["
-        + to_string(shape[0]) + ","
-        + to_string(params.maxRbins) + "].dat").c_str());
-
-    system(("mv ./results/data-" + runName 
-        + "-FinalStateDiff-pairCorrOdd[" 
-        + to_string(shape[0]) + ","
-        + to_string(params.maxRbins) 
-        + "].dat ./results/data-" + runName
-        + "-lowQscale-" 
-        + to_string(scl) + "-pairCorrOdd["
-        + to_string(shape[0]) + ","
-        + to_string(params.maxRbins) + "].dat").c_str());
-
-
-    system(("rm " + currentSimName).c_str());
+  }
+  else {
+    system(("./pairCorr.exe simulateReference -Idir "
+        + params.simOutputDir + " -Fname "
+        + finalStateSimFname + " -Osuf "
+        + params.finalState).c_str());
+    system(("./pairCorr.exe " + runName + " -Idir "
+        + params.mergeScansOutputDir + " -Fname "
+        + finalStateDataFname 
+        + " -Osuf -finalState").c_str());
   }
 
-  delete hists[0];
-  delete hists[1];
+  if (findBestTheoryMatch) {
+    std::vector<double> scales = 
+        {0.2, 0.3, 0.4, 0.5, 0.6, 
+          0.7, 0.8, 0.9, 1, 1.1, 
+          1.2, 1.3, 1.4, 1.5};
+    std::vector<double> currentSim(params.NradAzmBins);
+    std::string currentSimName = "./results/currentLowQSim["
+        + to_string(params.NradAzmBins) + "].dat";
+    for (auto& scl : scales) {
+      for (int iq=0; iq<shape[1]; iq++) {
+        currentSim[iq] = scl*simFinalState[iq];
+      }
+      save::saveDat<double>(currentSim, currentSimName);
+
+      system(("./pairCorr.exe " + runName 
+          + " -Osuf -FinalStateDiff -lowQtheory "
+          + currentSimName).c_str());
+
+      system(("mv ./results/data-" + runName 
+          + "-FinalStateDiff-pairCorrEven[" 
+          + to_string(shape[0]) + ","
+          + to_string(params.maxRbins) 
+          + "].dat ./results/data-" + runName
+          + "-lowQscale-" 
+          + to_string(scl) + "-pairCorrEven["
+          + to_string(shape[0]) + ","
+          + to_string(params.maxRbins) + "].dat").c_str());
+
+      system(("mv ./results/data-" + runName 
+          + "-FinalStateDiff-pairCorrOdd[" 
+          + to_string(shape[0]) + ","
+          + to_string(params.maxRbins) 
+          + "].dat ./results/data-" + runName
+          + "-lowQscale-" 
+          + to_string(scl) + "-pairCorrOdd["
+          + to_string(shape[0]) + ","
+          + to_string(params.maxRbins) + "].dat").c_str());
+
+
+      system(("rm " + currentSimName).c_str());
+    }
+
+    for (int iq=0; iq<shape[1]; iq++) {
+      currentSim[iq] = params.lowQfillSimScale*simFinalState[iq];
+    }
+    save::saveDat<double>(currentSim, 
+        "./results/sim-phenoxyRadicalLowQfill["
+        + to_string(params.NradAzmBins) + "].dat");
+  }
+
+  //delete hists[0];
+  //delete hists[1];
   return 1;
 }
