@@ -68,18 +68,23 @@ class mergeClass : public parameterClass {
     void compareReference(std::string);
     ~mergeClass();
 
+    // Variables
     std::string runName;
-    double* timeDelays;
+    bool smearedTime;
+
 
     // Output files and location
     string fileName = "mergedScans.txt";
 
+    // Data containers
+    double* timeDelays;
     std::vector<double> sMsLegNorm;
     std::vector<double> sMsAzmNorm;
     std::vector<double> azmReference;
     std::vector<double> runLegRefMeans, runAzmRefMeans;
     std::vector<double> runLegRefSTD, runAzmRefSTD;
     std::vector< std::vector<double> > azimuthalAvg, azimuthalsMs;
+    std::vector< std::vector<double> > smearedAzmAvg, smearedAzmsMs;
     std::vector< std::vector<double> > legReference;
     std::vector< std::vector< std::vector<double> > > legendres, legendresMs;
     std::vector< std::vector< std::vector<double> > > smearedImg;

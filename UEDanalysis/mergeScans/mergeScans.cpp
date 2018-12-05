@@ -64,6 +64,10 @@ int main(int argc, char* argv[]) {
         system(("mkdir " + merge.mergeScansOutputDir).c_str());
       }
     }
+    else if (strcmp(argv[iarg], "-CompareRef") == 0) {
+      std::string str(argv[iarg+1]);
+      merge.compareReference(str);
+    }
     else {
       cerr<<"ERROR!!! Option "<<argv[iarg]<<" does not exist!"<<endl;
       exit(0);
@@ -219,15 +223,21 @@ int main(int argc, char* argv[]) {
       + to_string(merge.runAzmSTD.size()) + ","
       + to_string(merge.runAzmSTD[0].size()) + "].dat");
 
- 
 
+  /////  Time Domain Changes  /////
+
+  // Subtract T0
   merge.subtractT0();
+
+  // Smooth in time
+  //merge.smearTimeFFT();
+
+  /////  Normalize and get statistics  /////
+  // Normalize to get sM(s)
   merge.normalize();
 
   // Get Mean and STD
   merge.getMeanSTD();
-
-  //merge.smearTime();
 
 
   // Clean up NANVAL for saving and plotting
@@ -259,6 +269,26 @@ int main(int argc, char* argv[]) {
   plt.printRC(merge.azimuthalAvg, 
       "./plots/data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
+
+  if (merge.smearedTime) {
+    save::saveDat<double>(merge.smearedAzmAvg, 
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix + "tSmearedAzmAvgDiff["
+        + to_string(merge.smearedAzmAvg.size()) + ","
+        + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
+    plt.printRC(merge.smearedAzmAvg, 
+        "./plots/data-"
+        + runName + "-" + prefix + "tSmearedAzmAvgDiff", opts, vals);
+    
+    save::saveDat<double>(merge.smearedAzmsMs, 
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "sMsAzmAvgDiff["
+      + to_string(merge.smearedAzmAvg.size()) + ","
+      + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
+    plt.printRC(merge.smearedAzmAvg, 
+      "./plots/data-"
+      + runName + "-" + prefix + "tsmearedSMSAzmAvgDiff", opts, vals);
+  }
 
   save::saveDat<double>(merge.runAzmMeans,
       merge.mergeScansOutputDir + "data-"

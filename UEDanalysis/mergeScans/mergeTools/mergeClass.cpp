@@ -23,6 +23,7 @@ void mergeClass::initializeVariables() {
   curDate  = "";
   curRun   = "";
   _compareReference = false;
+  smearedTime = false;
 
   timeDelays = NULL;
 
@@ -734,42 +735,47 @@ void mergeClass::removeLowPolynomials() {
         std::fill(fit.begin(), fit.end(), 0);
         for (int ir=0; ir<NradAzmBins; ir++) {
           if (sAzml.second[it][ir]!= NANVAL) {
-            if (_compareReference) {
-              plotme1[ir] = sAzml.second[it][ir] - compReference[ir];
-            }
-            else {
-              plotme1[ir] = sAzml.second[it][ir] - azmReference[ir];
+            if (pltVerbose) {
+              if (_compareReference) {
+                plotme1[ir] = sAzml.second[it][ir] - compReference[ir];
+              }
+              else {
+                plotme1[ir] = sAzml.second[it][ir] - azmReference[ir];
+              }
             }
             sAzml.second[it][ir] -= weights(0)*std::pow(maxQazm-ir*delta, 6);
             fit[ir] += weights(0)*std::pow(maxQazm-ir*delta, 6);
-            if (_compareReference) {
-              plotme2[ir] = sAzml.second[it][ir] - compReference[ir];
-            }
-            else {
-              plotme2[ir] = sAzml.second[it][ir] - azmReference[ir];
+            if (pltVerbose) {
+              if (_compareReference) {
+                plotme2[ir] = sAzml.second[it][ir] - compReference[ir];
+              }
+              else {
+                plotme2[ir] = sAzml.second[it][ir] - azmReference[ir];
+              }
             }
           }
-          else{
+          else if (pltVerbose){
             plotme1[ir] = 0;
             plotme2[ir] = 0;
           }
         }
-        /*
-        h[0] = plt->plot1d(plotme1, "testLowPolyRemoval-"
-            + to_string(sAzml.first) + "-" + to_string(it),
-            opts, vals);
-        h[1] = plt->plot1d(fit, "testLowPolyRemoval-"
-            + to_string(sAzml.first) + "-" + to_string(it) + "-fit",
-            opts, vals);
-        plt->print1d(h, "./plots/testLowPolyRemoval-"
-            + to_string(sAzml.first) + "-" + to_string(it) + "-orig",
-            opts, vals);
-        plt->print1d(plotme2, "./plots/testLowPolyRemoval-"
-            + to_string(sAzml.first) + "-" + to_string(it) + "-final",
-            opts, vals);
-        delete h[0];
-        delete h[1];
-        */
+
+        if (pltVerbose) {
+          h[0] = plt->plot1d(plotme1, "testLowPolyRemoval-"
+              + to_string(sAzml.first) + "-" + to_string(it),
+              opts, vals);
+          h[1] = plt->plot1d(fit, "testLowPolyRemoval-"
+              + to_string(sAzml.first) + "-" + to_string(it) + "-fit",
+              opts, vals);
+          plt->print1d(h, "./plots/testLowPolyRemoval-"
+              + to_string(sAzml.first) + "-" + to_string(it) + "-orig",
+              opts, vals);
+          plt->print1d(plotme2, "./plots/testLowPolyRemoval-"
+              + to_string(sAzml.first) + "-" + to_string(it) + "-final",
+              opts, vals);
+          delete h[0];
+          delete h[1];
+        }
       }
     }
   }
@@ -1230,6 +1236,9 @@ void mergeClass::normalize() {
     for (uint tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
         azimuthalsMs[tm][ir] = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
+        if (smearedTime) {
+          smearedAzmsMs[tm][ir] = smearedAzmAvg[tm][ir]*sMsAzmNorm[ir];
+        }
         runAzmMeans[tm][ir]  *= sMsAzmNorm[ir];
         runAzmSTD[tm][ir]    *= sMsAzmNorm[ir];
       }
@@ -1314,10 +1323,11 @@ void mergeClass::smearTimeGaussian() {
   }
 }
 
-/*
 void mergeClass::smearTimeFFT() {
 
   /////  Rebinning into smallest bins  /////
+
+  int NtimeBins = stagePosInds.size();
 
   // Find smallest difference
   double minDist = 1000;
@@ -1328,7 +1338,7 @@ void mergeClass::smearTimeFFT() {
   }
 
   double totalTime = timeDelays[NtimeBins] - timeDelays[0];
-  int NfineTimeBins = totalTime/minDist;
+  int NfineTimeBins = totalTime/minDist + 1;
   std::vector<double> fineTimeBins(NfineTimeBins);
   for (int it=0; it<NfineTimeBins; it++) {
     fineTimeBins[it] = it*minDist;
@@ -1338,20 +1348,20 @@ void mergeClass::smearTimeFFT() {
   int filtFFToutSize = (int)(NfineTimeBins/2 + 1);
   double* tSpace = (double*) fftw_malloc(sizeof(double)*(NfineTimeBins));
   fftw_complex* fSpace = (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*filtFFToutSize);
-  fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(params.NradAzmBins, tSpace, fSpace, FFTW_MEASURE);
-  fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(params.NradAzmBins, fSpace, tSpace, FFTW_MEASURE);
+  fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(NfineTimeBins, tSpace, fSpace, FFTW_MEASURE);
+  fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(NfineTimeBins, fSpace, tSpace, FFTW_MEASURE);
 
   std::string filterName =
-      "/reg/neh/home/khegazy/analysis/filters/" + params.timeFilterType
+      "/reg/neh/home/khegazy/analysis/filters/" + timeFilterType
       + "Filter_Bins-" + to_string(filtFFToutSize)
-      + "_WnHigh-"+ to_string(params.timeWnHigh) + ".dat";
+      + "_WnHigh-"+ to_string(timeWnHigh) + ".dat";
   if (!tools::fileExists(filterName)) {
     cout << "INFO: Making new filter\n";
     system(("python /reg/neh/home/khegazy/analysis/filters/makeFilters.py --Nbins "
           + to_string(filtFFToutSize)
-          + " --Ftype " + params.timeFilterType
-          + " --Order " + to_string(params.timeOrder)
-          + " --WnHigh " + to_string(params.timeWnHigh)).c_str());
+          + " --Ftype " + timeFilterType
+          + " --Order " + to_string(timeFiltOrder)
+          + " --WnHigh " + to_string(timeWnHigh)).c_str());
   }
 
   std::vector<double> bandPassFilter(filtFFToutSize);
@@ -1359,10 +1369,10 @@ void mergeClass::smearTimeFFT() {
 
 
   /////  Fourier Transform  /////
-  std::vector< std::vector<double> > smearedAzmAvg(NfineTimeBins);
-  for (int it=0; it<NfineTimeBins; it++) 
-    smearedAzmAvg[it].resize(params.NradAzmAvg,0);
-
+  smearedAzmAvg.resize(NfineTimeBins);
+  for (int it=0; it<NfineTimeBins; it++) {
+    smearedAzmAvg[it].resize(NradAzmBins, 0);
+  }
   for (int iq=0; iq<NradAzmBins; iq++) {
     int timeInd = 0;
     for (int it=0; it<NfineTimeBins; it++) {
@@ -1377,9 +1387,9 @@ void mergeClass::smearTimeFFT() {
 
     fftw_execute(filtFFTf);
 
-    for (int ir=0; ir<filtFFToutSize; ir++) {
-      fSpace[ir][0] *= bandPassFilter[ir]/sqrt(NfineTimeBins);
-      fSpace[ir][1] *= bandPassFilter[ir]/sqrt(NfineTimeBins);
+    for (int i=0; i<filtFFToutSize; i++) {
+      fSpace[i][0] *= bandPassFilter[i]/sqrt(NfineTimeBins);
+      fSpace[i][1] *= bandPassFilter[i]/sqrt(NfineTimeBins);
     }
 
     fftw_execute(filtFFTb);
@@ -1394,14 +1404,15 @@ void mergeClass::smearTimeFFT() {
      "./results/data_smearedAzmAvg[" 
      + to_string(NradAzmBins) + "].dat");
 
-  plt.printRC(smearedAzmAvg, "smearedAzmAvg");
+  plt->printRC(smearedAzmAvg, "smearedAzmAvg");
+
+  smearedTime = true;
 
   fftw_destroy_plan(filtFFTf);
   fftw_destroy_plan(filtFFTb);
   fftw_free(tSpace);
-  fftw_free(tSpace);
+  fftw_free(fSpace);
 }
-  */
   /*
     smearedImg[ilg].resize(stagePosInds.size());
     for (uint ir=0; ir<stagePosInds.size(); ir++) {
