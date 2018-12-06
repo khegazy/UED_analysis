@@ -85,8 +85,8 @@ int main(int argc, char* argv[]) {
   opts[0] = yLabel;   vals[0] = "Time [ps]";
   opts[1] = xLabel;   vals[1] = "Scattering Q [arb units]";
   opts[2] = draw;     vals[2] = "COLZ";
-  opts[3] = minimum;  vals[3] = "-0.2";
-  opts[4] = maximum;  vals[4] = "0.2";
+  opts[3] = minimum;  vals[3] = "-0.1";
+  opts[4] = maximum;  vals[4] = "0.1";
 
   std::map<string, double > cbar;
   cbar["20161102_LongScan1_Leg0"] = 0.2;
@@ -132,7 +132,15 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    merge.addLabTimeParameter(timeStamp, scan, stagePos, imgNorm);
+    /*
+    merge.addLabTimeParameter(timeStamp, "scan", scan);
+    merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
+    merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
+    merge.addLabTimeParameter(timeStamp, "pressure", pressure);
+    merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
+    merge.addLabTimeParameter(timeStamp, "I0intensity", I0intensity);
+    */
+
 
     // Ignore reference images taken before scan
     if (imgIsRef) {
@@ -229,9 +237,6 @@ int main(int argc, char* argv[]) {
   // Subtract T0
   merge.subtractT0();
 
-  // Smooth in time
-  //merge.smearTimeFFT();
-
   /////  Normalize and get statistics  /////
   // Normalize to get sM(s)
   merge.normalize();
@@ -246,6 +251,13 @@ int main(int argc, char* argv[]) {
       if (merge.azimuthalAvg[itm][ir] == NANVAL) merge.azimuthalAvg[itm][ir] = 0;
     }
   }
+
+  // Smooth in time
+  cout<<"being smearing"<<endl;
+  merge.smearTimeGaussian();
+  //merge.smearTimeFFT();
+  cout<<"end smearing"<<endl;
+
 
 
   /////  Saving and plotting  /////
@@ -273,7 +285,8 @@ int main(int argc, char* argv[]) {
   if (merge.smearedTime) {
     save::saveDat<double>(merge.smearedAzmAvg, 
         merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "tSmearedAzmAvgDiff["
+        + runName + "-" + prefix + "tSmeared-"
+        + to_string(merge.timeSmearSTD) + "-azmAvgDiff["
         + to_string(merge.smearedAzmAvg.size()) + ","
         + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
     plt.printRC(merge.smearedAzmAvg, 
@@ -282,7 +295,8 @@ int main(int argc, char* argv[]) {
     
     save::saveDat<double>(merge.smearedAzmsMs, 
       merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "sMsAzmAvgDiff["
+      + runName + "-" + prefix + "tSmeared-"
+      + to_string(merge.timeSmearSTD) + "-sMsAzmAvgDiff["
       + to_string(merge.smearedAzmAvg.size()) + ","
       + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
     plt.printRC(merge.smearedAzmAvg, 
