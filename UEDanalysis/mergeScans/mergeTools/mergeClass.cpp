@@ -189,13 +189,12 @@ void mergeClass::compareSimulations(std::vector<std::string> radicals) {
 }
 
 
-void mergeClass::addLabTimeParameter(int timeStamp,
-                          int scan, int64_t stagePos, 
-                          double imgNorm) {
+void mergeClass::addLabTimeParameter(
+      int timeStamp,
+      std::string name, 
+      double value) {
 
-  labTimeParams[timeStamp].scan      = scan;
-  labTimeParams[timeStamp].stagePos  = stagePos;
-  labTimeParams[timeStamp].imgNorm   = imgNorm;
+  labTimeParams[timeStamp][name] = value;
 }
 
 
@@ -323,6 +322,7 @@ void mergeClass::addEntry(int scan, int64_t stagePos,
   
 }
 
+/*
 void mergeClass::removeLabTimeOutliers() {
 
   float norm;
@@ -397,6 +397,7 @@ void mergeClass::removeLabTimeOutliers() {
     tInd++;
   }
 }
+*/
     
 
 void mergeClass::getMeanSTD() {
@@ -1236,9 +1237,6 @@ void mergeClass::normalize() {
     for (uint tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
         azimuthalsMs[tm][ir] = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
-        if (smearedTime) {
-          smearedAzmsMs[tm][ir] = smearedAzmAvg[tm][ir]*sMsAzmNorm[ir];
-        }
         runAzmMeans[tm][ir]  *= sMsAzmNorm[ir];
         runAzmSTD[tm][ir]    *= sMsAzmNorm[ir];
       }
@@ -1271,7 +1269,64 @@ void mergeClass::smearTimeGaussian() {
   }
   */
 
+  int NtimeBins = stagePosInds.size();
 
+  // Find smallest difference
+  double minDist = 1000;
+  for (int it=0; it<NtimeBins-1; it++) {
+    if (timeDelays[it+1] - timeDelays[it] < minDist) {
+      minDist = timeDelays[it+1] - timeDelays[it];
+    }
+  }
+  minDist /= 5.;
+
+  double totalTime = timeDelays[NtimeBins] - timeDelays[0];
+  int NfineTimeDelays = totalTime/minDist;
+  std::vector<double> fineTimeDelays(NfineTimeDelays);
+  std::vector<int> timeMapping(NfineTimeDelays);
+  int timeInd = 0;
+  for (int tm=0; tm<NfineTimeDelays; tm++) {
+    fineTimeDelays[tm] = tm*minDist;
+    if (timeInd != NtimeBins-1) {
+      while (fabs(timeDelays[timeInd] - fineTimeDelays[tm]) >
+          fabs(timeDelays[timeInd+1] - fineTimeDelays[tm])) {
+        timeInd++;
+      }
+    }
+    timeMapping[tm] = timeInd;
+  }
+
+  cout<<"start smearing"<<endl;
+  /////  Smearing  /////
+  double sum, weight;
+  smearedAzmAvg.resize(NfineTimeDelays);
+  smearedAzmsMs.resize(NfineTimeDelays);
+  for (int it=0; it<NfineTimeDelays; it++) {
+    smearedAzmAvg[it].resize(NradAzmBins, 0);
+    smearedAzmsMs[it].resize(NradAzmBins, 0);
+  }
+  for (int iq=0; iq<NradAzmBins; iq++) {
+    for (int tm=0; tm<NfineTimeDelays; tm++) {
+      sum = 0;
+      smearedAzmAvg[tm][iq] = 0;
+      for (int tmm=(int)(-1*smearTimeBinWindow/2); 
+          tmm<=smearTimeBinWindow/2; tmm++) {
+        if (tm + tmm < 0) continue;
+        if (tm + tmm >= NfineTimeDelays) break;
+        weight = std::exp(-1*std::pow(fineTimeDelays[tm] 
+                     - fineTimeDelays[tm+tmm], 2)
+                     /(2*std::pow(timeSmearSTD, 2)));
+        smearedAzmAvg[tm][iq] += azimuthalAvg[timeMapping[tm+tmm]][iq]*weight;
+        sum += weight;
+      }
+      smearedAzmAvg[tm][iq] /= sum;
+      smearedAzmsMs[tm][iq] = smearedAzmAvg[tm][iq]*sMsAzmNorm[iq];
+    }
+  }
+
+
+
+  /*
   smearedImg.resize(Nlegendres);
   std::vector<double> unPumped(legendres[0][0].size());
 
@@ -1302,7 +1357,6 @@ void mergeClass::smearTimeGaussian() {
     cout<<"last entry"<<endl;
     cout<<"plotting"<<endl;
 
-    /*
       vals[2] = "-8";
       vals[3] = "8";
       plt.printXY(img[i], timeDelays, "plotRun" + to_string(curRun) + "_" + curDate + "_" + curScan 
@@ -1320,7 +1374,8 @@ void mergeClass::smearTimeGaussian() {
           + to_string(curScan) + "_Leg" + to_string(ilg), opts, vals);
     */
 
-  }
+  smearedTime = true;
+
 }
 
 void mergeClass::smearTimeFFT() {
@@ -1338,18 +1393,18 @@ void mergeClass::smearTimeFFT() {
   }
 
   double totalTime = timeDelays[NtimeBins] - timeDelays[0];
-  int NfineTimeBins = totalTime/minDist + 1;
-  std::vector<double> fineTimeBins(NfineTimeBins);
-  for (int it=0; it<NfineTimeBins; it++) {
-    fineTimeBins[it] = it*minDist;
+  int NfineTimeDelays = totalTime/minDist + 1;
+  std::vector<double> fineTimeDelays(NfineTimeDelays);
+  for (int it=0; it<NfineTimeDelays; it++) {
+    fineTimeDelays[it] = it*minDist;
   }
 
   ///// Filter Parameters  /////
-  int filtFFToutSize = (int)(NfineTimeBins/2 + 1);
-  double* tSpace = (double*) fftw_malloc(sizeof(double)*(NfineTimeBins));
+  int filtFFToutSize = (int)(NfineTimeDelays/2 + 1);
+  double* tSpace = (double*) fftw_malloc(sizeof(double)*(NfineTimeDelays));
   fftw_complex* fSpace = (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*filtFFToutSize);
-  fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(NfineTimeBins, tSpace, fSpace, FFTW_MEASURE);
-  fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(NfineTimeBins, fSpace, tSpace, FFTW_MEASURE);
+  fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(NfineTimeDelays, tSpace, fSpace, FFTW_MEASURE);
+  fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(NfineTimeDelays, fSpace, tSpace, FFTW_MEASURE);
 
   std::string filterName =
       "/reg/neh/home/khegazy/analysis/filters/" + timeFilterType
@@ -1369,16 +1424,18 @@ void mergeClass::smearTimeFFT() {
 
 
   /////  Fourier Transform  /////
-  smearedAzmAvg.resize(NfineTimeBins);
-  for (int it=0; it<NfineTimeBins; it++) {
+  smearedAzmAvg.resize(NfineTimeDelays);
+  smearedAzmsMs.resize(NfineTimeDelays);
+  for (int it=0; it<NfineTimeDelays; it++) {
     smearedAzmAvg[it].resize(NradAzmBins, 0);
+    smearedAzmsMs[it].resize(NradAzmBins, 0);
   }
   for (int iq=0; iq<NradAzmBins; iq++) {
     int timeInd = 0;
-    for (int it=0; it<NfineTimeBins; it++) {
+    for (int it=0; it<NfineTimeDelays; it++) {
       if (timeInd != NtimeBins-1) {
-        while (fabs(timeDelays[timeInd] - fineTimeBins[it]) >
-            fabs(timeDelays[timeInd+1] - fineTimeBins[it])) {
+        while (fabs(timeDelays[timeInd] - fineTimeDelays[it]) >
+            fabs(timeDelays[timeInd+1] - fineTimeDelays[it])) {
           timeInd++;
         }
       }
@@ -1388,23 +1445,17 @@ void mergeClass::smearTimeFFT() {
     fftw_execute(filtFFTf);
 
     for (int i=0; i<filtFFToutSize; i++) {
-      fSpace[i][0] *= bandPassFilter[i]/sqrt(NfineTimeBins);
-      fSpace[i][1] *= bandPassFilter[i]/sqrt(NfineTimeBins);
+      fSpace[i][0] *= bandPassFilter[i]/sqrt(NfineTimeDelays);
+      fSpace[i][1] *= bandPassFilter[i]/sqrt(NfineTimeDelays);
     }
 
     fftw_execute(filtFFTb);
 
-    for (int it=0; it<NfineTimeBins; it++) {
-      smearedAzmAvg[it][iq] = tSpace[it]/sqrt(NfineTimeBins);
+    for (int it=0; it<NfineTimeDelays; it++) {
+      smearedAzmAvg[it][iq] = tSpace[it]/sqrt(NfineTimeDelays);
+      smearedAzmsMs[it][iq] = smearedAzmAvg[it][iq]*sMsAzmNorm[iq];
     }
   }
-
-
-  save::saveDat<double>(smearedAzmAvg, 
-     "./results/data_smearedAzmAvg[" 
-     + to_string(NradAzmBins) + "].dat");
-
-  plt->printRC(smearedAzmAvg, "smearedAzmAvg");
 
   smearedTime = true;
 
