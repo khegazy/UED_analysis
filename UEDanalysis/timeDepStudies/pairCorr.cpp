@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
   bool givenFileName      = false;
   bool subtractReference  = false;
   bool fillLowQ           = true;
-  bool fillLowQtheory     = false;
+  bool fillLowQtheoryOpt  = false;
   bool removeSkippedBins  = true;
   bool fitPC              = false;
   std::string fileName    = "NULL";
@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     else if (strcmp(argv[iarg], "-lowQtheory") == 0) {
       string str(argv[iarg+1]);
       lowQtheory = str;
-      fillLowQtheory = true;
+      fillLowQtheoryOpt = true;
     }
     else if (strcmp(argv[iarg], "-saveLowQtheory") == 0) {
       string str(argv[iarg+1]);
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     else if (strcmp(argv[iarg], "-FillQ") == 0) {
       string str(argv[iarg+1]);
       if (str.compare("false") == 0) fillLowQ = false;
-      else if (str.compare("theory") == 0) fillLowQtheory = true;
+      else if (str.compare("theory") == 0) params.fillLowQtheory = true;
       else if (str.compare("true") == 0) ;
       else {
         std::cerr << "ERROR: Do not understand FillQ option " << str << endl;
@@ -186,40 +186,40 @@ int main(int argc, char* argv[]) {
 
   std::string sMsSimName;
   std::vector<double> sMsSim(shape[1]), sMsSimDer(shape[1]);
-  if (subtractReference || fillLowQtheory) { 
-    // Importing Simulation
-    if (lowQtheory.compare("NULL") == 0) {
-      sMsSimName = 
-          params.simOutputDir + "nitrobenzene_sMsPatternLineOut_Qmax-"
-          + to_string(params.maxQazm) + "_Ieb-"
-          + to_string(params.Iebeam) + "_scrnD-"
-          + to_string(params.screenDist) + "_elE-"
-          + to_string(params.elEnergy) + "_Bins["
-          + to_string(shape[1]) + "].dat";
-    }
-    else {
-      sMsSimName = lowQtheory;
-    }
-    if (!tools::fileExists(sMsSimName)) {
-      std::cerr << "ERROR: sMs simulation file " + sMsSimName + " does not exist!!!\n";
-      exit(0);
-    }
-
-    if (params.verbose)
-      std::cout << "Importing simulation from " << sMsSimName << endl;
-
-    save::importDat<double>(sMsSim, sMsSimName);
-  }
-
-
-  // Subtract Reference if specified
   if (subtractReference) {
+    // Importing Simulation
+    sMsSimName = 
+        params.simOutputDir + "nitrobenzene_sMsPatternLineOut_Qmax-"
+        + to_string(params.maxQazm) + "_Ieb-"
+        + to_string(params.Iebeam) + "_scrnD-"
+        + to_string(params.screenDist) + "_elE-"
+        + to_string(params.elEnergy) + "_Bins["
+        + to_string(shape[1]) + "].dat";
+    
+    save::importDat<double>(sMsSim, sMsSimName);
+
     for (int itm=0; itm<shape[0]; itm++) {
       for (int iq=0; iq<shape[1]; iq++) {
         tmdDiff[itm][iq] -= sMsSim[iq];
       }
     }
   }
+ 
+  std::vector<double> lowQsim(shape[1]);
+  if (params.fillLowQtheory || fillLowQtheoryOpt) { 
+
+    if (fillLowQtheoryOpt) {
+      save::importDat<double>(lowQsim, lowQtheory);
+      if (params.verbose)
+        std::cout << "Importing simulation from " << lowQtheory << endl;
+    }
+    else {
+      save::importDat<double>(lowQsim, params.fillLowQfile);
+      if (params.verbose)
+        std::cout << "Importing simulation from " << params.fillLowQfile << endl;
+    }
+  }
+
 
   // Saving lowQ theory
   if (saveLowQtheory.compare("NULL") != 0) {
@@ -248,10 +248,9 @@ int main(int argc, char* argv[]) {
   std::string lowQwName = "./results/lowQfrequencies_"
       + runName + "["
       + to_string(shape[0]) + ",4].dat";
-  cout<<"file: "<<lowQcoeffName<<endl;
   bool lowQcoeffExists = tools::fileExists(lowQcoeffName);
   std::vector< std::vector<double> > lowQcoeff, lowQw;
-  if (lowQcoeffExists) {
+  if (lowQcoeffExists && !(params.fillLowQtheory || fillLowQtheoryOpt)) {
     lowQcoeff.resize(shape[0]);
     lowQw.resize(shape[0]);
     for (int i=0; i<shape[0]; i++) {
@@ -351,7 +350,9 @@ int main(int argc, char* argv[]) {
     }
     iq = params.NbinsSkip;
 
-    if (!lowQcoeffExists && fillLowQ && !fillLowQtheory) {
+    if (!lowQcoeffExists && fillLowQ 
+        && !fillLowQtheoryOpt && !params.fillLowQtheory) {
+
       double bestLoss = 1e100;
       double rScaling = 0.1;
       double fitVal   = 0;
@@ -436,9 +437,9 @@ int main(int argc, char* argv[]) {
     for (iq=0; iq<params.NradAzmBins; iq++) {
       if (fillLowQ) {
         if (iq < params.NbinsSkip) {
-          if (fillLowQtheory) {
-            tmdDiff[itm][iq] = sMsSim[iq];
-                //*(tmdDiff[0][params.NbinsSkip]/sMsSim[params.NbinsSkip]);
+          if (fillLowQtheoryOpt || params.fillLowQtheory) {
+            tmdDiff[itm][iq] = lowQsim[iq];
+                //*(tmdDiff[0][params.NbinsSkip]/lowQsim[params.NbinsSkip]);
           }
           else {
             for (uint i=0; i<lowQw[itm].size(); i++) {
@@ -459,7 +460,7 @@ int main(int argc, char* argv[]) {
       filter[iq] = filterScale;
     }
 
-    if (true || params.pltVerbose) {
+    if (params.pltVerbose) {
       plt.print1d(tmdDiff[itm], "./plots/inpDiff_" + runName + "_" + to_string(itm));
       plt.print1d(smoothed, "./plots/smoothed_" + runName + "_" + to_string(itm));
       plt.print1d(filter, "./plots/filter");
@@ -493,7 +494,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (true || params.pltVerbose) {
+  if (params.pltVerbose) {
     vals[5] = "0," + to_string(params.rMaxAzmRat*outFFTsize*(2*PI/(params.QperPix*inpFFTsize)));
     if (pairCorrEven.size() == 1) {
       plt.print1d(pairCorrEven[0], "./plots/pairCorrEven");
@@ -513,7 +514,8 @@ int main(int argc, char* argv[]) {
   if (params.verbose)
     std::cout << "Saving.\n";
 
-  if (!lowQcoeffExists && fillLowQ && !fillLowQtheory) {
+  if (!lowQcoeffExists && fillLowQ 
+      && !fillLowQtheoryOpt && !params.fillLowQtheory) {
     for (auto& v : lowQw[0]) cout<<"testing: " << v/params.QperPix<<endl;
     save::saveDat<double>(lowQcoeff, lowQcoeffName);
     save::saveDat<double>(lowQw, lowQwName);
@@ -561,5 +563,6 @@ int main(int argc, char* argv[]) {
   fftw_free(rSpace);
   fftw_free(qSpace);
   fftw_destroy_plan(fftB);
+  cout<<"done"<<endl;
   return 1;
 }
