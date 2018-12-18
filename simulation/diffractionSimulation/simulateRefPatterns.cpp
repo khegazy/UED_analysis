@@ -19,6 +19,7 @@ int main(int argc, char* argv[]) {
   uint Nbins = 2*params.NradSimBins - 1;
   int Nmols = 1;
   int index = 0;
+  bool gotInpPrefix = false;
   double maxQ = params.NradSimBins*params.QperPix;
   double seed = (double)clock();
   std::string fileName = params.radicalNames[params.molecule];
@@ -26,22 +27,38 @@ int main(int argc, char* argv[]) {
     std::cout << "INFO: Parsing command line input\n";
   if (argc > 1) {
     for (int iarg=1; iarg<argc; iarg+=2) {
-      if (strcmp(argv[iarg],"-Nmols")==0) 
+      if (strcmp(argv[iarg], "-Nmols") == 0) 
           {Nmols = atoi(argv[iarg+1]);}
-      else if (strcmp(argv[iarg],"-Nbins")==0) 
+      else if (strcmp(argv[iarg], "-Nbins") == 0) 
           {params.NradSimBins = atoi(argv[iarg+1]);
            Nbins = 2*params.NradSimBins - 1;}
-      else if (strcmp(argv[iarg],"-Ofile")==0) 
+      else if (strcmp(argv[iarg], "-Ofile") == 0) 
           {string str(argv[iarg+1]); fileName=str;}
-      else if (strcmp(argv[iarg],"-Odir")==0) 
+      else if (strcmp(argv[iarg], "-Odir") == 0) 
           {string str(argv[iarg+1]); params.simOutputDir=str;}
-      else if (strcmp(argv[iarg],"-QperPix")==0) 
+      else if (strcmp(argv[iarg], "-QperPix") == 0) 
           {params.QperPix = atof(argv[iarg+1]); 
            maxQ = params.NradSimBins*params.QperPix;}
-      else if (strcmp(argv[iarg],"-maxQ")==0) 
+      else if (strcmp(argv[iarg], "-maxQ") == 0) 
           {maxQ = atof(argv[iarg+1]);}
-      else if (strcmp(argv[iarg],"-Index")==0) 
+      else if (strcmp(argv[iarg], "-Index") == 0) 
           {index = atoi(argv[iarg+1]);}
+      else if (strcmp(argv[iarg], "-InpXYZ") == 0) {
+          params.xyzFiles.clear();
+          std::string str(argv[iarg+1]);
+          std::size_t sInd = 0;
+          std::size_t eInd = str.find(",");
+          while (eInd != std::string::npos) {
+            params.xyzFiles.push_back(str.substr(sInd, eInd-sInd));
+            sInd = eInd + 1;
+            eInd = str.find(",", sInd);
+          }
+          params.xyzFiles.push_back(str.substr(sInd, str.length()-sInd));
+          gotInpPrefix = true;
+      }
+      else if (strcmp(argv[iarg], "-XYZdir") == 0)
+          {std::string str(argv[iarg+1]);
+           params.xyzDir = str;}
       else {
         std::cerr << "ERROR!!! Option " << argv[iarg] << " does not exist!\n";
         exit(0);
@@ -58,14 +75,16 @@ int main(int argc, char* argv[]) {
   if (params.verbose)
     std::cout << "INFO: Building molecular ensembles\n";
   std::vector<MOLENSEMBLEMCclass*> molMCs;
-  for (auto& fileName : params.xyzFiles) {
+  for (auto& xyzFileName : params.xyzFiles) {
+    if (params.verbose)
+      std::cout << "looking at fileName: "
+          << params.xyzDir << "  " << xyzFileName << std::endl;
     MOLENSEMBLEMCclass* molMC = new MOLENSEMBLEMCclass(seed, 
-        params.xyzDir + "/" + fileName);
+        params.xyzDir + "/" + xyzFileName);
     molMC->Nmols = Nmols;
     molMC->useOrientationMC = false;
     molMC->makeMolEnsemble();
     molMCs.push_back(molMC);
-    cout<<"made nbzmol"<<endl;
   }
 
   /////  Make diffraction patterns and lineouts  /////
@@ -106,8 +125,6 @@ int main(int argc, char* argv[]) {
         }
       }
     }
-
-    cout<<"lineOuts"<<endl;
 
     // fill lineouts
     if (lineOuts.size() == 0) {
@@ -161,14 +178,21 @@ int main(int argc, char* argv[]) {
         /lineOuts["atmDiffractionPattern"][i];
   }
 
-  cout<<"SIZES: "<<curLineOuts[0].size()<<endl;
-
   /////////////////////////////////////////
   /////  Plotting and Saving Results  /////
   /////////////////////////////////////////
 
-  cout<<"testing qmax: "<<maxQ<<"  "<<params.NradSimBins<<"  "<<params.QperPix<<endl;
-  std::string prefix = params.simOutputDir + "/" + params.molName + "_";
+  if (params.verbose) {
+    std::cout << "INFO: Plotting and saving\n";
+  }
+  std::string prefix = params.simOutputDir + "/";
+  if (gotInpPrefix) {
+    prefix += fileName + "_";
+  }
+  else {
+    prefix += params.molName + "_";
+  }
+  
   std::string suffixLO = 
       "Qmax-" + to_string(maxQ)
       + "_Ieb-" + to_string(params.Iebeam) 
@@ -211,7 +235,6 @@ int main(int argc, char* argv[]) {
 
 
   /////  Saving  /////
-
   save::saveDat<double>(lineOuts["diffractionPattern"], 
       prefix + "diffractionPatternLineOut_" + suffixLO + ".dat");
   save::saveDat<double>(lineOuts["molDiffractionPattern"],
@@ -238,7 +261,6 @@ int main(int argc, char* argv[]) {
   /////  Clean up  /////
   //////////////////////
  
-  cout<<"cleaning"<<endl;
   for (auto& mc : molMCs) {
     delete mc;
   }
