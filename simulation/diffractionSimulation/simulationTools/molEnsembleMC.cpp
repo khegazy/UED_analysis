@@ -278,6 +278,9 @@ std::vector<double> MOLENSEMBLEMCclass::simulatePairCorr(int Nbins, float maxR, 
     for (int jatm=iatm+1; jatm<NmolAtoms; jatm++) {
       dist = (molecule.atoms[iatm]->location 
           - molecule.atoms[jatm]->location).norm();
+      if (dist > maxR) {
+        continue;
+      }
       ind = (int)(Nbins*(dist/maxR));
       counts[ind] += chargeI*charges[molecule.atoms[jatm]->atomType];
     }
@@ -305,12 +308,15 @@ std::vector<double> MOLENSEMBLEMCclass::simulatePairCorr(int Nbins, float maxR, 
 }
  
 
-std::map< std::string, std::vector<double> > MOLENSEMBLEMCclass::getBonds() {
+std::map< std::string, std::vector<double> >* MOLENSEMBLEMCclass::getBonds(
+      std::map< std::string, std::vector<double> >* bonds) {
 
   MOLECULEclass &molecule = molecules[0]; 
   float dist;
   std::string bondType;
-  std::map< std::string, std::vector<double> > bonds;
+  if (!bonds) {
+    bonds = new std::map< std::string, std::vector<double> >;
+  }
   for (int iatm=0; iatm<NmolAtoms; iatm++) {
     for (int jatm=iatm+1; jatm<NmolAtoms; jatm++) {
       if (molecule.atoms[iatm]->atomType < molecule.atoms[jatm]->atomType) {
@@ -323,7 +329,7 @@ std::map< std::string, std::vector<double> > MOLENSEMBLEMCclass::getBonds() {
       }
       dist = (molecule.atoms[iatm]->location 
           - molecule.atoms[jatm]->location).norm();
-      bonds[bondType].push_back(dist);
+      (*bonds)[bondType].push_back(dist);
     }
   }
  
