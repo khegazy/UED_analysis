@@ -288,20 +288,23 @@ int main(int argc, char* argv[]) {
             0.7, 0.8, 0.9, 1, 1.1, 
             1.2, 1.3, 1.4, 1.5};
       std::vector<double> currentSim(params.NradAzmBins);
-      std::string currentSimName = "./results/currentLowQSim["
-          + to_string(params.NradAzmBins) + "].dat";
       for (auto& scl : scales) {
         for (int iq=0; iq<shape[1]; iq++) {
           currentSim[iq] = scl*simFinalState[iq];
         }
+      
+        std::string currentSimName = 
+          "./results/sim-phenoxyRadical_LowQfill_scale-"
+            + to_string(scl) + "_["
+            + to_string(params.NradAzmBins) + "].dat";
         save::saveDat<double>(currentSim, currentSimName);
 
         system(("./pairCorr.exe " + runName 
-            + " -Osuf -FinalStateDiff -lowQtheory "
+            + " -Osuf _finalStateDiff -lowQtheory "
             + currentSimName).c_str());
 
         system(("mv ./results/data-" + runName 
-            + "-FinalStateDiff-pairCorrEven[" 
+            + "_finalStateDiff-pairCorrEven[" 
             + to_string(shape[0]) + ","
             + to_string(params.maxRbins) 
             + "].dat ./results/data-" + runName
@@ -311,7 +314,7 @@ int main(int argc, char* argv[]) {
             + to_string(params.maxRbins) + "].dat").c_str());
 
         system(("mv ./results/data-" + runName 
-            + "-FinalStateDiff-pairCorrOdd[" 
+            + "_finalStateDiff-pairCorrOdd[" 
             + to_string(shape[0]) + ","
             + to_string(params.maxRbins) 
             + "].dat ./results/data-" + runName
