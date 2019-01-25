@@ -12,7 +12,7 @@ class plotCLASS:
 
   def __init__(self):
     self.NANVAL = 1.234567e-10
-    self.colors = ['k', 'b', 'r', 'g', 'c', 'y', 'm', 'orangered', 'navy']
+    self.colors = ['k', 'b', 'r', 'g', 'c', 'y', 'm', 'orangered', 'navy', 'pink']
 
   def getShape(self, fileName):
     shape = []
@@ -69,7 +69,7 @@ class plotCLASS:
 
   def print1d(self, 
       inpImages, outputName, 
-      xRange=None, normalize=None, 
+      X=None, xRange=None, normalize=None, 
       scale=None, isFile=True,
       options=None):
 
@@ -91,9 +91,10 @@ class plotCLASS:
         image,_ = self.importImage(inpImages[i], False)
       else:
         image = inpImages[i,:]
-      X = np.arange(image.shape[0])
-      if xRange is not None:
-        X = xRange[0] + X*(xRange[1] - xRange[0])/float(image.shape[0])
+      if X is None:
+        X = np.arange(image.shape[0])
+        if xRange is not None:
+          X = xRange[0] + X*(xRange[1] - xRange[0])/float(image.shape[0])
       if normalize is not None:
         if normalize is "max":
           if "normalize" in options:
@@ -198,6 +199,7 @@ class plotCLASS:
     if isFile:
       imageO,shape = self.importImage(inpImage)
       if "Diff" in inpImage:
+        print("shape ",imageO.shape)
         image = np.zeros((imageO.shape[0], 555/5), dtype=float)
         for i in range(555/5):
           image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
@@ -222,7 +224,6 @@ class plotCLASS:
         Y = yRange[0] + Y*(yRange[1] - yRange[0])/float(shape[1])
 
     X,Y = np.meshgrid(X,Y)
-    print("meshgrid")
 
     fig, ax = plt.subplots()
 
@@ -251,8 +252,10 @@ class plotCLASS:
 
       if "colorNorm" in options:
         if options["colorNorm"] is "log":
-          print("VMM ",vMin, vMax)
           cNorm = colors.LogNorm(vMin, vMax)
+
+      if "TearlySub" in options:
+        image -= np.mean(image[:options["TearlySub"],:], axis=0)
 
       if "interpolate" in options:
         print("shapes", X.shape, Y.shape, image.shape)
@@ -271,6 +274,9 @@ class plotCLASS:
       cMap = 'jet'
 
     print("plotting", X.shape, Y.shape, image.shape)
+    np.savetxt('image.txt', image.transpose(), delimiter=",")
+    np.savetxt('X.txt', X, delimiter=",")
+    np.savetxt('Y.txt', Y, delimiter=",")
     plot = ax.pcolor(X, Y, image.transpose(), 
               norm=cNorm,
               cmap=cMap, 
@@ -314,11 +320,15 @@ class plotCLASS:
       if handles is None:
         print("ERROR: plotting the legend requirese handles!!!")
         sys.exit(0)
-      ax.legend(tuple(handles), tuple(options["labels"]))
+      if "legOpts" in options:
+        ax.legend(tuple(handles), tuple(options["labels"]), **options["legOpts"])
+      else:
+        ax.legend(tuple(handles), tuple(options["labels"]))
     if "line" in options:
-      l = Line2D(options["line"][0], options["line"][1], 
-          color=options["line"][2], linewidth=options["line"][3])
-      ax.add_line(l)
+      for line in options["line"]:
+        l = Line2D(line[0], line[1], 
+            color=line[2], linewidth=line[3])
+        ax.add_line(l)
 
     return fig, ax
 
