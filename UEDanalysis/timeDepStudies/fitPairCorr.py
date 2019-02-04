@@ -372,17 +372,31 @@ class fitPairCorr():
   def add_loss(self):
 
     # Chi Squared
-    self.chiSq = tf.reduce_mean(
+    self.chiSq  = tf.reduce_mean(
                     tf.divide(
                       tf.square(self.prediction - self.fitData),
                       self.fitDataVar))
 
     # Minimize large R contribution
-    self.lowR  = tf.reduce_mean(
-                    tf.einsum(
-                      'nij,jk->nik',
-                      tf.abs(self.fitCoeffs),
-                      self.rVals))
+    self.rCut   = tf.constant(1, tf.float32)
+    self.rNorm  = tf.einsum(
+                    'nij,jk->nik',
+                    tf.abs(self.fitCoeffs),
+                    self.rVals)
+    self.lowR   = tf.reduce_mean(
+                    tf.pow(
+                      (self.rNorm-self.rCut)/self.rCut,
+                      tf.ones_like(self.rNorm)*6))
+
+    if self.parameters["Rrange"][0] < 1:
+      zeroLowRcut = int(1.*self.parameters["NfitFxns"]
+                      /float(self.parameters["Rrange"][1] 
+                      - self.parameters["Rrange"][0]))
+      self.zeroLowR = tf.reduce_sum(
+                        tf.abs(self.fitCoeffs[:,:,:zeroLowRcut]))
+      self.zeroLowR *= 1E4
+    else:
+      self.zeroLowR = tf.constant(0, tf.float32)
 
     # Smooth fit coefficient distribution
     self.nnDiff   = tf.divide(
@@ -403,7 +417,7 @@ class fitPairCorr():
     #self.smooth   += tf.reduce_mean(
     #                  1 - tf.exp(-1*tf.square(self.nnnDiff)
     #                    /(2*self.nnnVariance)))
-    self.smooth *= 20*self.chiSq
+    self.smooth *= self.chiSq
 
     # Remove negative coefficients
     self.nonNeg  = tf.reduce_mean(
@@ -413,12 +427,26 @@ class fitPairCorr():
  
     # Dampen coefficients with small values (noise)
     self.noise    = tf.reduce_mean(
+                        tf.where(
+                          tf.less(self.rNorm, 
+                            0.04*tf.ones_like(self.rNorm)), 
+                          tf.abs(self.rNorm), 
+                          tf.zeros_like(self.rNorm),
+                          name="noise_where"),
+                        name="noise")
+
+    self.noise    *= tf.sqrt(tf.sqrt(
+                        tf.cast(self.global_step, dtype=tf.float32)))
+    """                    
+    self.noise    = tf.reduce_mean(
                       tf.square(
                         tf.where(
                           tf.less(self.fitCoeffs, 
                             0.01*tf.ones_like(self.fitCoeffs)), 
                           1 + tf.abs(self.fitCoeffs), 
                           tf.zeros_like(self.fitCoeffs))))
+    """
+
     """
     self.noise    = tf.reduce_mean(
                       tf.abs(
@@ -430,14 +458,62 @@ class fitPairCorr():
     self.noise    /= 10000
     """
 
-    self.loss = self.chiSq 
-    
-    if self.parameters["smoothLoss"]:
-      self.loss += self.smooth 
+    if self.parameters["timeDepLoss"]:
+      self.tdVariance = 0.5**2
+      self.tdDiff     = tf.divide(
+                          self.fitCoeffs[:-1,:,:]
+                            -self.fitCoeffs[1:,:,:],
+                          (tf.abs(self.fitCoeffs[:-1,:,:])
+                            +tf.abs(self.fitCoeffs[1:,:,:]))/2+1e-7)
+      self.nnTdDiff   = tf.divide(
+                          self.fitCoeffs[:-1,:,:-1]
+                            -self.fitCoeffs[1:,:,1:],
+                          (tf.abs(self.fitCoeffs[:-1,:,:-1])
+                            +tf.abs(self.fitCoeffs[1:,:,1:]))/2+1e-7)
+      self.nnnTdDiff  = tf.divide(
+                          self.fitCoeffs[:-1,:,:-2]
+                            -self.fitCoeffs[1:,:,2:],
+                          (tf.abs(self.fitCoeffs[:-1,:,:-2])
+                            +tf.abs(self.fitCoeffs[1:,:,2:]))/2+1e-7)
+      self.smoothTD   = tf.reduce_mean(
+                          1 - tf.exp(-1*tf.square(self.tdDiff)
+                            /(2*self.tdVariance)))
+      self.smoothTD  += tf.reduce_mean(
+                          1 - tf.exp(-1*tf.square(self.nnTdDiff)
+                            /(2*self.tdVariance)))
+      self.smoothTD  += tf.reduce_mean(
+                          1 - tf.exp(-1*tf.square(self.nnnTdDiff)
+                            /(2*self.tdVariance)))
+      self.smoothTD  *= 0.5*self.chiSq
+    else:
+      self.smoothTD = tf.constant(0, tf.float32)
+
+
+    self.L1   = tf.reduce_mean(
+                  tf.abs(self.rNorm))
+    self.L1NR = tf.reduce_mean(
+                  tf.abs(self.fitCoeffs))
+
+    self.L2   = tf.reduce_mean(
+                  tf.square(self.rNorm))
+
+ 
+    self.loss = self.chiSq #+ self.lowR + self.zeroLowR
+   
+    if self.parameters["L1regularize"] is not None:
+      self.loss += self.parameters["L1regularize"]*self.L1
+    if self.parameters["L1NRregularize"] is not None:
+      self.loss += self.parameters["L1NRregularize"]*self.L1NR
+    if self.parameters["L2regularize"] is not None:
+      self.loss += self.parameters["L2regularize"]*self.L2
+    if self.parameters["smoothLoss"] is not None:
+      self.loss += self.parameters["smoothLoss"]*self.smooth 
     if self.parameters["nonNegLoss"]:
       self.loss += self.nonNeg 
-    if self.parameters["noiseLoss"]:
-      self.loss += self.noise
+    if self.parameters["noiseLoss"] is not None:
+      self.loss += self.parameters["noiseLoss"]*self.noise
+    if self.parameters["timeDepLoss"]:
+      self.loss += self.smoothTD
 
 
   def add_optimizer(self):
@@ -461,18 +537,25 @@ class fitPairCorr():
         self.global_step,
         self.loss,
         self.chiSq,
-        self.lowR,
         self.smooth,
         self.nonNeg,
-        self.noise,
+        self.lowR,
+        self.smoothTD,
+        self.zeroLowR,
+        self.L1,
+        self.L2,
         self.update]
 
-    global_step, currentLoss,\
-    currentChiSq,\
-    currentLowR, currentSmooth,\
-    currentNonNeg, currentNoise, _ = sess.run(output, feed_dict)
+    global_step,  currentLoss,\
+    currentChiSq, currentSmooth,\
+    currentNonNeg, currentNoise,\
+    currentSmoothTD, currentZeroLowR,\
+    currentL1, currentL2, _ = sess.run(output, feed_dict)
 
-    return global_step, currentLoss, currentChiSq, currentLowR, currentSmooth, currentNonNeg, currentNoise
+    return  global_step,      currentLoss,      currentChiSq,\
+            currentSmooth,    currentNonNeg,    currentNoise,\
+            currentSmoothTD,  currentZeroLowR,  currentL1,\
+            currentL2
 
 
   def fit(self, sess):
@@ -482,13 +565,16 @@ class fitPairCorr():
     global_step = 0
     while (global_step < self.maxTrainIters) or (self.maxTrainIters is 0):
       
-      global_step, currentLoss,\
-      currentChiSq,\
-      currentLowR, currentSmooth,\
-      currentNonNeg, currentNoise = self.run_fit_step(sess)
+      global_step,      currentLoss,\
+      currentChiSq,     currentSmooth,\
+      currentNonNeg,    currentNoise,\
+      currentSmoothTD,  currentZeroLowR,\
+      currentL1,        currentL2 = self.run_fit_step(sess)
       self.history.append(currentLoss)
-      print("Loss %i: \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E" % 
-          (global_step, currentLoss, currentChiSq, currentSmooth, currentNonNeg, currentNoise))
+      print("Loss %i: \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E \t%.2E" % 
+          (global_step,     currentLoss,    currentChiSq,\
+          currentSmooth,    currentNonNeg,  currentNoise,
+          currentSmoothTD,  currentZeroLowR, currentL1, currentL2))
 
     self.saver.save(sess,
         self.parameters["checkpointPath"]+"/fitting")
