@@ -10,7 +10,6 @@ mergeClass::mergeClass(std::string runName_inp) : parameterClass(runName_inp) {
 
 mergeClass::~mergeClass() {
   delete plt;
-  delete[] timeDelays;
 }
 
 
@@ -23,9 +22,8 @@ void mergeClass::initializeVariables() {
   curDate  = "";
   curRun   = "";
   _compareReference = false;
-  smearedTime = false;
-
-  timeDelays = NULL;
+  smearedTime       = false;
+  didSMSnormalize      = false;
 
   /////  Simulation results  /////
   atmLegDiff.resize(NradLegBins, 0.0);
@@ -206,6 +204,7 @@ void mergeClass::addReference(int scan, int64_t stagePos,
   if (!normalizeImgs) imgNorm = 1;
   scanReferences[scan][stagePos].imgNorm = imgNorm;
   scanReferences[scan][stagePos].azmRef.resize(NradAzmBins, 0);
+  scanReferences[scan][stagePos].scale = 1;
   for (int i=0; i<NradAzmBins; i++) {
     if ((*azmAvg)[i] != NANVAL) {
       scanReferences[scan][stagePos].azmRef[i] = (*azmAvg)[i]/imgNorm;
@@ -242,7 +241,7 @@ void mergeClass::addEntry(int scan, int64_t stagePos,
   ///  Get index of stage position  ///
   if (scanLgndrs.find(scan) == scanLgndrs.end()) {
     std::vector<double> emptyC(stagePosInds.size(), 0);
-    scanCounts[scan] = emptyC;
+    scanScale[scan] = emptyC;
 
     std::vector< std::vector<double> > empty(stagePosInds.size());
     for (uint ipos=0; ipos<stagePosInds.size(); ipos++) {
@@ -267,12 +266,12 @@ void mergeClass::addEntry(int scan, int64_t stagePos,
     for (auto& itr : stagePosInds) {
       if (itr.second == -1) {
         pInd = ind;
-        auto sCitr = scanCounts.begin();
+        auto sCitr = scanScale.begin();
         auto sLitr = scanLgndrs.begin();
         auto sAzml = scanAzmAvg.begin();
         const std::vector<double> emptyLegVec((*legCoeffs).size(), 0.0);
         const std::vector<double> emptyAzmVec((*azmAvg).size(), 0.0);
-        while (sCitr != scanCounts.end()) {
+        while (sCitr != scanScale.end()) {
           sCitr->second.insert(sCitr->second.begin()+ind, 0);
           sLitr->second.insert(sLitr->second.begin()+ind, emptyLegVec);
           sAzml->second.insert(sAzml->second.begin()+ind, emptyAzmVec);
@@ -286,14 +285,14 @@ void mergeClass::addEntry(int scan, int64_t stagePos,
 
   if (false && verbose) {
     std::cout << "ind/sizes: " << pInd << "  "
-      << scanCounts[scan].size() << "  "
+      << scanScale[scan].size() << "  "
       << scanLgndrs[scan].size() << "  "
       << scanLgndrs[scan][pInd].size() << std::endl;
   }
 
   ///  Add coefficients and counts to maps  ///
   if (!normalizeImgs) imgNorm = 1;
-  scanCounts[scan][pInd] = imgNorm;
+  scanScale[scan][pInd] = imgNorm;
   for (uint i=0; i<(*legCoeffs).size(); i++) {
     scanLgndrs[scan][pInd][i] = (*legCoeffs)[i]/imgNorm;
   }
@@ -400,7 +399,149 @@ void mergeClass::removeLabTimeOutliers() {
 */
     
 
-void mergeClass::getMeanSTD() {
+void mergeClass::getImageMeanSTD() {
+
+  /////  Reset all vectors  /////
+  // Time dependent measurements
+  if (imgAzmMeans.size() != scanAzmAvg.size()) {
+    imgAzmMeans.resize(scanAzmAvg.size());
+    imgAzmRefMeans.resize(scanReferences.size());
+    auto scanItr = scanAzmAvg.begin();
+    for (uint i=0; i<scanAzmAvg.size(); i++) {
+      imgAzmMeans[i].resize(stagePosInds.size(), 0);
+      scanInds[scanItr->first] = i;
+      scanItr++;
+    }
+  }
+  if (scanImgAzmMeans.size() != stagePosInds.size()) {
+    scanImgAzmMeans.resize(stagePosInds.size());
+    scanImgAzmSTDs.resize(stagePosInds.size());
+  }
+  for (uint i=0; i<scanAzmAvg.size(); i++) {
+    std::fill(imgAzmMeans[i].begin(), imgAzmMeans[i].end(), 0);
+  }
+  for (uint i=0; i<scanReferences.size(); i++) {
+    imgAzmRefMeans[i].clear();
+  }
+  std::fill(scanImgAzmMeans.begin(), scanImgAzmMeans.end(), 0);
+  std::fill(scanImgAzmSTDs.begin(), scanImgAzmSTDs.end(), 0);
+  scanImgAzmRefMean = 0;
+  scanImgAzmRefSTD = 0;
+
+  //std::vector<double>legNorms(NlegBins, 0);
+  //std::vector<double>azmNorms(NradAzmBins, 0);
+
+  double norm = 0;
+
+  //////////////////////////////
+  /////  Reference Images  /////
+  //////////////////////////////
+
+  /////  Calculate mean  /////
+  // Azimuthal Reference
+  if (verbose) 
+    std::cout << "\tCalculating azimuthal mean.\n";
+  int refInd = 0;
+  double siarCount = 0;
+  for (auto const & sRitr : scanReferences) {
+    int rPosInd = 0;
+    for (auto const &pItr : sRitr.second) {
+      norm = 0;
+      imgAzmRefMeans[refInd].push_back(0);
+      for (int ir=0; ir<NradAzmBins; ir++) {
+        if (pItr.second.azmRef[ir] != NANVAL) {
+          imgAzmRefMeans[refInd][rPosInd] += pItr.second.azmRef[ir];
+          norm += 1;
+        }
+      }
+      if (norm) {
+        imgAzmRefMeans[refInd][rPosInd] /= norm;
+        scanImgAzmRefMean += imgAzmRefMeans[refInd][rPosInd];
+        siarCount++;
+      }
+      else {
+        imgAzmRefMeans[refInd][rPosInd] = 0;
+      }
+      rPosInd++;
+    }
+    refInd++;
+  }
+  scanImgAzmRefMean /= siarCount;
+
+  /////  Calculate Standard Deviation  /////
+  // Azimuthal Reference
+  if (verbose) 
+    std::cout << "\tCalculating azimuthal std.\n";
+  siarCount = 0;
+  for (auto const & sRitr : imgAzmRefMeans) {
+    for (uint i=0; i<sRitr.size(); i++) {
+      if (sRitr[i] != 0) {
+        scanImgAzmRefSTD += std::pow(sRitr[i] - scanImgAzmRefMean, 2);
+        siarCount++;
+      }
+    }
+  }
+  scanImgAzmRefSTD = std::sqrt(scanImgAzmRefSTD/siarCount);
+
+
+  ///////////////////////////////////
+  /////  Time Dependent Images  /////
+  ///////////////////////////////////
+ 
+  for (auto const & pItr : stagePosInds) {
+    /////  Mean calculation  /////
+    
+    ///  Azimuthal  ///
+    if (verbose && (pItr.second == 0)) 
+      std::cout << "\tCalculating azimuthal mean.\n";
+    double siaCount = 0;
+    for (auto const & sAitr : scanAzmAvg) {
+      int scanInd = scanInds[sAitr.first];
+      if (scanScale[sAitr.first][pItr.second] > 0) {
+        double norm = 0;
+        for (int i=0; i<NradAzmBins; i++) {
+          if (sAitr.second[pItr.second][i] != NANVAL) {
+            imgAzmMeans[scanInd][pItr.second] += sAitr.second[pItr.second][i];
+            norm++;
+          }
+        }
+        if (norm) {
+          imgAzmMeans[scanInd][pItr.second] /= norm;
+          scanImgAzmMeans[pItr.second] += imgAzmMeans[scanInd][pItr.second];
+          siaCount++;
+        }
+        else {
+          imgAzmMeans[scanInd][pItr.second] = 0;
+        }
+      }
+    }
+
+    scanImgAzmMeans[pItr.second] /= siaCount;
+
+
+    /////  Standard deviation calculation  /////
+    ///  Azimuthal  ///
+    if (verbose && (pItr.second == 0)) 
+      std::cout << "\tCalculating azimuthal std.\n";
+    siaCount = 0;
+    for (auto const & sAitr : scanAzmAvg) {
+      int scanInd = scanInds[sAitr.first];
+      if (imgAzmMeans[scanInd][pItr.second]) {
+        scanImgAzmSTDs[pItr.second]
+            += std::pow((imgAzmMeans[scanInd][pItr.second]
+                    - scanImgAzmMeans[pItr.second]), 2);
+        siaCount++;
+      }
+    }
+
+    scanImgAzmSTDs[pItr.second] = std::sqrt(scanImgAzmSTDs[pItr.second]/siaCount);
+  }
+
+  return;
+}
+
+
+void mergeClass::getRunMeanSTD() {
 
   /////  Reset all vectors  /////
   // Time dependent measurements
@@ -552,11 +693,11 @@ void mergeClass::getMeanSTD() {
     if (verbose && (k == 0) && (pItr.second == 0)) 
       std::cout << "\tCalculating legendre mean.\n";
     for (auto sLitr : scanLgndrs) {
-      if (scanCounts[sLitr.first][pItr.second] > 0) {
+      if (scanScale[sLitr.first][pItr.second] > 0) {
         for (int i=0; i<NlegBins; i++) {
           if (sLitr.second[pItr.second][i] != NANVAL) {
             runLegMeans[pItr.second][i] += sLitr.second[pItr.second][i];
-            legNorms[i] += 1; //scanCounts[sLitr.first][pItr.second];
+            legNorms[i] += 1; //scanScale[sLitr.first][pItr.second];
           }
         }
       }
@@ -571,11 +712,11 @@ void mergeClass::getMeanSTD() {
     if (verbose && (pItr.second == 0)) 
       std::cout << "\tCalculating azimuthal mean.\n";
     for (auto const & sAitr : scanAzmAvg) {
-      if (scanCounts[sAitr.first][pItr.second] > 0) {
+      if (scanScale[sAitr.first][pItr.second] > 0) {
         for (int i=0; i<NradAzmBins; i++) {
           if (sAitr.second[pItr.second][i] != NANVAL) {
             runAzmMeans[pItr.second][i] += sAitr.second[pItr.second][i];
-            azmNorms[i] += 1; //scanCounts[sAitr.first][pItr.second];
+            azmNorms[i] += 1; //scanScale[sAitr.first][pItr.second];
           }
         }
       }
@@ -593,7 +734,7 @@ void mergeClass::getMeanSTD() {
     if (verbose && (k == 0) && (pItr.second == 0)) 
       std::cout << "\tCalculating legendre std.\n";
     for (auto const & sLitr : scanLgndrs) {
-      if (scanCounts[sLitr.first][pItr.second]) {
+      if (scanScale[sLitr.first][pItr.second]) {
         for (int i=0; i<NlegBins; i++) {
           if (sLitr.secondpItr.second][i] != NANVAL) {
             runLegSTD[pItr.second][i]
@@ -615,7 +756,7 @@ void mergeClass::getMeanSTD() {
     if (verbose && (pItr.second == 0)) 
       std::cout << "\tCalculating azimuthal std.\n";
     for (auto const & sAitr : scanAzmAvg) {
-      if (scanCounts[sAitr.first][pItr.second]) {
+      if (scanScale[sAitr.first][pItr.second]) {
         for (int i=0; i<NradAzmBins; i++) {
           if (sAitr.second[pItr.second][i] != NANVAL) {
             runAzmSTD[pItr.second][i]
@@ -640,7 +781,7 @@ void mergeClass::removeLowPolynomials() {
   if (!_compareReference) {
     mergeScans(true, false);
   }
-  getMeanSTD();
+  getRunMeanSTD();
 
   int mInd, Nnans;
   int Npoly = 1;
@@ -655,7 +796,7 @@ void mergeClass::removeLowPolynomials() {
     std::cout << "\tRemoving low order polynomials from references.\n";
   for (auto& sRitr : scanReferences) {
     for (auto& pItr : sRitr.second) {
-      if (pItr.second.imgNorm) {
+      if (pItr.second.scale) {
         Nnans = 0;
         for (int ir=NbinsSkip; ir<NradAzmBins; ir++) {
           if (pItr.second.azmRef[ir] == NANVAL) Nnans += 1;
@@ -708,7 +849,7 @@ void mergeClass::removeLowPolynomials() {
   std::vector<TH1*> h(2);
   for (uint it=0; it<stagePosInds.size(); it++) {
     for (auto& sAzml : scanAzmAvg) {
-      if (scanCounts[sAzml.first][it] != 0) {
+      if (scanScale[sAzml.first][it] != 0) {
         Nnans = 0;
         for (int ir=NbinsSkip; ir<NradAzmBins; ir++) {
           if (sAzml.second[it][ir] == NANVAL) Nnans += 1;
@@ -785,7 +926,54 @@ void mergeClass::removeLowPolynomials() {
 }
 
  
+ 
+void mergeClass::removeImageOutliers() {
   
+  ///////////////////////////////////////
+  /////  Cleaning Reference Images  /////
+  ///////////////////////////////////////
+  if (verbose)
+    std::cout << "\tBeginning removing outliers in reference images.\n";
+
+  /////  Calculate Mean and STD  /////
+  getImageMeanSTD();
+
+  /////  Make Reference Cut  /////
+  if (verbose) 
+    std::cout << "\tMaking cuts on reference images.\n";
+  for (auto& sRitr : scanReferences) {
+    int posInd = 0;
+    for (auto& pItr : sRitr.second) {
+      if (fabs(imgAzmRefMeans[scanInds[sRitr.first]][posInd] - scanImgAzmRefMean) 
+          > scanImgAzmRefSTDcut*scanImgAzmRefSTD) {
+        pItr.second.scale = 0;
+      }
+      posInd++;
+    }
+  }
+      
+  ///  Azimuthal  ///
+  for (auto pItr : stagePosInds) {
+    if (verbose && (pItr.second == 0)) 
+      std::cout << "\tMaking cuts on azimuthal images.\n";
+    for (auto& sAitr : scanAzmAvg) {
+      if (fabs(imgAzmMeans[scanInds[sAitr.first]][pItr.second] 
+          - scanImgAzmMeans[pItr.second])
+          > scanImgAzmSTDcut*scanImgAzmSTDs[pItr.second]) {
+        cout<<"REMOVING IMAGE: "<<pItr.first<<"  "<<sAitr.first<<endl;
+        scanScale[sAitr.first][pItr.second] = 0;
+      }
+    }
+  }
+
+  if (verbose) 
+    std::cout << "Finished removing outliers from time dependent images.\n";
+
+  return;
+}
+
+
+ 
 
 void mergeClass::removeOutliers() {
 
@@ -821,7 +1009,7 @@ void mergeClass::removeOutliers() {
   for (int k=0; k<3; k++) {
 
     /////  Calculate Mean and STD  /////
-    getMeanSTD();
+    getRunMeanSTD();
 
     /////  Make Reference Cut  /////
     /*
@@ -845,7 +1033,7 @@ void mergeClass::removeOutliers() {
           }
         }
         if (imageNoise > legImageNoiseCut) {
-          pItr.second.imgNorm = 0;
+          pItr.second.scale = 0;
         }
       }
     }
@@ -871,7 +1059,7 @@ void mergeClass::removeOutliers() {
           }
         }
         if (imageNoise > azmImageNoiseCut) {
-          pItr.second.imgNorm = 0;
+          pItr.second.scale = 0;
         }
       }
     }
@@ -902,7 +1090,7 @@ void mergeClass::removeOutliers() {
           }
         }
         if (imageNoise > legImageNoiseCut) {
-          scanCounts[sLitr.first][pItr.second] = 0;
+          scanScale[sLitr.first][pItr.second] = 0;
         }
       }
       */
@@ -925,7 +1113,7 @@ void mergeClass::removeOutliers() {
           }
         }
         if (imageNoise > azmImageNoiseCut) {
-          scanCounts[sAitr.first][pItr.second] = 0;
+          scanScale[sAitr.first][pItr.second] = 0;
         }
       }
     }
@@ -940,7 +1128,7 @@ void mergeClass::removeOutliers() {
     std::cout << "Removing " << removePos.size() << " bins\n";
     std::cout << "Before removal: " << stagePosInds.size() << "  "
       << scanLgndrs.begin()->second.size() << "  "
-      << scanCounts.begin()->second.size() << "  "
+      << scanScale.begin()->second.size() << "  "
       << runLegMeans.size() << "  " << runLegSTD.size() << std::endl;
   }
   /*
@@ -950,7 +1138,7 @@ void mergeClass::removeOutliers() {
     for (auto& sLitr : scanLgndrs) {
       sLitr.second.erase(sLitr.second.begin() + pInd);
     }
-    for (auto& sCitr : scanCounts) {
+    for (auto& sCitr : scanScale) {
       sCitr.second.erase(sCitr.second.begin() + pInd);
     }
     stagePosInds.erase(stagePosInds.find(removePos[i]));
@@ -966,7 +1154,7 @@ void mergeClass::removeOutliers() {
   if (verbose) {
     std::cout << "After removal: " << stagePosInds.size() << "  " 
       << scanLgndrs.begin()->second.size() << "  " 
-      << scanCounts.begin()->second.size() << "  "
+      << scanScale.begin()->second.size() << "  "
       << runMeans.size() << "  " << runStdev.size() << std::endl;
   }
   */
@@ -975,6 +1163,98 @@ void mergeClass::removeOutliers() {
 
 }
 
+
+void mergeClass::scaleByFit() {
+
+  if (verbose) {
+    std::cout << "INFO: scaling by fitting patterns to mean\n";
+  }
+
+  Eigen::Matrix<double, Eigen::Dynamic, 2> X_full;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> Y_full;
+  X_full.resize(NradAzmBins, 2);
+  Y_full.resize(NradAzmBins, 1);
+  Eigen::Matrix<double, Eigen::Dynamic, 2> X;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> Y;
+  Eigen::VectorXd w;
+
+  mergeScans();
+
+  /////  Scaling References  /////
+  for (auto& sRitr : scanReferences) {
+    for (auto& pItr : sRitr.second) {
+      if (pItr.second.scale) {
+        int count = 0;
+        for (int ir=100; ir<450; ir++) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            X_full(count, 0) = pItr.second.azmRef[ir];
+            X_full(count, 1) = 1;
+            Y_full(count, 0) = azmReference[ir];
+            count++;
+          }
+        }
+
+        X.resize(count, 2);
+        Y.resize(count, 1);
+        for (int i=0; i<count; i++) {
+          X(i, 0) = X_full(i, 0);
+          X(i, 1) = 1;
+          Y(i, 0) = Y_full(i, 0);
+        }
+
+        w = tools::normalEquation(X, Y);
+
+        // Scale lineout
+        for (int ir=0; ir<NradAzmBins; ir++) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            pItr.second.azmRef[ir] = w(0)*pItr.second.azmRef[ir] + w(1);
+          }
+        }
+      }
+    }
+  }
+ 
+
+  /////  Scaling Azimuthal Average  /////
+  for (uint it=0; it<stagePosInds.size(); it++) {
+    for (auto & sAzml : scanAzmAvg) {
+      if (scanScale[sAzml.first][it] != 0) {
+        int count = 0;
+        for (int iazm=100; iazm<450; iazm++) {
+          if (sAzml.second[it][iazm] != NANVAL)  {
+            X_full(count, 0) = sAzml.second[it][iazm];
+            X_full(count, 1) = 1;
+            Y_full(count, 0) = azimuthalAvg[it][iazm];
+            count++;
+          }
+        }
+
+        X.resize(count, 2);
+        Y.resize(count, 1);
+        for (int i=0; i<count; i++) {
+          X(i, 0) = X_full(i, 0);
+          X(i, 1) = 1;
+          Y(i, 0) = Y_full(i, 0);
+        }
+
+        w = tools::normalEquation(X, Y);
+
+        //if (stagePosInds[1544700] == it) {
+        //  cout<<"fitted parameters "<<sAzml.first<<"  "<<it<<" : "<<w(1)<<"  "<<w(0)<<endl;
+        //}
+        // Scale lineout
+        for (int iazm=0; iazm<NradAzmBins; iazm++) {
+          if (sAzml.second[it][iazm] != NANVAL) {
+            sAzml.second[it][iazm] = w(0)*sAzml.second[it][iazm] + w(1);
+          }
+        }
+      }
+    }
+  }
+
+  return;
+}
+   
 
 
 void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
@@ -991,8 +1271,7 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
 
   int NtimeSteps = stagePosInds.size();
   int tInd = 1;
-  if (timeDelays) delete[] timeDelays;
-  timeDelays = new double[NtimeSteps + 1];
+  timeDelays.resize(stagePosInds.size()+1);
   for (auto pItr : stagePosInds) {
     timeDelays[tInd] = 2*pItr.first/(3e3);
     tInd++;
@@ -1002,9 +1281,10 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
     timeDelays[i] -= timeZero + timeDelays[0];
   }
 
-  save::saveDat<double>(timeDelays, NtimeSteps + 1,
+  save::saveDat<double>(
+      timeDelays,
       "./results/timeDelays["
-      + to_string(stagePosInds.size() + 1) + "].dat");
+        + to_string(timeDelays.size()) + "].dat");
 
 
   ///////////////////////////
@@ -1028,7 +1308,7 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
         rInd = ilg*NradLegBins + ir;
         for (auto const & sRitr : scanReferences) {
           for (auto const & pItr : sRitr.second) {
-            if (pItr.second.imgNorm) {
+            if (pItr.second.scale) {
               if (pItr.second.legRef[rInd] != NANVAL) {
                 legReference[ilg][ir] += pItr.second.legRef[rInd];
                 norm += 1;
@@ -1054,7 +1334,7 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
       norm = 0;
       for (auto const & sRitr : scanReferences) {
         for (auto const & pItr : sRitr.second) {
-          if (pItr.second.imgNorm) {
+          if (pItr.second.scale) {
             if (pItr.second.azmRef[ir] != NANVAL) {
               azmReference[ir]    += pItr.second.azmRef[ir];
               norm += 1;
@@ -1104,7 +1384,6 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
     if (verbose)
       std::cout << "\tMerging time dependent images.\n";
     for (int it=0; it<NtimeSteps; it++) {
-      cout<<"looking at time "<<it<<endl;
 
       ///  Merging legendres  ///
       for (int ilg=0; ilg<Nlegendres; ilg++) {
@@ -1115,7 +1394,7 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
             //cout<<"filling: "<<ilg<<"  "<<it<<"  "<<ir<<"  "<<sLiter.first<<"  "<<sLiter.second[it][rInd]<<"  "<<sLiter.second[it][rInd] -     runMeans[it][rInd]<<"  "<< stdScale*runStdev[it][rInd]<<endl;
             //if (sLiter.second[it][rInd] != NANVAL) {
             //  legendres[ilg][it][ir] += sLiter.second[it][rInd];
-            //  legNorm += scanCounts[sLiter.first][it];
+            //  legNorm += scanScale[sLiter.first][it];
             //}
           //}
           //if (norm) {
@@ -1133,9 +1412,9 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
         norm = 0;
         for (auto const & sAzml : scanAzmAvg) {
           if ((sAzml.second[it][iazm] != NANVAL) 
-              && (scanCounts[sAzml.first][it] != 0)) {
+              && (scanScale[sAzml.first][it] != 0)) {
             azimuthalAvg[it][iazm]  += sAzml.second[it][iazm];
-            norm += 1; //scanCounts[sAzml.first][it];
+            norm += 1; //scanScale[sAzml.first][it];
           }
         }
         if (norm) {
@@ -1218,8 +1497,99 @@ void mergeClass::subtractT0() {
 }
 
 
+void mergeClass::normalizeResults() {
 
-void mergeClass::normalize() {
+  double refReadoutNoise = 0;
+  int refReadoutCount = 0;
+  for (int iq=readoutAzmBinStart; iq<readoutAzmBinEnd; iq++) {
+    if (azmReference[iq] != NANVAL) {
+      refReadoutNoise += azmReference[iq];
+      refReadoutCount++;
+    }
+  }
+  refReadoutNoise /= refReadoutCount;
+  for (int iq=0; iq<NradAzmBins; iq++) {
+    if (azmReference[iq] != NANVAL) {
+      azmReference[iq] -= refReadoutNoise;
+    }
+  }
+
+
+  double readoutNoise = 0;
+  int readoutCount = 0;
+  for (uint it=0; it<stagePosInds.size(); it++) {
+    readoutNoise = 0;
+    readoutCount = 0;
+    for (int iq=readoutAzmBinStart; iq<readoutAzmBinEnd; iq++) {
+      if (azimuthalAvg[it][iq] != NANVAL) {
+        readoutNoise += azimuthalAvg[it][iq];
+        readoutCount++;
+    if (it==16) {
+      cout<<"iq/val: "<<iq<<"  "<<azimuthalAvg[it][iq]<<endl;
+    }
+      }
+    }
+    readoutNoise /= readoutCount;
+    if (it==16) {
+      cout<<"subtract: "<<readoutNoise<<endl;
+    }
+    for (int iq=0; iq<NradAzmBins; iq++) {
+      if (azimuthalAvg[it][iq] != NANVAL) {
+        azimuthalAvg[it][iq] -= readoutNoise;
+      }
+    }
+  }
+
+  // Normalize Intensity
+  int imgNormBinMin = 25; //(int)(imgNormRadMin*NradAzmBins);
+  int imgNormBinMax = 400; //(int)(imgNormRadMax*NradAzmBins);
+
+  double refNorm = 0;
+  int refNormCount = 0;
+  for (int iq=imgNormBinMin; iq<imgNormBinMax; iq++) {
+    if (azmReference[iq] != NANVAL) {
+      refNorm += azmReference[iq];
+      refNormCount++;
+    }
+  }
+  refNorm /= refNormCount;
+  for (int iq=0; iq<NradAzmBins; iq++) {
+    if (azmReference[iq] != NANVAL) {
+      azmReference[iq] /= refNorm;
+    }
+  }
+
+
+  double azmNorm = 0;
+  int azmNormCount = 0;
+  for (uint it=0; it<stagePosInds.size(); it++) {
+    azmNorm = 0;
+    azmNormCount = 0;
+    for (int iq=imgNormBinMin; iq<imgNormBinMax; iq++) {
+      if (azimuthalAvg[it][iq] != NANVAL) {
+        azmNorm += azimuthalAvg[it][iq];
+        azmNormCount++;
+      }
+    }
+    azmNorm /= azmNormCount;
+    if (it==16) {
+      cout<<"norm: "<<azmNorm<<endl;
+    }
+    for (int iq=0; iq<NradAzmBins; iq++) {
+      if (azimuthalAvg[it][iq] != NANVAL) {
+        azimuthalAvg[it][iq] /= azmNorm;
+      }
+    }
+  }
+
+  return;
+}
+
+
+
+void mergeClass::sMsNormalize() {
+
+  didSMSnormalize = true;
 
   /////  Normalizing legendres  /////
   for (int ilg=0; ilg<Nlegendres; ilg++) {
@@ -1233,16 +1603,27 @@ void mergeClass::normalize() {
   }
 
   /////  Normalizing azimuthal average  /////
+  azimuthalsMs.resize(stagePosInds.size());
+  runsMsMeans.resize(stagePosInds.size());
+  runsMsSTD.resize(stagePosInds.size());
+  for (uint tm=0; tm<stagePosInds.size(); tm++) {
+    azimuthalsMs[tm].resize(NradAzmBins, 0);
+    runsMsMeans[tm].resize(NradAzmBins, 0);
+    runsMsSTD[tm].resize(NradAzmBins, 0);
+  }
+  runsMsRefMeans.resize(NradAzmBins, 0);
+  runsMsRefSTD.resize(NradAzmBins, 0);
+
   for (int ir=0; ir<NradAzmBins; ir++) {
     for (uint tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
         azimuthalsMs[tm][ir] = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
-        runAzmMeans[tm][ir]  *= sMsAzmNorm[ir];
-        runAzmSTD[tm][ir]    *= sMsAzmNorm[ir];
+        runsMsMeans[tm][ir]  = runAzmMeans[tm][ir]*sMsAzmNorm[ir];
+        runsMsSTD[tm][ir]    = runAzmSTD[tm][ir]*sMsAzmNorm[ir];
       }
     }
-    runAzmRefMeans[ir]  *= sMsAzmNorm[ir];
-    runAzmRefSTD[ir]    *= sMsAzmNorm[ir];
+    runsMsRefMeans[ir]  = runAzmRefMeans[ir]*sMsAzmNorm[ir];
+    runsMsRefSTD[ir]    = runAzmRefSTD[ir]*sMsAzmNorm[ir];
   }
 
 }
@@ -1269,25 +1650,23 @@ void mergeClass::smearTimeGaussian() {
   }
   */
 
-  int NtimeBins = stagePosInds.size();
-
   // Find smallest difference
   double minDist = 1000;
-  for (int it=0; it<NtimeBins-1; it++) {
+  for (int it=0; it<(int)timeDelays.size()-1; it++) {
     if (timeDelays[it+1] - timeDelays[it] < minDist) {
       minDist = timeDelays[it+1] - timeDelays[it];
     }
   }
   minDist /= 5.;
 
-  double totalTime = timeDelays[NtimeBins] - timeDelays[0];
+  double totalTime = timeDelays[timeDelays.size()-1] - timeDelays[0];
   int NfineTimeDelays = totalTime/minDist;
   std::vector<double> fineTimeDelays(NfineTimeDelays);
   std::vector<int> timeMapping(NfineTimeDelays);
   int timeInd = 0;
   for (int tm=0; tm<NfineTimeDelays; tm++) {
-    fineTimeDelays[tm] = tm*minDist;
-    if (timeInd != NtimeBins-1) {
+    fineTimeDelays[tm] = timeDelays[0] + tm*minDist;
+    if (timeInd + 1 != azimuthalAvg.size()) {
       while (fabs(timeDelays[timeInd] - fineTimeDelays[tm]) >
           fabs(timeDelays[timeInd+1] - fineTimeDelays[tm])) {
         timeInd++;
@@ -1296,7 +1675,6 @@ void mergeClass::smearTimeGaussian() {
     timeMapping[tm] = timeInd;
   }
 
-  cout<<"start smearing"<<endl;
   /////  Smearing  /////
   double sum, weight;
   smearedAzmAvg.resize(NfineTimeDelays);
@@ -1382,17 +1760,15 @@ void mergeClass::smearTimeFFT() {
 
   /////  Rebinning into smallest bins  /////
 
-  int NtimeBins = stagePosInds.size();
-
   // Find smallest difference
   double minDist = 1000;
-  for (int it=0; it<NtimeBins-1; it++) {
+  for (int it=0; it<(int)timeDelays.size()-1; it++) {
     if (timeDelays[it+1] - timeDelays[it] < minDist) {
       minDist = timeDelays[it+1] - timeDelays[it];
     }
   }
 
-  double totalTime = timeDelays[NtimeBins] - timeDelays[0];
+  double totalTime = timeDelays[timeDelays.size()-1] - timeDelays[0];
   int NfineTimeDelays = totalTime/minDist + 1;
   std::vector<double> fineTimeDelays(NfineTimeDelays);
   for (int it=0; it<NfineTimeDelays; it++) {
@@ -1433,7 +1809,7 @@ void mergeClass::smearTimeFFT() {
   for (int iq=0; iq<NradAzmBins; iq++) {
     int timeInd = 0;
     for (int it=0; it<NfineTimeDelays; it++) {
-      if (timeInd != NtimeBins-1) {
+      if (timeInd + 1 != azimuthalAvg.size()) {
         while (fabs(timeDelays[timeInd] - fineTimeDelays[it]) >
             fabs(timeDelays[timeInd+1] - fineTimeDelays[it])) {
           timeInd++;
