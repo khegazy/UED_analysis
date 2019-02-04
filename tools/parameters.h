@@ -15,9 +15,9 @@ class parameterClass {
   public:
 
     enum radicalEnum 
-        {nitrobenzene, 
-         phenoxyRadical, 
-         phenylRadical, 
+        {initialState, 
+         finalState1, 
+         finalState2, 
          Nradicals};
     radicalEnum molecule;
     std::string molName;
@@ -28,16 +28,16 @@ class parameterClass {
     int NradLegBins;
     int NmaxRadBins;
     int NradAzmBins;
+    int NfinalPoints;
+
     // Diffraction parameters
     double QperPix;
     double maxQleg;
     double maxQazm;
     double timeZero;
-    double timeSmearStd;
     double legStdCut;
-    double smearSTD;
     int imgSize;
-    int buffer;
+    int imgEdgeBuffer;
     int imgShutterTime;
     std::string imgMatType;
     bool hasLaserBkg;
@@ -59,32 +59,57 @@ class parameterClass {
     // Pair correlation parameters
     int NautCpadding;
     int NbinsSkip;
+    int maxRbins;
     double filterVar;
     double holeRat;
     double rMaxLegRat;
     double rMaxAzmRat;
     double padDecayRat;
     double maxR;
+    double lowQfillSimScale;
+    std::string fillLowQfile;
+    bool fillLowQtheory;
+
+    // Analysis parameters
+    std::vector< std::vector<double> > signalRranges;
+    std::vector< std::vector<double> > signalQranges;
 
     // Simulation parameters
     bool compareSims;
     bool simPairCorr;
+    bool getBonds;
     bool simPltVerbose;
     int NradSimBins;
+    int fsQfitBegin;
+    int fsQfitEnd;
+    int fsRfitBegin;
+    int fsRfitEnd;
     double Iebeam;
     double elEnergy;
     double screenDist;
     std::string xyzDir;
     std::string simOutputDir;
+    std::vector<std::string> finalStates;
     std::vector<std::string> xyzFiles;
     std::vector<std::string> radicalNames;
 
     // Background removal
+    int readoutAzmBinStart;
+    int readoutAzmBinEnd;
+    int readoutLegBinStart;
+    int readoutLegBinEnd;
+    double readoutStart;
+    double readoutEnd;
+    double bkgSTDcut;
     std::string backgroundFolder;
     std::string backgroundImage;
 
     // Hot pixel removal
     double hotPixel; 
+    double XrayHighCut;
+    double XrayLowCut;
+    double XraySTDcut; 
+    int    XrayWindow; 
     int    shellWidth;
     int    Npoly;
     double stdIncludeLeft;
@@ -95,6 +120,7 @@ class parameterClass {
     double distSTDratioRight;
     double stdChangeRatio;   
     double stdCutRight;      
+    double outlierSTDcut;
     bool   outlierVerbose;
     double outlierMapSTDcut;
     double outlierCoreValThresh; //90; //65; //5e5;
@@ -165,20 +191,37 @@ class parameterClass {
     // Merging Scans
     bool  Qnormalize;
     bool  normalizeImgs;
+    int   timeFiltOrder;
+    int   smearTimeBinWindow;
     float mergeSTDscale;
     float mergeImageSTDScale;
     float legImageNoiseCut;
     float azmImageNoiseCut;
     float labSTDcut;
     float labParamSmear;
+    float timeWnHigh;
+    float timeWnLow;
+    float timeSmearSTD;
+    float scanImgAzmSTDcut;
+    float scanImgAzmRefSTDcut;
+    std::string timeFilterType;
+
 
     // PV
-    int pvSampleTimes;
+    bool  getPVs;
+    int   pvSampleTimes;
     float pressureSmear;
-    std::string pressureFileName;
+    float throttle;
+    std::string pvFolder;
+    std::map< std::string, std::string > pvMap;
+
+    // Time Zero
+    std::vector< std::vector<double> > tZeroQranges;
+    std::vector<int> tZeroRatio;
 
     // Misc
     double scaleStagePos;
+    std::vector< std::vector<double> > bkgStudyRanges;
 
     // Debugging
     bool verbose;
