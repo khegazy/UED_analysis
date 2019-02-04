@@ -32,6 +32,7 @@ namespace imgProc {
     string runType;
     int scan;
     int imgNum;
+    int throttle;
     long int time;
     int32_t stagePos;
  
@@ -43,7 +44,7 @@ namespace imgProc {
 
   template<typename type>
   std::vector< std::vector<double> > getImgVector(cv::Mat imgMat,
-      int roiSize, int centerR, int centerC,
+      int roiSize, int centerR, int centerC, bool subMedian = false,
       std::vector< std::vector<double> > *background = NULL,
       int rmRad=-1, int rmCenterR=-1, int rmCenterC=-1,
       std::vector< std::vector<double> >* nanMap=NULL);
@@ -57,7 +58,10 @@ namespace imgProc {
   void threshold(cv::Mat &img, int hotpixel);
   template<typename T>
   void thresholdT(cv::Mat &img, int hotpixel);
-
+  void removeXrayHits(
+    std::vector<std::vector<double> >* img,
+    double highCut, double lowCut, 
+    double stdCut, int window);
   void averagePixel(cv::Mat &img, int row, int col);
   template<typename T>
   void averagePixelT(cv::Mat &img, int row, int col);
@@ -88,7 +92,8 @@ namespace imgProc {
           int height, int width,
           std::vector< std::vector<double> > oddImgImgn,
           fftw_plan &fftFref, fftw_complex* fftIn,
-          fftw_plan &fftBref, fftw_complex* fftOut);
+          fftw_plan &fftBref, fftw_complex* fftOut,
+          PLOTclass* plt=NULL);
 
   std::vector< std::pair<uint, uint> > findClusters(
           std::vector< std::vector<double> > &inpImg,
@@ -228,7 +233,8 @@ namespace imgProc {
   class radProcTool {
     public:
 
-      radProcTool(string inpIndPath);
+      //radProcTool(string inpIndPath);
+      radProcTool(int shellWidth, int maxRad);
 
       double getMean(vector<double> vals);
       double getMMean(vector<double> vals, vector<int> ord, double range, bool verbose=false);
@@ -241,7 +247,8 @@ namespace imgProc {
       int    getNleftEntries(vector<double> vals, vector<int> ord, double mean);
       int    getLeftOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
       int    getRightOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
-      std::vector< std::vector<double> >   removeOutliers(vector< vector<double> > &image,
+      std::vector< std::vector<double> > removeOutliers(
+              vector< vector<double> > &image,
               int centerR, int centerC, int buffer,
               int maxRad, int shellWidth, int Npoly,
               double stdIncludeLeft, double distSTDratioLeft,
@@ -250,7 +257,12 @@ namespace imgProc {
               double stdChangeRatio, double stdCutRight,
               int stg, double outlierMapSTDcut,
               bool getOutlierImage, bool verbose, PLOTclass* pltVerbose);
-
+      std::vector< std::vector<double> > removeOutliersSimple(
+              vector< vector<double> > &image,
+              int centerR, int centerC, int buffer,
+              int maxRad, int shellWidth, int Npoly,
+              double stdCut, int stg, double outlierMapSTDcut,
+              bool getOutlierImage, bool verbose, PLOTclass* pltVerbose);
       vector<double> getPolarLineOut(vector< vector<double> >* image, 
               int centerR, int centerC, int rad, 
               int shellWidth, int NangleBins, bool verbose=false);
@@ -261,9 +273,11 @@ namespace imgProc {
 
     private:
       string indPath;
+      int makeMaxRad;
 
       std::map<int, std::map<int, std::vector< std::vector<int> > > > allIndices;
       void importIndices(int shellWidth, int rad);
+      void makeIndices(int shellWidth, int maxRad);
       bool checkForIndices(int shellWidth, int rad);
   };
 
@@ -288,8 +302,8 @@ namespace imgProc {
 
 template<typename type>
 std::vector< std::vector<double> > imgProc::getImgVector(cv::Mat imgMat,
-    int roiSize, int centerR, int centerC,
-    std::vector< std::vector<double> > *background = NULL,
+    int roiSize, int centerR, int centerC, bool subMedian,
+    std::vector< std::vector<double> > *background,
     int rmRad, int rmCenterR, int rmCenterC,
     std::vector< std::vector<double> >* nanMap) {
 
@@ -347,13 +361,36 @@ std::vector< std::vector<double> > imgProc::getImgVector(cv::Mat imgMat,
   }
   */
 
+  double median = 0;
+  if (subMedian) {
+    int sbInd = 0;
+    std::vector<int> sbMedVec(100);
+    for (int ir=0; ir<10; ir++) {
+      for (int ic=0; ic<10; ic++) {
+        index = ir*Nrows + ic;
+        sbMedVec[sbInd] = pv[index];
+        sbInd++;
+      }
+    }
+
+    std::sort(sbMedVec.begin(), sbMedVec.end());
+
+    if (sbMedVec.size() % 2 == 0) {
+      median = (sbMedVec[(int)(sbMedVec.size()/2)]
+                + sbMedVec[(int)(sbMedVec.size()/2)-1])/2.;
+    }
+    else {
+      median = sbMedVec[(int)(sbMedVec.size()/2)];
+    }
+  }
+
   for (int ir=0; ir<roiSize; ir++) {
     img[ir].resize(roiSize);
     irow = ir - roiSize/2 + centerR;
     for (int ic=0; ic<roiSize; ic++) {
       icol = ic - roiSize/2 + centerC;
       index = irow*Ncols + icol;
-      img[ir][ic] = ((double)(pv[index]));
+      img[ir][ic] = ((double)(pv[index])) - median;
       if (background) {
         img[ir][ic] -= (*background)[irow][icol];
       }

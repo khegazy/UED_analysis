@@ -264,20 +264,12 @@ void imgProc::removeXrayHits(
       }
 
       if ((*img)[ir][ic] > highCut) {
+        cout<<"in highcut"<<endl;
         for (int icc = ic; icc<(*img)[ir].size(); icc++) {
           (*img)[ir][icc] = NANVAL;
         }
       }
-    }
-  }
-
-  for (int ir=0; ir<(int)(*img).size(); ir++) {
-    for (int ic=0; ic<(int)(*img)[ir].size(); ic++) {
-      if ((*img)[ir][ic] == NANVAL) {
-        continue;
-      }
-
-      if ((*img)[ir][ic] > lowCut) {
+      else if ((*img)[ir][ic] > lowCut) {
         int irow, icol;
         binStats.clear();
 
@@ -321,7 +313,7 @@ void imgProc::removeXrayHits(
               continue;
             }
 
-            if (((*img)[irow][icol] != NANVAL)
+            if (((*img)[irow][icol] == NANVAL)
                 && (fabs((*img)[irow][icol]-mean) > stdCut*stdev)) {
               (*img)[irow][icol] = NANVAL;
             }
@@ -3062,29 +3054,10 @@ double imgProc::Aparam(vector< vector<double> > vect, vector< pair<int,int> > pm
 
 
 
-//imgProc::radProcTool::radProcTool(string inpIndPath) {
-//  indPath = inpIndPath;
-//}
-
-imgProc::radProcTool::radProcTool(int shellWidth, int maxRad) {
-  indPath = "constructor";
-  makeIndices(shellWidth, maxRad);
+imgProc::radProcTool::radProcTool(string inpIndPath) {
+  indPath = inpIndPath;
 }
 
-void imgProc::radProcTool::makeIndices(int shellWidth, int maxRad) {
-  int rad;
-  makeMaxRad = maxRad;
-  for (int ir=-1*maxRad; ir<=maxRad; ir++) {
-    for (int ic=-1*maxRad; ic<=maxRad; ic++) {
-      rad = std::round(std::sqrt(ir*ir + ic*ic));
-
-      if (rad <= maxRad) {
-        std::vector<int> vInds{ir, ic};
-        allIndices[shellWidth][rad].push_back(vInds);
-      }
-    }
-  }
-}
 
 bool imgProc::radProcTool::checkForIndices(int shellWidth, int rad) {
   if (allIndices.find(shellWidth) != allIndices.end()) {
@@ -3093,12 +3066,7 @@ bool imgProc::radProcTool::checkForIndices(int shellWidth, int rad) {
     }
   }
 
-  if (indPath.compare("constructor") == 0) {
-    makeIndices(shellWidth, rad);
-  }
-  else {
-    importIndices(shellWidth, rad);
-  }
+  importIndices(shellWidth, rad);
   return true;
 }
 
@@ -3390,216 +3358,7 @@ int imgProc::radProcTool::getRightOutliers(vector<double> &vals, vector<int> &or
   return Nfront;
 }
 
-std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
-    vector< vector<double> > &image, 
-    int centerR, int centerC, int buffer,
-    int maxRad, int shellWidth, int Npoly,
-    double stdCut, int stg, double outlierMapSTDcut, 
-    bool getOutlierImage, bool verbose, PLOTclass* pltVerbose) {
 
-  /*
-  for (int ir=400; ir<405; ir++) {
-    for (int ic=400; ic<405; ic++) {
-      cout<<ir<<" / "<<ic<<" :  "<<image[ir][ic]<<endl;
-    }
-  }
-  */
-
-  if (verbose) cout << "Entered removeOutliers\n";
-  std::map<int, double> smearedDist;
-  vector< vector<double> > removedOutliers(image.size());
-  vector< vector<double> > outlierSTDmap(image.size());
-  for (uint ir=0; ir<removedOutliers.size(); ir++) {
-    removedOutliers[ir].resize(image[ir].size(), 0);
-    outlierSTDmap[ir].resize(image[ir].size(), 0);
-  }
-  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> X;
-  Eigen::Matrix<double, Eigen::Dynamic, 1> Y;
-
-  // Plotting variables
-  vector<double> pltPixDist;
-  int pdInd;
-
-  vector<double> vals, angles;
-  vector< vector<int> > indices;
-  vector< vector<int> >* INDS;
-    cerr<<"WARNING: not subtracting low poly"<<endl;
-  for (int rad=0; rad<maxRad; rad+=shellWidth) {
-
-    //if (rad != 64) continue;
-    // Check if indices have been imported
-    if (verbose) cout << "\tChecking for indices " 
-                      << shellWidth << " " << rad << "  ...  ";
-    checkForIndices(shellWidth, rad);
-    if (verbose) cout << "found!\n";
-
-    // Filter out bins that are off the image or contain nans
-    if (verbose) cout << "\tFilling indices of non-NANVAL bins on image\n";
-    int ir, ic;
-    vals.clear();
-    angles.clear();
-    indices.clear();
-    INDS = &allIndices[shellWidth][rad];
-    for (uint i=0; i<(*INDS).size(); i++) {
-      ir = centerR + (*INDS)[i][0];
-      ic = centerC + (*INDS)[i][1];
-      if ((ir + buffer < image.size()) && (ir >= buffer)
-          && (ic + buffer < image[0].size()) && (ic >= buffer)) {
-        if (image[ir][ic] != NANVAL) {
-          vals.push_back(image[ir][ic]);
-          angles.push_back(tools::getAzmAngle((*INDS)[i][1], (*INDS)[i][0]));
-          std::vector<int> vInds{ir, ic};
-          indices.push_back(vInds);
-        }
-      }
-    }
-
-    // Skip if vals is full of NANVAL
-    if (vals.size() < 2) continue;
-
- 
-    // Subtract background fluctuations
-    X.resize(indices.size(), Npoly);
-    Y.resize(indices.size(), 1);
-    for (uint i=0; i<angles.size(); i++) {
-      for (int p=0; p<Npoly; p++) {
-        X(i,p) = std::pow(angles[i], p);
-      }
-      Y(i,0) = vals[i];
-    }
-    Eigen::MatrixXd weights = tools::normalEquation(X, Y);
-
-    for (uint i=0; i<angles.size(); i++) {
-      for (int p=0; p<Npoly; p++) {
-        //vals[i] -= weights(p)*std::pow(angles[i], p);
-      }
-    }
-
-    // Order indices based on pixel values
-    if (verbose) cout << "\tOrdering indices\n";
-    std::vector<int> removedInds;
-    std::vector<double> removedVals;
-    vector<int> orderedInds(vals.size());
-    iota(orderedInds.begin(), orderedInds.end(), 0);
-    sort(orderedInds.begin(), orderedInds.end(),
-        [&vals](int i1, int i2)
-        {return vals[i1] < vals[i2];});
-
-
-    ///////////////////////////////////
-    /////  Remove pixel outliers  /////
-    ///////////////////////////////////
-
-    /////  Remove left outliers  /////
-    //cout<<"111"<<endl;
-    //cout<<"CHECKING: "<<stg<<"  "<<rad<<"  "<<vals.size()<<endl;
-
-    double mean = getMean(vals);
-    double stdev = getSTDev(vals, mean);
-    //if (rad <75) {
-    //  cout<<"mean/std "<<rad<<" : "<<mean<<" / "<<stdev<<endl;
-    //}
-
-    int ind = 0;
-    vector<double> rms;
-    while (fabs(vals[orderedInds[ind]] - mean) > stdCut*stdev) {
-      removedInds.push_back(orderedInds[ind]);
-      removedVals.push_back(vals[orderedInds[ind]]);
-      rms.push_back(vals[orderedInds[ind]]);
-      vals[orderedInds[ind]] = NANVAL;
-      image[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = NANVAL;
-      ind++;
-    }
- 
-    ind = orderedInds.size() - 1;
-    while (fabs(vals[orderedInds[ind]] - mean) > stdCut*stdev) {
-      removedInds.push_back(orderedInds[ind]);
-      removedVals.push_back(vals[orderedInds[ind]]);
-      rms.push_back(vals[orderedInds[ind]]);
-      vals[orderedInds[ind]] = NANVAL;
-      image[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = NANVAL;
-      ind--;
-    }
-
-    //if (rad < 75) {
-    //  cout<<"Count: "<<count<<"  "<<rms.size()<<endl;
-    /*
-      for (uint k=0; k<rms.size(); k++) {
-        cout<<rms[k]<<"   ";
-      }
-      cout<<endl;
-    */
-    //}
-
-
-    /////  Outlier images  /////
-    // Image of outliers cut on right end
-    if (getOutlierImage || pltVerbose) {
-      for (int i=0; i<removedInds.size(); i++) {
-        removedOutliers[indices[removedInds[i]][0]]
-                       [indices[removedInds[i]][1]] = removedVals[i];
-      }
-    }
-
-    // Map of hot pixel stdevs using left mean/stdev with lower thresholds
-    if (getOutlierImage || pltVerbose) {
-      double oMean = getMean(vals);
-      double oSTDev = getSTDev(vals, oMean);
-      /*
-      for (uint i=0; i<indices.size(); i++) {
-        outlierSTDmap[indices[i][0]]
-                     [indices[i][1]] = pow((vals[i] - meanLeft)/stdevLeft, 4);
-      }
-      */
-
-      for (int i=0; i<removedInds.size(); i++) {
-        outlierSTDmap[indices[removedInds[i]][0]]
-                     [indices[removedInds[i]][1]] = pow((removedVals[i] - oMean)/oSTDev, 4);
-      }
-      /*
-      auto inds = orderedInds.rbegin();
-      while ((vals[*inds] - oMean)/oSTDev > outlierMapSTDcut) {
-        outlierSTDmap[indices[*inds][0]]
-                     [indices[*inds][1]] = pow((vals[*inds] - oMean)/oSTDev, 4);
-        inds++;
-      }
-      */
-    }
-
-    /////  Distribution of pixel values for current ring  /////
-    if ((verbose && pltVerbose)) {
-      //cout << "\tSaving value distributions ... ";
-      std::vector<double> outP;
-      for_each(vals.begin(), vals.end(), [&outP](double d)
-          { if (d != NANVAL) {
-              outP.push_back(d);
-            }
-          });
-      save::saveDat<double>(outP,  
-          "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/data/vals_" 
-          + to_string(stg) + "_" 
-          + to_string(rad) + "_"
-          + to_string(stdev) + ".dat");
-      //cout << "saved\n";
-    }
-
-    /////  Polar lineout of ring  /////
-    if (verbose && pltVerbose) {
-      //cout << "\tSaving polar lineout ... ";
-      vector<double> outP = getPolarLineOut(
-          &image, centerR, centerC, rad, shellWidth, -1);
-      save::saveDat<double>(outP, 
-                  "plots/data/polLO_" + to_string(stg) 
-                  + "_" + to_string(rad) + 
-                  + "[" + to_string(outP.size()) + "].dat");
-    }
-  }
-
-  return outlierSTDmap;
-}
-
-
- 
 std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
     vector< vector<double> > &image, 
     int centerR, int centerC, int buffer,
@@ -3627,10 +3386,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
   vector<double> pltPixDist;
   int pdInd;
 
-  vector<double> vals, angles;
-  vector< vector<int> > indices;
-  vector< vector<int> >* INDS;
-  for (int rad=0; rad<maxRad; rad+=shellWidth) {
+  for (int rad=0; rad<(int)maxRad; rad+=shellWidth) {
 
     //if (rad != 64) continue;
     // Check if indices have been imported
@@ -3642,10 +3398,9 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
     // Filter out bins that are off the image or contain nans
     if (verbose) cout << "\tFilling indices of non-NANVAL bins on image\n";
     int ir, ic;
-    vals.clear();
-    angles.clear();
-    indices.clear();
-    INDS = &allIndices[shellWidth][rad];
+    vector<double> vals, angles;
+    vector< vector<int> > indices;
+    vector< vector<int> >* INDS = &allIndices[shellWidth][rad];
     for (uint i=0; i<(*INDS).size(); i++) {
       ir = centerR + (*INDS)[i][0];
       ic = centerC + (*INDS)[i][1];
@@ -3818,7 +3573,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
         orderedInds.erase(orderedInds.begin() + ind);
       }
 
-      // Break out of the the loop if the stdev does not change appreciably
+      // Break of the the loop if the stdev does not change appreciably
       meanRight = getMean(vals);
       stdevPrev = stdevRight;
       stdevRight = getSTDev(vals, meanRight);
@@ -3905,9 +3660,13 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
       save::saveDat<double>(outP, 
                   "plots/data/polLO_"+to_string(stg) + "_" + to_string(rad) + ".dat");
 
+      std::vector<double> dInds;
+      std::vector<double> iInds;
       std::fill(outP.begin(), outP.end(), 0);
       std::vector<double> outPcount(outP.size(), 0);
       for (auto oInd : orderedInds) {
+        dInds.push_back(angles[oInd]*180/(2*PI));
+        iInds.push_back((int)(angles[oInd]*180/(2*PI)));
         outP[(int)(angles[oInd]*180/(2*PI))] += vals[oInd];
         outPcount[(int)(angles[oInd]*180/(2*PI))] ++;
       }
@@ -3958,14 +3717,8 @@ vector<double> imgProc::radProcTool::getPolarLineOut(vector< vector<double> >* i
   if (verbose) cout << "\tFilling indices of non-NANVAL bins on image\n";
   double ang;
   int ir, ic, angInd;
-  vector<double> lineOut;
-  if (NangleBins != -1) {
-    lineOut.resize(NangleBins, 0);
-  }
-  vector<double> lineOutCount;
-  if (NangleBins != -1) {
-    lineOutCount.resize(NangleBins, 0);
-  }
+  vector<double> lineOut(NangleBins, 0);
+  vector<double> lineOutCount(NangleBins, 0);
   vector< vector<int> >* INDS = &allIndices[shellWidth][rad];
   for (uint k=0; k<(*INDS).size(); k++) {
     ir = centerR+(*INDS)[k][0];
@@ -3973,35 +3726,27 @@ vector<double> imgProc::radProcTool::getPolarLineOut(vector< vector<double> >* i
     if ((ir < (*image).size()) && (ir >= 0)
         && (ic < (*image)[ir].size()) && (ic >= 0)) {
       if ((*image)[ir][ic] != NANVAL) {
-
-        if (NangleBins == -1) {
-          lineOut.push_back((*image)[ir][ic]);
-        }
-        else {
-          ang = tools::getAzmAngle((*INDS)[k][1], (*INDS)[k][0]);
-          /*
-          ang = atan(((double)(*INDS)[k][0])/((double)(*INDS)[k][1]));
-          if (((*INDS)[k][0] >= 0) && ((*INDS)[k][1] <= 0)) ang += PI;
-          if (((*INDS)[k][0] < 0)  && ((*INDS)[k][1] < 0))  ang += PI;
-          if (((*INDS)[k][0] <= 0) && ((*INDS)[k][1] >= 0)) ang += 2*PI;
-          */
-          angInd = ang*NangleBins/(2*PI);
-          lineOut[angInd] += (*image)[ir][ic];
-          lineOutCount[angInd] += 1;
-        }
+        ang = tools::getAzmAngle((*INDS)[k][1], (*INDS)[k][0]);
+        /*
+        ang = atan(((double)(*INDS)[k][0])/((double)(*INDS)[k][1]));
+        if (((*INDS)[k][0] >= 0) && ((*INDS)[k][1] <= 0)) ang += PI;
+        if (((*INDS)[k][0] < 0)  && ((*INDS)[k][1] < 0))  ang += PI;
+        if (((*INDS)[k][0] <= 0) && ((*INDS)[k][1] >= 0)) ang += 2*PI;
+        */
+        angInd = ang*NangleBins/(2*PI);
+        lineOut[angInd] += (*image)[ir][ic];
+        lineOutCount[angInd] += 1;
       }
     }
   }
 
   // Averaging
-  if (NangleBins != -1) {
-    for (uint i=0; i<NangleBins; i++) {
-      if (lineOutCount[i]) {
-        lineOut[i] /= lineOutCount[i];
-      }
-      else {
-        lineOut[i] = 0;
-      }
+  for (uint i=0; i<NangleBins; i++) {
+    if (lineOutCount[i]) {
+      lineOut[i] /= lineOutCount[i];
+    }
+    else {
+      lineOut[i] = 0;
     }
   }
 
