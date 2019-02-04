@@ -24,8 +24,8 @@ int main(int argc, char* argv[]) {
 
   bool givenFileName      = false;
   bool subtractReference  = false;
-  bool fillLowQ           = true;
-  bool fillLowQtheoryOpt  = false;
+  bool fitLowQ            = false;
+  bool fillLowQzeros      = false;
   bool removeSkippedBins  = true;
   bool fitPC              = false;
   std::string fileName    = "NULL";
@@ -41,7 +41,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Importing command line variables.\n";
 
   for (int iarg=2; iarg<argc; iarg+=2) {
-    if (strcmp(argv[iarg], "-Odir") == 0) {
+    if (strcmp(argv[iarg], "-MolName") == 0) {
+      string str(argv[iarg+1]); 
+      params.molName = str;
+    }
+    else if (strcmp(argv[iarg], "-Odir") == 0) {
       string str(argv[iarg+1]); 
       params.mergeScansOutputDir = str;
     }
@@ -63,8 +67,8 @@ int main(int argc, char* argv[]) {
     }
     else if (strcmp(argv[iarg], "-lowQtheory") == 0) {
       string str(argv[iarg+1]);
-      lowQtheory = str;
-      fillLowQtheoryOpt = true;
+      params.fillLowQtheory = true;
+      params.fillLowQfile   = str;
     }
     else if (strcmp(argv[iarg], "-saveLowQtheory") == 0) {
       string str(argv[iarg+1]);
@@ -81,9 +85,16 @@ int main(int argc, char* argv[]) {
  
     else if (strcmp(argv[iarg], "-FillQ") == 0) {
       string str(argv[iarg+1]);
-      if (str.compare("false") == 0) fillLowQ = false;
+      if (str.compare("false") == 0) params.fillLowQtheory = false;
+      else if (str.compare("zeros") == 0) {
+        fillLowQzeros = true;
+        params.fillLowQtheory = false;
+      }
+      else if (str.compare("fit") == 0) {
+        fitLowQ = true;
+        params.fillLowQtheory = false;
+      }
       else if (str.compare("theory") == 0) params.fillLowQtheory = true;
-      else if (str.compare("true") == 0) ;
       else {
         std::cerr << "ERROR: Do not understand FillQ option " << str << endl;
         exit(0);
@@ -206,18 +217,10 @@ int main(int argc, char* argv[]) {
   }
  
   std::vector<double> lowQsim(shape[1]);
-  if (params.fillLowQtheory || fillLowQtheoryOpt) { 
-
-    if (fillLowQtheoryOpt) {
-      save::importDat<double>(lowQsim, lowQtheory);
-      if (params.verbose)
-        std::cout << "Importing simulation from " << lowQtheory << endl;
-    }
-    else {
-      save::importDat<double>(lowQsim, params.fillLowQfile);
-      if (params.verbose)
-        std::cout << "Importing simulation from " << params.fillLowQfile << endl;
-    }
+  if (params.fillLowQtheory) { 
+    save::importDat<double>(lowQsim, params.fillLowQfile);
+    if (params.verbose)
+      std::cout << "Importing simulation from " << params.fillLowQfile << endl;
   }
 
 
@@ -250,7 +253,7 @@ int main(int argc, char* argv[]) {
       + to_string(shape[0]) + ",4].dat";
   bool lowQcoeffExists = tools::fileExists(lowQcoeffName);
   std::vector< std::vector<double> > lowQcoeff, lowQw;
-  if (lowQcoeffExists && !(params.fillLowQtheory || fillLowQtheoryOpt)) {
+  if (lowQcoeffExists && fitLowQ) {
     lowQcoeff.resize(shape[0]);
     lowQw.resize(shape[0]);
     for (int i=0; i<shape[0]; i++) {
@@ -350,9 +353,7 @@ int main(int argc, char* argv[]) {
     }
     iq = params.NbinsSkip;
 
-    if (!lowQcoeffExists && fillLowQ 
-        && !fillLowQtheoryOpt && !params.fillLowQtheory) {
-
+    if (!lowQcoeffExists && fitLowQ) {
       double bestLoss = 1e100;
       double rScaling = 0.1;
       double fitVal   = 0;
@@ -435,20 +436,25 @@ int main(int argc, char* argv[]) {
 
     /////  Filling FFT Input  /////
     for (iq=0; iq<params.NradAzmBins; iq++) {
-      if (fillLowQ) {
+      if (params.fillLowQtheory) {
         if (iq < params.NbinsSkip) {
-          if (fillLowQtheoryOpt || params.fillLowQtheory) {
-            tmdDiff[itm][iq] = lowQsim[iq];
-                //*(tmdDiff[0][params.NbinsSkip]/lowQsim[params.NbinsSkip]);
-          }
-          else {
-            for (uint i=0; i<lowQw[itm].size(); i++) {
-              if (i == 0) {
-                tmdDiff[itm][iq] = lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
-                continue;
-              }
-              tmdDiff[itm][iq] += lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+          tmdDiff[itm][iq] = lowQsim[iq];
+              //*(tmdDiff[0][params.NbinsSkip]/lowQsim[params.NbinsSkip]);
+        }
+      }
+      else if (fillLowQzeros) {
+        if (iq < params.NbinsSkip) {
+          tmdDiff[itm][iq] = 0;
+        }
+      }
+      else if (fitLowQ) {
+        if (iq < params.NbinsSkip) {
+          for (uint i=0; i<lowQw[itm].size(); i++) {
+            if (i == 0) {
+              tmdDiff[itm][iq] = lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+              continue;
             }
+            tmdDiff[itm][iq] += lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
           }
         }
       }
@@ -514,8 +520,7 @@ int main(int argc, char* argv[]) {
   if (params.verbose)
     std::cout << "Saving.\n";
 
-  if (!lowQcoeffExists && fillLowQ 
-      && !fillLowQtheoryOpt && !params.fillLowQtheory) {
+  if (!lowQcoeffExists && fitLowQ) {
     for (auto& v : lowQw[0]) cout<<"testing: " << v/params.QperPix<<endl;
     save::saveDat<double>(lowQcoeff, lowQcoeffName);
     save::saveDat<double>(lowQw, lowQwName);
@@ -524,23 +529,23 @@ int main(int argc, char* argv[]) {
   if (shape[0] != 1) {
     save::saveDat<double>(pairCorrEven, 
         "./results/" + outPrefix 
-        + outSuffix + "-pairCorrEven["
+        + outSuffix + "_pairCorrEven["
         + to_string(pairCorrEven.size()) + ","
         + to_string(pairCorrEven[0].size()) + "].dat");
     save::saveDat<double>(pairCorrOdd, 
         "./results/" + outPrefix   
-        + outSuffix + "-pairCorrOdd["
+        + outSuffix + "_pairCorrOdd["
         + to_string(pairCorrOdd.size()) + ","
         + to_string(pairCorrOdd[0].size()) + "].dat");
   }
   else {
     save::saveDat<double>(pairCorrEven[0], 
         "./results/" + outPrefix 
-        + outSuffix + "-pairCorrEven["
+        + outSuffix + "_pairCorrEven["
         + to_string(pairCorrEven[0].size()) + "].dat");
     save::saveDat<double>(pairCorrOdd[0], 
         "./results/" + outPrefix 
-        + outSuffix + "-pairCorrOdd["
+        + outSuffix + "_pairCorrOdd["
         + to_string(pairCorrOdd[0].size()) + "].dat");
     if (fitPC) {
       save::saveDat<double>(pairCorrOdd, 

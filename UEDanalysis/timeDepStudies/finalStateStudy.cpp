@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
   ///// Load environment and get the number of events /////
 
   string runName(argv[1]);
-  bool findBestTheoryMatch = false;
+  bool findBestTheoryMatch = true;
 
   // Get parameters
   cout<<"RunName: "<<runName<<endl;
@@ -290,12 +290,12 @@ int main(int argc, char* argv[]) {
       std::vector<double> currentSim(params.NradAzmBins);
       for (auto& scl : scales) {
         for (int iq=0; iq<shape[1]; iq++) {
-          currentSim[iq] = scl*simFinalState[iq];
+          currentSim[iq] = scl*simSMSfinalState[iq];
         }
       
         std::string currentSimName = 
-          "./results/sim-phenoxyRadical_LowQfill_scale-"
-            + to_string(scl) + "_["
+          "./results/sim-" + fsName + "_LowQfill_scale-"
+            + to_string(scl) + "_Bins["
             + to_string(params.NradAzmBins) + "].dat";
         save::saveDat<double>(currentSim, currentSimName);
 
@@ -324,7 +324,7 @@ int main(int argc, char* argv[]) {
             + to_string(params.maxRbins) + "].dat").c_str());
 
 
-        system(("rm " + currentSimName).c_str());
+        //system(("rm " + currentSimName).c_str());
       }
 
       for (int iq=0; iq<shape[1]; iq++) {
