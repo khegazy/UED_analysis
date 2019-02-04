@@ -132,32 +132,45 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    /*
     merge.addLabTimeParameter(timeStamp, "scan", scan);
     merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
     merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
     merge.addLabTimeParameter(timeStamp, "pressure", pressure);
     merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
-    merge.addLabTimeParameter(timeStamp, "I0intensity", I0intensity);
-    */
+    merge.addLabTimeParameter(timeStamp, "bunkerTemp", bunkerTemp);
+    merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
 
 
     // Ignore reference images taken before scan
     if (imgIsRef) {
       if (merge.verbose) std::cout << "INFO: Adding reference image.\n";
 
-      merge.addReference(scan, stagePos, filtAzmAvg, legCoeffs, 1);
+      merge.addReference(scan, stagePos, azmAvg, legCoeffs, 1);
       //merge.addReference(scan, stagePos, azmAvg, legCoeffs, imgNorm);
       continue;
     }
 
     ///  Insert entries to respective maps  ///
    
-    merge.addEntry(scan, stagePos, filtAzmAvg, legCoeffs, 1);
+    merge.addEntry(scan, stagePos, azmAvg, legCoeffs, 1);
     //merge.addEntry(scan, stagePos, azmAvg, legCoeffs, imgNorm);
 
   }
 
+  std::vector< std::vector<double> > output(merge.scanAzmAvg.size());
+  for (uint i=0; i<output.size(); i++) {
+    output[i].resize(merge.NradAzmBins);
+  }
+  for (auto const & pItr: merge.stagePosInds) {
+    int sItr = 0;
+    for (auto const & itr : merge.scanAzmAvg) {
+      for (int iq=0; iq<merge.NradAzmBins; iq++) {
+        output[sItr][iq] = itr.second[pItr.second][iq];
+      }
+      sItr++;
+    }
+    save::saveDat<double>(output, merge.mergeScansOutputDir + "scanArray_pos-" + to_string(pItr.first) + "_Bins[" + to_string(output.size()) + "," + to_string(merge.NradAzmBins) + "].dat");
+  }
 
   ////////////////////////////////////////////
   /////  Subtract low order polynomials  /////
@@ -166,7 +179,7 @@ int main(int argc, char* argv[]) {
   if (merge.verbose) {
     std::cout << "INFO: Removing low order polynomials.\n";
   }
-  merge.removeLowPolynomials();
+  //merge.removeLowPolynomials();
 
 
   ///////////////////////////////////////////////////////////
@@ -175,12 +188,18 @@ int main(int argc, char* argv[]) {
 
 
   //cout<<"removing outliers"<<endl;
-  merge.removeOutliers();
+  merge.removeImageOutliers();
+  //merge.removeOutliers();
+
+  merge.scaleByFit();
 
   merge.mergeScans();
 
+  // Normalize line outs
+  merge.normalizeResults();
+
   // Get Mean and STD
-  merge.getMeanSTD();
+  merge.getRunMeanSTD();
 
 
   /////  Saving  /////
@@ -198,7 +217,6 @@ int main(int argc, char* argv[]) {
   if (merge.verbose) 
     std::cout << "INFO: saving merged references and before t0 subtraction.\n";
   // References
-  plt.print1d(merge.azmReference, "testingRef");
   save::saveDat<double>(merge.azmReference,
       merge.mergeScansOutputDir + 
       "/data-" + runName + "-" + prefix+ 
@@ -238,11 +256,12 @@ int main(int argc, char* argv[]) {
   merge.subtractT0();
 
   /////  Normalize and get statistics  /////
+
   // Normalize to get sM(s)
-  merge.normalize();
+  merge.sMsNormalize();
 
   // Get Mean and STD
-  merge.getMeanSTD();
+  merge.getRunMeanSTD();
 
 
   // Clean up NANVAL for saving and plotting
@@ -253,11 +272,8 @@ int main(int argc, char* argv[]) {
   }
 
   // Smooth in time
-  cout<<"being smearing"<<endl;
   merge.smearTimeGaussian();
   //merge.smearTimeFFT();
-  cout<<"end smearing"<<endl;
-
 
 
   /////  Saving and plotting  /////
@@ -269,18 +285,12 @@ int main(int argc, char* argv[]) {
       + runName + "-" + prefix + "azmAvgDiff["
       + to_string(merge.azimuthalAvg.size()) + ","
       + to_string(merge.azimuthalAvg[0].size()) + "].dat");
-  plt.printRC(merge.azimuthalAvg, 
-      "./plots/data-"
-      + runName + "-" + prefix + "azmAvgDiff", opts, vals);
 
   save::saveDat<double>(merge.azimuthalsMs, 
       merge.mergeScansOutputDir + "data-"
       + runName + "-" + prefix + "sMsAzmAvgDiff["
       + to_string(merge.azimuthalAvg.size()) + ","
       + to_string(merge.azimuthalAvg[0].size()) + "].dat");
-  plt.printRC(merge.azimuthalAvg, 
-      "./plots/data-"
-      + runName + "-" + prefix + "sMsAzmAvgDiff", opts, vals);
 
   if (merge.smearedTime) {
     save::saveDat<double>(merge.smearedAzmAvg, 
@@ -289,9 +299,6 @@ int main(int argc, char* argv[]) {
         + to_string(merge.timeSmearSTD) + "-azmAvgDiff["
         + to_string(merge.smearedAzmAvg.size()) + ","
         + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
-    plt.printRC(merge.smearedAzmAvg, 
-        "./plots/data-"
-        + runName + "-" + prefix + "tSmearedAzmAvgDiff", opts, vals);
     
     save::saveDat<double>(merge.smearedAzmsMs, 
       merge.mergeScansOutputDir + "data-"
@@ -299,32 +306,31 @@ int main(int argc, char* argv[]) {
       + to_string(merge.timeSmearSTD) + "-sMsAzmAvgDiff["
       + to_string(merge.smearedAzmAvg.size()) + ","
       + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
-    plt.printRC(merge.smearedAzmAvg, 
-      "./plots/data-"
-      + runName + "-" + prefix + "tsmearedSMSAzmAvgDiff", opts, vals);
   }
 
-  save::saveDat<double>(merge.runAzmMeans,
-      merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "sMsMean[" 
-      + to_string(merge.runAzmMeans.size()) + ","
-      + to_string(merge.runAzmMeans[0].size()) + "].dat");
-  save::saveDat<double>(merge.runAzmSTD,
-      merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "sMsStandardDev[" 
-      + to_string(merge.runAzmSTD.size()) + ","
-      + to_string(merge.runAzmSTD[0].size()) + "].dat");
+  if (merge.didSMSnormalize) {
+    save::saveDat<double>(merge.runsMsMeans,
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsMean[" 
+        + to_string(merge.runAzmMeans.size()) + ","
+        + to_string(merge.runAzmMeans[0].size()) + "].dat");
+    save::saveDat<double>(merge.runsMsSTD,
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsStandardDev[" 
+        + to_string(merge.runAzmSTD.size()) + ","
+        + to_string(merge.runAzmSTD[0].size()) + "].dat");
 
-  save::saveDat<double>(merge.runAzmRefMeans,
-      merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix
-      + "referenceAzmsMsMean[" 
-      + to_string(merge.NradAzmBins) + "].dat");
-  save::saveDat<double>(merge.runAzmRefSTD,
-      merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix
-      + "referenceAzmsMsStandardDev[" 
-      + to_string(merge.NradAzmBins) + "].dat");
+    save::saveDat<double>(merge.runsMsRefMeans,
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix
+        + "referenceAzmsMsMean[" 
+        + to_string(merge.NradAzmBins) + "].dat");
+    save::saveDat<double>(merge.runsMsRefSTD,
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix
+        + "referenceAzmsMsStandardDev[" 
+        + to_string(merge.NradAzmBins) + "].dat");
+  }
  
 
 
