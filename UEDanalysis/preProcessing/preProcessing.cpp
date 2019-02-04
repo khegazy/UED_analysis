@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
   // Make runLists
   bool doRunLists = false;
 
-  bool localTesting = true;
+  bool localTesting = false;
 
 
   if (argc != 2) {
@@ -61,13 +61,20 @@ int main(int argc, char* argv[]) {
   else {
     auto initPos = runListName.find("runList_") + 8;
     auto iPos = runListName.find("Run", initPos);
-    if (iPos == string::npos) {
+    if (iPos != string::npos) {
+      iPos += 4;
+    }
+    else if (runListName.find("PowerScan") != string::npos) {
+      iPos = runListName.find("PowerScan") + 10;
+    }
+    else if (runListName.find("Background") != string::npos) {
       std::cout << "INFO: Will do background!!!\n";
       iPos = runListName.find("Background") + 11;
       doBackground = true;
     }
     else {
-      iPos += 4;
+      cerr << "ERROR: Cannot find runName!!!\n";
+      exit(0);
     }
     runName = runListName.substr(iPos, 
         runListName.find("_Scan-") - iPos);
@@ -105,7 +112,7 @@ int main(int argc, char* argv[]) {
     exit(0);
   }
 
-  imgProc::radProcTool radProc(params.indicesPath);
+  imgProc::radProcTool radProc(params.shellWidth, params.NradAzmBins);
   
   uint ifl;
   std::vector<PLOToptions> pltOpts(2);
@@ -113,8 +120,8 @@ int main(int argc, char* argv[]) {
 
 
   std::vector<double> legCoeffs(params.NradLegBins);
+  std::vector<double> rawAzmAvg(params.NradAzmBins);
   std::vector<double> azmAvg(params.NradAzmBins);
-  std::vector<double> filtAzmAvg(params.NradAzmBins);
   std::vector<double> azmCounts(params.NradAzmBins);
 
   std::vector< std::vector<double> > oddImgImgn;
@@ -143,8 +150,10 @@ int main(int argc, char* argv[]) {
 
   int imgIsRef;
 
-  float pressure;
-  float pressureDer;
+  std::map< std::string, float > pvVals, pvValsDer;
+  std::map< std::string, long int > pvStartTimes;
+  std::map< std::string, std::vector<float> > pvAll, pvAllDer;
+  float throttle;
 
   int timeStamp;
 
@@ -169,16 +178,10 @@ int main(int argc, char* argv[]) {
   // Reference Images
   int Nref = 0;
   std::vector<double> refAzmAvg(params.NradAzmBins);
-  std::vector<double> fullRefAzmAvg(params.NradAzmBins);
-  if (!doBackground) {
-    save::importDat<double>(fullRefAzmAvg, 
-        "../mergeScans/results/referenceAzm-" + runName 
-          + "[" + to_string(params.NradAzmBins) + "].dat");
-  }
 
   ///// Filter Parameters  /////
   int filtFFToutSize = (int)(params.NradAzmBins/2 + 1);
-  double* qSpace = (double*) fftw_malloc(sizeof(double)*(2*params.NradAzmBins-1));
+  double* qSpace = (double*) fftw_malloc(sizeof(double)*(params.NradAzmBins));
   fftw_complex* rSpace = (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*filtFFToutSize);
   fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(params.NradAzmBins, qSpace, rSpace, FFTW_MEASURE);
   fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(params.NradAzmBins, rSpace, qSpace, FFTW_MEASURE);
@@ -189,7 +192,7 @@ int main(int argc, char* argv[]) {
       //+ "_WnLow-" + to_string(params.WnLow) 
       + "_WnHigh-"+ to_string(params.WnHigh) + ".dat";
   if (!tools::fileExists(filterName)) {
-    cout << "INFO: Making new filter\n";
+    cout << "\n\nINFO: Making new filter\n";
     system(("python /reg/neh/home/khegazy/analysis/filters/makeFilters.py --Nbins "
           + to_string(filtFFToutSize)
           + " --Ftype " + params.filterType 
@@ -206,7 +209,8 @@ int main(int argc, char* argv[]) {
   // Calculate sMs normalization
   std::vector<double> atmDiff(params.NradAzmBins);
   std::vector<double> sMsNorm(params.NradAzmBins);
-  save::importDat<double>(atmDiff, params.simOutputDir 
+  if (!doRunLists) {
+    save::importDat<double>(atmDiff, params.simOutputDir 
       + "/" + params.molName 
       + "_atmDiffractionPatternLineOut_Qmax-" + to_string(params.maxQazm)
       + "_Ieb-" + to_string(params.Iebeam)
@@ -214,8 +218,9 @@ int main(int argc, char* argv[]) {
       + "_elE-" + to_string(params.elEnergy)
       + "_Bins[" + to_string(params.NradAzmBins) + "].dat");
 
-  for (int iq=0; iq<params.NradAzmBins; iq++) {
-    sMsNorm[iq] = (params.maxQazm*(iq + 0.5)/params.NradAzmBins)/atmDiff[iq];
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      sMsNorm[iq] = (params.maxQazm*(iq + 0.5)/params.NradAzmBins)/atmDiff[iq];
+    }
   }
 
 
@@ -266,34 +271,42 @@ int main(int argc, char* argv[]) {
   //////////////////////////////////////////////
 
   if (doBackground) {
-    if (params.verbose) std::cout << "INFO: Making background!!!\n";
+    if (params.verbose) std::cout << "\n\nINFO: Making background!!!\n";
 
-    double count = 0;
-    std::vector< std::vector<double> > imgVec;
+    std::vector< std::vector<double> > imgVec, bkgCount;
     for (ifl=0; ifl<imgINFO.size(); ifl++) {
       ///  Get image  ///
       imgAddr   = imgINFO[ifl].path + imgINFO[ifl].fileName;
       imgMat    = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-      imgProc::threshold(imgMat, params.hotPixel);
       Nrows = imgMat.rows;
       Ncols = imgMat.cols;
 
+      if (ifl == 0) {
+        bkgCount.resize(Nrows);
+        for (uint ir=0; ir<Nrows; ir++) {
+          bkgCount[ir].resize(Ncols, 0);
+        }
+      }
+
+      cv::Mat imgSmooth = imgMat;
+      /*
       cv::Mat imgSmooth(Nrows, Ncols, imgMat.type());
       cv::medianBlur(imgMat, imgSmooth, 5);
       cv::medianBlur(imgSmooth, imgMat, 5);
       cv::medianBlur(imgMat, imgSmooth, 5);
       cv::medianBlur(imgSmooth, imgMat, 5);
       cv::GaussianBlur(imgMat, imgSmooth, cvSize(13,13), 2, 2);
+      */
 
       cout<<"image addr: "<<imgAddr<<endl;
 
       if (params.imgMatType.compare("uint16") == 0) {
         imgVec = imgProc::getImgVector<uint16_t>(imgSmooth, 
-                    Nrows, Nrows/2, Ncols/2); 
+                    Nrows, Nrows/2, Ncols/2, true); 
       }  
       else if (params.imgMatType.compare("uint32") == 0) {
         imgVec = imgProc::getImgVector<uint32_t>(imgSmooth, 
-                    Nrows, Nrows/2, Ncols/2);
+                    Nrows, Nrows/2, Ncols/2, true);
       }  
       else {
         cerr << "ERROR: Do not recognize imgMatType = " 
@@ -301,20 +314,157 @@ int main(int argc, char* argv[]) {
         exit(0);
       }
 
+      ///  Remove Xray hits  ///
+      imgProc::removeXrayHits(
+          &imgVec, 
+          params.XrayHighCut, params.XrayLowCut, 
+          params.XraySTDcut, params.XrayWindow);
+
+      ///  Remove Spots  ///
+      int rsCount = 0;
+      double rsMean = 0;
+      double rsSTD  = 0;
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if (ir >= 510 && ir < 640
+              && ic >= 450 && ic < 600) {
+            continue;
+          }
+          if (imgVec[ir][ic] == NANVAL) {
+            continue;
+          }
+
+          rsMean += imgVec[ir][ic];
+          rsCount++;
+        }
+      }
+      rsMean /= rsCount;
+
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if (ir >= 510 && ir < 640
+              && ic >= 450 && ic < 600) {
+            continue;
+          }
+          if (imgVec[ir][ic] == NANVAL) {
+            continue;
+          }
+
+          rsSTD += std::pow(rsMean - imgVec[ir][ic], 2);
+        }
+      }
+      rsSTD = std::sqrt(rsSTD/rsCount);
+
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if (ir >= 510 && ir < 640
+              && ic >= 450 && ic < 600) {
+            continue;
+          }
+          if (imgVec[ir][ic] == NANVAL) {
+            continue;
+          }
+
+          if (fabs(imgVec[ir][ic] - rsMean) > params.bkgSTDcut*rsSTD) {
+            imgVec[ir][ic] = NANVAL;
+          }
+        }
+      }
+
       ///  Add image  ///
       if (params.verbose) std::cout << "\tAdding images\n";
-      for (uint ir=0; ir<imgVec.size(); ir++) {
-        std::transform(imgVec[ir].begin(), imgVec[ir].end(), 
-            imgBkg[ir].begin(), imgBkg[ir].begin(),
-            std::plus<double>());
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if (imgVec[ir][ic] != NANVAL) {
+            //if (imgINFO[ifl].stagePos == 1542222 && ir>=200 && ir<210 && ic==200) {
+            //  cout<<imgVec[ir][ic]<<endl;
+            //}
+            imgBkg[ir][ic] += imgVec[ir][ic];
+            bkgCount[ir][ic] += 1;
+          }
+        }
       }
-      count++;
+
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if (imgVec[ir][ic] == NANVAL) {
+            imgVec[ir][ic] = -1;
+          }
+        }
+      }
+      save::saveDat<double>(imgVec, 
+          "results/testBKG_" 
+          + to_string(imgINFO[ifl].stagePos)
+          + "[1024,1024].dat");
     }
 
     ///  Scaling vector  ///
-    for (uint ir=0; ir<imgVec.size(); ir++) {
-      tools::vScale<double>(imgBkg[ir], 1.0/count);
+    for (int ir=0; ir<Nrows; ir++) {
+      for (int ic=0; ic<Ncols; ic++) {
+        if (bkgCount[ir][ic] != 0) {
+          imgBkg[ir][ic] /= bkgCount[ir][ic];
+        }
+        else {
+          imgBkg[ir][ic] = NANVAL;
+        }
+      }
     }
+
+    ///  Fill in pixels with NANVALS by averaging nearest neighbors  ///
+    for (int ir=0; ir<Nrows; ir++) {
+      for (int ic=0; ic<Ncols; ic++) {
+        if (imgBkg[ir][ic] == NANVAL) {
+          std::vector<double> collection;
+          int ind = 1;
+          while (collection.size() < 15) {
+            if (ic - ind >= 0) {
+              for (int irr=-1*ind; irr<=ind; irr++) {
+                if ((ir + irr >= 0) && (ir + irr < (int)imgBkg.size())) {
+                  if (imgBkg[ir+irr][ic-ind] != NANVAL) {
+                    collection.push_back(imgBkg[ir+irr][ic-ind]);
+                  }
+                }
+              }
+            }
+            if (ic + ind < (int)imgBkg.size()) {
+              for (int irr=-1*ind; irr<=ind; irr++) {
+                if ((ir + irr >= 0) && (ir + irr < (int)imgBkg.size())) {
+                  if (imgBkg[ir+irr][ic+ind] != NANVAL) {
+                    collection.push_back(imgBkg[ir+irr][ic+ind]);
+                  }
+                }
+              }
+            }
+            if (ir - ind >= 0) {
+              for (int icc=-1*ind+1; icc<=ind-1; icc++) {
+                if ((ic + icc >= 0) && (ic + icc < (int)imgBkg.size())) {
+                  if (imgBkg[ir-ind][ic+icc] != NANVAL) {
+                    collection.push_back(imgBkg[ir-ind][ic+icc]);
+                  }
+                }
+              }
+            }
+            if (ir + ind < (int)imgBkg.size()) {
+              for (int icc=-1*ind+1; icc<=ind-1; icc++) {
+                if ((ic + icc >= 0) && (ic + icc < (int)imgBkg.size())) {
+                  if (imgBkg[ir+ind][ic+icc] != NANVAL) {
+                    collection.push_back(imgBkg[ir+ind][ic+icc]);
+                  }
+                }
+              }
+            }
+            ind++;
+          }
+
+          double mean = std::accumulate(collection.begin(), collection.end(), 0);
+          mean /= collection.size();
+          imgBkg[ir][ic] = mean;
+        }
+      }
+    }
+
+
+    save::saveDat<double>(imgBkg, "results/testBKGfinal[1024,1024].dat");
 
     ///  Save image  ///
     if (params.verbose) std::cout << "\tSaving image\n";
@@ -325,15 +475,7 @@ int main(int argc, char* argv[]) {
       delete plt.printRC(imgBkg, "plots/background-" + imgINFO[0].run);
     }
 
-    for (int ir=0; ir<Nrows; ir++) {
-      for (int ic=0; ic<Ncols; ic++) {
-        if (params.nanMap[ir][ic] == NANVAL) {
-          imgBkg[ir][ic] = 0;
-        }
-      }
-    }
-
-    exit(1);
+    exit(0);
   }
 
 
@@ -341,83 +483,89 @@ int main(int argc, char* argv[]) {
   /////  Get background image  /////
   //////////////////////////////////
 
-  cout<<"getting background"<<endl;
+  //cerr << "WARNING!!!!! NOT IMPORTING BKG"<<endl;
   if (params.backgroundImage.compare("NULL") != 0) {
-    cout<<"fileName: "<<params.backgroundFolder+ "/" + params.backgroundImage<<endl;
     save::importDat<double>(imgBkg, params.backgroundFolder 
         + "/" + params.backgroundImage);
     if (params.pltVerbose) {
       delete plt.printRC(imgBkg, "plots/importBkg-" + imgINFO[0].run);
     }
   }
-  cout<<"done"<<endl;
 
 
   ///////////////////////
   /////  Import PV  /////
   ///////////////////////
 
-  long int pvStartTime = 0;
-  ipos = params.pressureFileName.find("_");
-  for (int i=1; i<stoi(params.pressureFileName.substr(ipos+1, 2));i++) {
-    pvStartTime += ppFunct::monthLengths[i]*24*3600;
-  }
-  ipos = params.pressureFileName.find("_", ipos+1);
-  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2))*24*3600;
-  ipos = params.pressureFileName.find("_", ipos+1);
-  ipos = params.pressureFileName.find("_", ipos+1);
-  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2))*3600;
-  ipos = params.pressureFileName.find("_", ipos+1);
-  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2))*60;
-  ipos = params.pressureFileName.find("-", ipos+1);
-  pvStartTime += stoi(params.pressureFileName.substr(ipos+1, 2));
+  if (params.getPVs) {
+    double weight;
+    std::vector<double> pvOrig; 
+    long int pvStartTime = 0;
+    for (auto const & pv : params.pvMap) {
+      std::string pvFileName = pv.second;
+      std::string pvName = pv.first;
 
-  ipos = params.pressureFileName.find("-", ipos+1);
-  int pvSize = stoi(params.pressureFileName.substr(ipos+1, params.pressureFileName.length()-5-ipos));
-
-  std::vector<double> pvOrigPressure(pvSize); 
-  save::importDat(pvOrigPressure, params.pressureFileName);
-
-  std::vector<double> pvPressure(pvSize, 0);
-  std::vector<double> pvPressureDer(pvSize, 0);
-  float norm;
-  int NsmearSteps = 3*params.pressureSmear/params.pvSampleTimes + 1;
-  for (int i=0; i<pvSize; i++) {
-    pvPressure[i] = pvOrigPressure[i];
-    norm = 1;
-    for (int ii=1; ii<NsmearSteps; ii++) {
-      if (i+ii < pvSize) {
-        pvPressure[i] += pvOrigPressure[i+ii]
-                         *exp(-1*std::pow(params.pvSampleTimes*ii, 2)
-                             /(2*pow(params.pressureSmear, 2)));
-        norm += exp(-1*std::pow(params.pvSampleTimes*ii, 2)
-                    /(2*std::pow(params.pressureSmear, 2)));
+      ipos = pvFileName.find("_");
+      pvStartTime = 0;
+      for (int i=1; i<stoi(pvFileName.substr(ipos+1, 2));i++) {
+        pvStartTime += ppFunct::monthLengths[i]*24*3600;
       }
-      if (i-ii >= 0) {
-        pvPressure[i] += pvOrigPressure[i-ii]
-                         *exp(-1*std::pow(params.pvSampleTimes*ii, 2)
-                             /(2*std::pow(params.pressureSmear, 2)));
-        norm += exp(-1*std::pow(params.pvSampleTimes*ii, 2)
-                    /(2*std::pow(params.pressureSmear, 2)));
+      ipos = pvFileName.find("_", ipos+1);
+      pvStartTime += stoi(pvFileName.substr(ipos+1, 2))*24*3600;
+      ipos = pvFileName.find("_", ipos+1);
+      ipos = pvFileName.find("_", ipos+1);
+      pvStartTime += stoi(pvFileName.substr(ipos+1, 2))*3600;
+      ipos = pvFileName.find("_", ipos+1);
+      pvStartTime += stoi(pvFileName.substr(ipos+1, 2))*60;
+      ipos = pvFileName.find("-", ipos+1);
+      pvStartTime += stoi(pvFileName.substr(ipos+1, 2));
+
+      pvStartTimes[pvName] = pvStartTime;
+
+      ipos = pvFileName.find("-", ipos+1);
+      int pvSize = stoi(pvFileName.substr(ipos+1, pvFileName.length()-5-ipos));
+
+      pvOrig.resize(pvSize, 0); 
+      save::importDat(pvOrig, params.pvFolder+pvFileName);
+
+      pvAll[pvName].resize(pvSize, 0);
+      pvAllDer[pvName].resize(pvSize, 0);
+      float norm;
+      int NsmearSteps = 3*params.pressureSmear/params.pvSampleTimes + 1;
+      for (int i=0; i<pvSize; i++) {
+        pvAll[pvName][i] = pvOrig[i];
+        norm = 1;
+        for (int ii=1; ii<NsmearSteps; ii++) {
+          weight = exp(-1*std::pow(params.pvSampleTimes*ii, 2)
+                      /(2*pow(params.pressureSmear, 2)));
+          if (i+ii < pvSize) {
+            pvAll[pvName][i] += pvOrig[i+ii]*weight;
+            norm += weight;
+          }
+          if (i-ii >= 0) {
+            pvAll[pvName][i] += pvOrig[i-ii]*weight;
+            norm += weight;
+          }
+        }
+        pvAll[pvName][i] /= norm;
       }
-    }
-    pvPressure[i] /= norm;
-  }
 
-  for (int i=0; i<pvSize; i++) {
-    if ((i == 0) || (i == pvSize-1)) {
-      pvPressureDer[i] = 0;
-    }
-    else {
-      pvPressureDer[i] = ((pvPressure[i+1] - pvPressure[i-1])
-                          /(2*params.pvSampleTimes));
+      for (int i=0; i<pvSize; i++) {
+        if ((i == 0) || (i == pvSize-1)) {
+          pvAllDer[pvName][i] = 0;
+        }
+        else {
+          pvAllDer[pvName][i] = ((pvAll[pvName][i+1] - pvAll[pvName][i-1])
+                              /(2*params.pvSampleTimes));
+        }
+      }
+
+      //plt.print1d(pvPressure, "./plots/pressureSmooth");
+      //plt.print1d(pvPressureDer, "./plots/pressureDer");
+      //plt.print1d(pvOrigPressure, "./plots/pressure");
+      //exit(0);
     }
   }
-
-  //plt.print1d(pvPressure, "./plots/pressureSmooth");
-  //plt.print1d(pvPressureDer, "./plots/pressureDer");
-  //plt.print1d(pvOrigPressure, "./plots/pressure");
-  //exit(0);
 
 
 
@@ -426,8 +574,12 @@ int main(int argc, char* argv[]) {
   //////////////////////////////
 
    //rFileName = "/reg/ued/ana/scratch/nitroBenzene/rootFiles/" + dataType 
-  std::string subFolder;
-  if (runListName.find("UVpump", 0) != std::string::npos) {
+  std::string subFolder = "";
+  if (runListName.find("Power", 0) != std::string::npos) {
+    subFolder = "PowerScan";
+  }
+  /*
+  else if (runListName.find("UVpump", 0) != std::string::npos) {
     subFolder = "UVpump";
   }
   else if (runListName.find("IRalign", 0) != std::string::npos) {
@@ -439,8 +591,8 @@ int main(int argc, char* argv[]) {
   else if (runListName.find("BKG", 0) != std::string::npos) {
     subFolder = "BKG";
   }
+  */
 
-  subFolder = "";
   rFileName = params.preProcOutputDir + "/" + subFolder + "/"
   //rFileName =  "testing/" + subFolder + "/"
         + "Run-" + curRun + "_"
@@ -449,7 +601,7 @@ int main(int argc, char* argv[]) {
     rFileName = "localTest.root";
   }
 
-  if (params.verbose) std::cout << "INFO: Making file " << rFileName << endl;
+  if (params.verbose) std::cout << "\n\nINFO: Making file " << rFileName << endl;
 
   file = TFile::Open(rFileName.c_str(), "RECREATE");
   tree = new TTree("physics","physics");
@@ -462,8 +614,7 @@ int main(int argc, char* argv[]) {
   tree->Branch("stagePos", 	&stagePos, 	"stagePos/I");
   tree->Branch("t0StagePos",    &t0SP,		"t0StagePos/F");
   tree->Branch("t0Time",	&t0Time,	"t0Time/F");
-  tree->Branch("pressure",	&pressure,	"pressure/F");
-  tree->Branch("pressureDer",	&pressureDer,	"pressureDer/F");
+  tree->Branch("throttle",      &throttle,      "throttle/F");
   tree->Branch("centerC", 	&centerC, 	"centerC/I");
   tree->Branch("centerR", 	&centerR, 	"centerR/I");
   tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
@@ -471,9 +622,22 @@ int main(int argc, char* argv[]) {
   tree->Branch("imgOrig", 	&imgOrig);
   tree->Branch("imgSubBkg",     &imgSubBkg);
   tree->Branch("legCoeffs",     &legCoeffs);
-  tree->Branch("azmAvg",        &azmAvg);
-  tree->Branch("filtAzmAvg",    &filtAzmAvg);
-  if (params.verbose) cout << "INFO: Tree and file are setup!\n\n";
+  tree->Branch("rawAzmAvg",     &rawAzmAvg);
+  tree->Branch("azmAvg",    &azmAvg);
+
+  for (auto const & pv : params.pvMap) {
+    pvVals[pv.first] = 0;
+    pvValsDer[pv.first] = 0;
+    tree->Branch(
+        pv.first.c_str(),	  
+        &pvVals[pv.first],	
+        (pv.first+"/F").c_str());
+    tree->Branch(
+        (pv.first+"Der").c_str(),  
+        &pvValsDer[pv.first],	
+        (pv.first+"Der/F").c_str());
+  }
+  if (params.verbose) cout << "INFO: Tree and file are setup!\n";
 
 
   //////////////////////////////////
@@ -493,8 +657,9 @@ int main(int argc, char* argv[]) {
   //////////////////////////////////
   /////  Rough center finding  /////
   //////////////////////////////////
-
-  if (params.verbose) cout << "INFO: Start COM center finding\n"; 
+  std::vector<int> centersCOM;
+  /*
+  if (params.verbose) cout << "\n\nINFO: Start COM center finding\n"; 
   std::vector<int> centersCOM = imgProc::centerSearchCOM(imgINFO,
       params.hotPixel, params.sigma,
       params.blockCentR, params.blockCentC, params.minRad, params.maxRad,
@@ -502,18 +667,47 @@ int main(int argc, char* argv[]) {
 
   if (params.verbose) std::cout << "COMcenters: " 
     << centersCOM[0] << "  " << centersCOM[1] << endl;
+    */
+
+
+  std::map<int, vector<int> > centers;
+  ifstream infile("centers.txt");
+  while (infile) {
+    string s;
+    if (!getline( infile, s )) break;
+
+    istringstream ss( s );
+
+    string sss;
+    if (!getline( ss, sss, ' ' )) break;
+    if (stoi(sss) != imgINFO[0].scan) continue;
+
+    string pos;
+    getline( ss, pos, ' ' );
+    
+    while (ss) {
+      if (!getline( ss, sss, ' ' )) break;
+
+      centers[stoi(pos)].push_back(std::round(stof(sss)));
+    }
+  }
 
 
   /////////////////////////////////
   /////  Fine center finding  /////
   /////////////////////////////////
 
-  if (localTesting) {
+  if (localTesting || true) {
+    /*
+    centersCOM[0] = 568;
+    centersCOM[1] = 495; //494;
     centerR = centersCOM[0];
     centerC = centersCOM[1];
+    cout<<"centers "<<centerR<<"  "<<centerC<<endl;
+    */
   }
   else {
-    if (params.verbose) cout << "INFO: Starting fine center Finding!\n\n";
+    if (params.verbose) cout << "\n\nINFO: Starting fine center Finding!\n";
     centerR = centerC = Ncents = 0;
     for (int icnt=0; icnt<std::min(params.NavgCenters, (int)imgINFO.size()); icnt++) {
 
@@ -521,33 +715,32 @@ int main(int argc, char* argv[]) {
       imgAddr = imgINFO[icnt].path + imgINFO[icnt].fileName;
       imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
       cout<<"centering image addr: "<<imgAddr<<endl;
-      imgProc::threshold(imgMat, params.hotPixel);
 
       Nrows = imgMat.rows;
       Ncols = imgMat.cols;
       if (params.imgMatType.compare("uint16") == 0) {
         if (params.hasLaserBkg) {
           imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, &imgBkg,
+                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
                       params.holeRad, params.holeR, params.holeC,
                       &params.nanMap);
         }
         else {
           imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, &imgBkg,
+                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
                       params.holeRad, params.holeR, params.holeC);
         }
       }  
       else if (params.imgMatType.compare("uint32") == 0) {
         if (params.hasLaserBkg) {
           imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, &imgBkg,
+                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
                       params.holeRad, params.holeR, params.holeC,
                       &params.nanMap);
         }
         else {
           imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, &imgBkg,
+                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
                       params.holeRad, params.holeR, params.holeC);
         }
       }  
@@ -557,9 +750,15 @@ int main(int argc, char* argv[]) {
         exit(0);
       }
 
+      // Remove Xray hits
+      imgProc::removeXrayHits(
+          &imgCent, 
+          params.XrayHighCut, params.XrayLowCut, 
+          params.XraySTDcut, params.XrayWindow);
+
       //  Remove pixel outliers
       radProc.removeOutliers(imgCent,  
-          centersCOM[0], centersCOM[1], params.buffer,
+          centersCOM[0], centersCOM[1], params.imgEdgeBuffer,
           500, params.shellWidth, params.Npoly,
           params.stdIncludeLeft, params.distSTDratioLeft,
           params.stdCutLeft, params.meanBinSize,
@@ -632,7 +831,9 @@ int main(int argc, char* argv[]) {
  
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
 
-    //if (imgINFO[ifl].stagePos != 1543400) continue; 
+    //if (imgINFO[ifl].stagePos != 1543650) continue; 
+    centerR = centers[imgINFO[ifl].stagePos][1];
+    centerC = centers[imgINFO[ifl].stagePos][0];
 
     //cout<<"\n\n\n\nSTARTING"<<endl;
     /////  Check we are in the same run/scan  /////
@@ -663,62 +864,75 @@ int main(int argc, char* argv[]) {
     /////  Image capture time  /////
     timeStamp = imgINFO[ifl].time;
 
-    /////  Get chamber pressure  /////
-    pressure = 0;
-    pressureDer = 0;
-    int pvInd = (imgINFO[ifl].time - pvStartTime)/params.pvSampleTimes - 2;
-    for (int i=0; i<params.imgShutterTime/params.pvSampleTimes; i++) {
-      pressure += pvPressure[pvInd-i];
-      pressureDer += pvPressureDer[pvInd-i];
+    /////  Throttle  /////
+    if (imgINFO[ifl].throttle == -1) {
+      throttle = params.throttle;
     }
-    pressure /= params.imgShutterTime/params.pvSampleTimes;
-    pressureDer /= params.imgShutterTime/params.pvSampleTimes;
+    else {
+      throttle = imgINFO[ifl].throttle;
+    }
+
+    /////  Get PV values  /////
+    if (params.getPVs) {
+      for (auto const & pv : params.pvMap) {
+        std::string pvName = pv.first;
+        pvVals[pvName] = 0;
+        pvValsDer[pvName] = 0;
+        int pvInd = (imgINFO[ifl].time - pvStartTimes[pvName])/
+                      params.pvSampleTimes - 2;
+        for (int i=0; i<params.imgShutterTime/params.pvSampleTimes; i++) {
+          pvVals[pvName]    += pvAll[pvName][pvInd-i];
+          pvValsDer[pvName] += pvAllDer[pvName][pvInd-i];
+        }
+        pvVals[pvName] /= params.imgShutterTime/params.pvSampleTimes;
+        pvValsDer[pvName] /= params.imgShutterTime/params.pvSampleTimes;
+      }
+    }
  
     ///////  Load image  ///////
     imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
     if (params.verbose) cout << "INFO: Trying to open " << imgAddr << "\t .....";
     imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-    imgProc::threshold(imgMat, params.hotPixel);
     if (params.verbose) cout << "\tpassed!\n\n";
 
     if (params.imgMatType.compare("uint16") == 0) {
       if (params.hasLaserBkg) {
         imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, NULL,
-            params.holeRad, params.holeR, params.holeC,
-            &params.nanMap);
+            Nrows, Nrows/2, Ncols/2, true, NULL,
+            params.holeRad, params.holeR, params.holeC);
         imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, &imgBkg,
+            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
             params.holeRad, params.holeR, params.holeC,
             &params.nanMap);
       }
       else {
         imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, NULL,
+            Nrows, Nrows/2, Ncols/2, true, NULL,
             params.holeRad, params.holeR, params.holeC);
         imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, &imgBkg,
-            params.holeRad, params.holeR, params.holeC);
+            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+            params.holeRad, params.holeR, params.holeC,
+            &params.nanMap);
       }
     }
     else if (params.imgMatType.compare("uint32") == 0) {
       if (params.hasLaserBkg) {
         imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, NULL,
-            params.holeRad, params.holeR, params.holeC,
-            &params.nanMap);
+            Nrows, Nrows/2, Ncols/2, true, NULL,
+            params.holeRad, params.holeR, params.holeC);
         imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, &imgBkg,
+            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
             params.holeRad, params.holeR, params.holeC,
             &params.nanMap);
       }
       else {
         imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, NULL,
+            Nrows, Nrows/2, Ncols/2, true, NULL,
             params.holeRad, params.holeR, params.holeC);
         imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, &imgBkg,
-            params.holeRad, params.holeR, params.holeC);
+            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+            params.holeRad, params.holeR, params.holeC,
+            &params.nanMap);
       }
     }
     else {
@@ -726,11 +940,26 @@ int main(int argc, char* argv[]) {
           + params.imgMatType + "!!!\n";
       exit(0);
     }
+   
+
+    // Remove Xray hits
+    imgProc::removeXrayHits(
+        &imgOrig, 
+        params.XrayHighCut, params.XrayLowCut, 
+        params.XraySTDcut, params.XrayWindow);
+    imgProc::removeXrayHits(
+        &imgSubBkg, 
+        params.XrayHighCut, params.XrayLowCut, 
+        params.XraySTDcut, params.XrayWindow);
+
+
+
     //cout<<"444"<<endl;
 
     /////  Remove pixel outliers  /////
+    /*
     radProc.removeOutliers(imgOrig,  
-        centerR, centerC, params.buffer, 
+        centerR, centerC, params.imgEdgeBuffer, 
         params.NradAzmBins, params.shellWidth, params.Npoly,
         //imgOrig.size()/2, imgOrig.size()/2, params.shellWidth,
         params.stdIncludeLeft, params.distSTDratioLeft,
@@ -739,10 +968,18 @@ int main(int argc, char* argv[]) {
         params.stdChangeRatio, params.stdCutRight,
         imgINFO[ifl].stagePos, params.outlierMapSTDcut,
         false, (false || params.outlierVerbose), NULL);
+        */
 
     //cout<<"555"<<endl;
+    outlierImage = radProc.removeOutliersSimple(
+        imgSubBkg, centerR, centerC, params.imgEdgeBuffer,
+        params.NradAzmBins, params.shellWidth, params.Npoly,
+        params.outlierSTDcut, imgINFO[ifl].stagePos, params.outlierMapSTDcut,
+        true, (false || params.outlierVerbose), NULL);//, &plt);
+
+    /*
     outlierImage = radProc.removeOutliers(imgSubBkg,  
-        centerR, centerC, params.buffer,
+        centerR, centerC, params.imgEdgeBuffer,
         params.NradAzmBins, params.shellWidth, params.Npoly,
         //imgOrig.size()/2, imgOrig.size()/2, params.shellWidth,
         params.stdIncludeLeft, params.distSTDratioLeft,
@@ -751,8 +988,8 @@ int main(int argc, char* argv[]) {
         params.stdChangeRatio, params.stdCutRight,
         imgINFO[ifl].stagePos, params.outlierMapSTDcut,
         true, (false || params.outlierVerbose), NULL);//, &plt);
+        */
     
-    //cout<<"666"<<endl;
     if (params.pltVerbose) {
       //plt.printRC(outlierImage, "outlierSTD_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
       save::saveDat<double>(outlierImage, 
@@ -763,6 +1000,7 @@ int main(int argc, char* argv[]) {
 
     ///  Find large clusters corresponding to laser spots  ///
     //std::vector< std::pair<uint, uint> > removePairs;
+    /*
     std::vector< std::pair<uint, uint> > removePairs = imgProc::findClusters(
             outlierImage, centerR, centerC, params.holeRad,
             params.outlierCoreValThresh, params.outlierCoreRad, 
@@ -774,6 +1012,11 @@ int main(int argc, char* argv[]) {
             params.outlierrMinScale, params.outlierrMaxScale,
             params.outliercMinScale, params.outliercMaxScale,
             outlierBkg, NULL); //&plt);
+
+    ///  Remove laser background from image by setting pixels = NANVAL  ///
+    for (uint ip=0; ip<removePairs.size(); ip++) {
+      imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
+    }
 
     if (params.pltVerbose) {
       //plt.printRC(outlierBkg, "outlierBKG_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
@@ -796,34 +1039,28 @@ int main(int argc, char* argv[]) {
                 + "," + to_string(imgSubBkg.size()) + "].dat");
     }
 
-
-    ///  Remove laser background from image by setting pixels = NANVAL  ///
-    for (uint ip=0; ip<removePairs.size(); ip++) {
-      imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
-    }
+            */
 
 
     ///// Remove readout noise  /////
-    if (params.verbose) std::cout << "INFO: Readout noise subtraction.\n";
     /*
-    imgProc::removeReadOutNoise(imgOrig);
-    readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
-    */
+    if (params.verbose) std::cout << "INFO: Readout noise subtraction.\n";
     if (params.hasLaserBkg) {
       readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
                         0.94*params.NradAzmBins, params.NradAzmBins, 
-                        params.buffer, &params.nanMap);
+                        params.imgEdgeBuffer, &params.nanMap);
     }
     else {
       readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
                         0.94*params.NradAzmBins, params.NradAzmBins,
-                        params.buffer);
+                        params.imgEdgeBuffer);
 
       // Only use this when interested in reference images
       //    background fit fails when subtracting readout
       //    noise on the phosphor screen. Comment previous line.
       //readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
     }
+    */
 
 
     //////////////////////////////////////////////////////
@@ -832,23 +1069,11 @@ int main(int argc, char* argv[]) {
     // We cluster background spots based on the assymetry of 
     //    the image. 
 
+    /*
     if (params.hasLaserBkg && params.laserClusterRemoval) {
       if (params.verbose) std::cout << "INFO: Laser background removal.\n";
       // Fill in hole based on symmetry
       std::vector< std::vector<double> > imgLaser = imgSubBkg;
-      /*
-      for (int ir=centerR-params.holeRad-3; 
-          ir<=centerR+params.holeRad+3; ir++) {
-        for (int ic=centerC-params.holeRad-3; 
-            ic<=centerC+params.holeRad+3; ic++) {
-          if (std::pow(ir-centerR,2) + std::pow(ic-centerC,2) 
-              < std::pow(params.holeRad, 2)) {
-            imgOrig[ir][ic] = imgOrig[(imgSize-1)-ir][(imgSize-1)-ic];
-          }
-        }
-      }
-      */
-
       for (int ir=centerR-params.holeRad-3; 
           ir<=centerR+params.holeRad+3; ir++) {
         for (int ic=centerC-params.holeRad-3; 
@@ -888,30 +1113,28 @@ int main(int argc, char* argv[]) {
       for (uint ip=0; ip<removePairs.size(); ip++) {
         imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
       }
-      /*
       ///  Remove laser background from image by setting pixels = NANVAL  ///
-      for (ir=0; ir<imgSize; ir++) {
-        for (ic=0; ic<imgSize; ic++) {
-          imgSubBkg[ir][ic] = imgOrig[ir][ic];
-        }
-      }
+      //for (ir=0; ir<imgSize; ir++) {
+      //  for (ic=0; ic<imgSize; ic++) {
+      //    imgSubBkg[ir][ic] = imgOrig[ir][ic];
+      //  }
+      //}
 
-      for (ir=imgSize/2-40; ir<imgSize/2+40; ir++) {
-        for (ic=imgSize/2-120; ic<imgSize/2; ic++) {
-          imgSubBkg[ir][ic] = NANVAL;
-        }
-      }
-      for (ir=imgSize/2-200; ir<imgSize/2+50; ir++) {
-        for (ic=imgSize-225; ic<imgSize-115; ic++) {
-          imgSubBkg[ir][ic] = NANVAL;
-        }
-      }
-      for (ir=imgSize/2-60; ir<imgSize/2+35; ir++) {
-        for (ic=imgSize-75; ic<imgSize; ic++) {
-          imgSubBkg[ir][ic] = NANVAL;
-        }
-      }
-      */
+      //for (ir=imgSize/2-40; ir<imgSize/2+40; ir++) {
+      //  for (ic=imgSize/2-120; ic<imgSize/2; ic++) {
+      //    imgSubBkg[ir][ic] = NANVAL;
+      //  }
+      //}
+      //for (ir=imgSize/2-200; ir<imgSize/2+50; ir++) {
+      //  for (ic=imgSize-225; ic<imgSize-115; ic++) {
+      //    imgSubBkg[ir][ic] = NANVAL;
+      //  }
+      //}
+      //for (ir=imgSize/2-60; ir<imgSize/2+35; ir++) {
+      //  for (ic=imgSize-75; ic<imgSize; ic++) {
+      //    imgSubBkg[ir][ic] = NANVAL;
+      //  }
+      //}
       
       if (params.pltVerbose) {
         
@@ -987,6 +1210,7 @@ int main(int argc, char* argv[]) {
       delete plt.printRC(pltSubBkg, 
           "plots/imgSub_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
     }
+    */
 
 
     //////////////////////////////////////////////////////////
@@ -1034,23 +1258,23 @@ int main(int argc, char* argv[]) {
 
     /////  Azimuthal average  /////
 
-    std::fill(azmAvg.begin(), azmAvg.end(), 0);
+    std::fill(rawAzmAvg.begin(), rawAzmAvg.end(), 0);
     std::fill(azmCounts.begin(), azmCounts.end(), 0);
     for (int ir=0; ir<(int)imgSubBkg.size(); ir++) {
-      if (ir < params.buffer || imgSubBkg.size() - ir < params.buffer) continue;
+      if (ir < params.imgEdgeBuffer || imgSubBkg.size() - ir < params.imgEdgeBuffer) continue;
       for (int ic=0; ic<(int)imgSubBkg[ir].size(); ic++) {
-        if (ic < params.buffer || imgSubBkg[ir].size() - ic < params.buffer) continue;
+        if (ic < params.imgEdgeBuffer || imgSubBkg[ir].size() - ic < params.imgEdgeBuffer) continue;
 
         if (imgSubBkg[ir][ic] != NANVAL) {
           if (params.hasLaserBkg) {
             if (params.nanMap[ir][ic] == NANVAL) {
-              continue;
+              //continue; //FIX ME comment me out after comparing with thomas
             }
           }
 
-          radInd = (int)sqrt(pow(ir-centerR,2) + pow(ic-centerC,2));
+          radInd = (int)std::round(sqrt(pow(ir-centerR,2) + pow(ic-centerC,2)));
           if (radInd < params.NradAzmBins) {
-            azmAvg[radInd] += imgSubBkg[ir][ic];
+            rawAzmAvg[radInd] += imgSubBkg[ir][ic];
             azmCounts[radInd] += 1;
           }
         }
@@ -1060,22 +1284,28 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    for (uint ir=0; ir<azmAvg.size(); ir++) {
+    for (uint ir=0; ir<rawAzmAvg.size(); ir++) {
       if (azmCounts[ir] != 0) {
-        azmAvg[ir] /= azmCounts[ir];
+        rawAzmAvg[ir] /= azmCounts[ir];
       }
-      else azmAvg[ir] = NANVAL;
+      else rawAzmAvg[ir] = NANVAL;
     }
 
-    azmAvg.resize(params.NradAzmBins, NANVAL);
+    rawAzmAvg.resize(params.NradAzmBins, NANVAL);
 
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      azmAvg[iq] = rawAzmAvg[iq];
+    }
+    //save::saveDat<double>(azmAvg, "testcompareazmavg.dat");
+      //plt.print1d(azmAvg, "azimuthalAvg_" + to_string(imgINFO[ifl].imgNum), logy, "true");
 
+    /*
     /////  Image norm  /////
     imgNorm = 0;
     count = 0;
     for (int i=imgNormBinMin; i<imgNormBinMax; i++) {
-      if (azmAvg[i] == NANVAL) continue;
-      imgNorm += azmAvg[i];
+      if (rawAzmAvg[i] == NANVAL) continue;
+      imgNorm += rawAzmAvg[i];
       count++;
     }
     imgNorm /= count;
@@ -1083,7 +1313,7 @@ int main(int argc, char* argv[]) {
     /////  Build Reference AzmAvg  /////
     if (imgIsRef) {
       for (int iq=0; iq<params.NradAzmBins; iq++) {
-        refAzmAvg[iq] = (refAzmAvg[iq]*Nref + azmAvg[iq]/imgNorm)/(Nref + 1);
+        refAzmAvg[iq] = (refAzmAvg[iq]*Nref + rawAzmAvg[iq]/imgNorm)/(Nref + 1);
       }
       Nref++;
     }
@@ -1092,21 +1322,21 @@ int main(int argc, char* argv[]) {
 
     std::vector<double> tstR(filtFFToutSize);
     if (!padRange) {
-      while (azmAvg[padRange] == NANVAL) {
+      while (rawAzmAvg[padRange] == NANVAL) {
         padRange++;
       }
     }
     curPadRange = padRange;
-    while (fabs(1 - azmAvg[curPadRange]/azmAvg[curPadRange+1]) > 0.2) {
+    while (fabs(1 - rawAzmAvg[curPadRange]/rawAzmAvg[curPadRange+1]) > 0.2) {
       curPadRange++;
     }
 
     qSpace[0] = 0;
     for (int iq=1; iq<params.NradAzmBins; iq++) {
-      qSpace[iq] = (azmAvg[iq]/imgNorm)/atmDiff[iq];
+      qSpace[iq] = (rawAzmAvg[iq]/imgNorm)/atmDiff[iq];
       if (iq < params.suppressBins) {
         if (iq < curPadRange && iq > 0) {
-          qSpace[iq] = azmAvg[curPadRange]*(pow(curPadRange,3)/(atmDiff[iq]*imgNorm))/pow(iq,3);
+          qSpace[iq] = rawAzmAvg[curPadRange]*(pow(curPadRange,3)/(atmDiff[iq]*imgNorm))/pow(iq,3);
             //params.padMaxHeight*sin(PI/2*iq/padRange);
         }
         qSpace[iq] *= pow(sin((PI/2)*iq/params.suppressBins),6);
@@ -1133,14 +1363,14 @@ int main(int argc, char* argv[]) {
     fftw_execute(filtFFTb);
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
-      filtAzmAvg[iq] = qSpace[iq]*atmDiff[iq]
+      azmAvg[iq] = qSpace[iq]*atmDiff[iq]
                           /sqrt(params.NradAzmBins);
       if (iq < params.suppressBins) {
         if (iq < padRange) {
-          filtAzmAvg[iq] = NANVAL;
+          azmAvg[iq] = NANVAL;
         }
         else {
-          filtAzmAvg[iq] /= pow(sin((PI/2)*iq/params.suppressBins),6);
+          azmAvg[iq] /= pow(sin((PI/2)*iq/params.suppressBins),6);
         }
       }
     }
@@ -1150,8 +1380,8 @@ int main(int argc, char* argv[]) {
       std::vector<double> tst2(params.NradAzmBins);
       vector<TH1*> plts(2);
       for (int iq=0; iq<params.NradAzmBins; iq++) {
-        tst1[iq] = azmAvg[iq]/(imgNorm*atmDiff[iq]);
-        tst2[iq] = filtAzmAvg[iq]/atmDiff[iq];
+        tst1[iq] = rawAzmAvg[iq]/(imgNorm*atmDiff[iq]);
+        tst2[iq] = azmAvg[iq]/atmDiff[iq];
       }
       pltVals[0] = "-0.2";
       pltVals[1] = "0.2";
@@ -1164,18 +1394,19 @@ int main(int argc, char* argv[]) {
       delete plts[0];
       delete plts[1];
     }
+    */
 
     /////  Plotting results  /////
-    if (params.pltVerbose) {
+    if (true || params.pltVerbose) {
       std::vector<double> test(NradLegBins);
-      for (int i=0; i<params.Nlegendres; i++) {
-        for (int j=0; j<NradLegBins; j++) {
-          test[j] = legCoeffs[i*NradLegBins + j];
-        }
-        plt.print1d(test, "plots/testLeg" + to_string(i) + "_" + to_string(imgINFO[ifl].imgNum));
-      }
+      //for (int i=0; i<params.Nlegendres; i++) {
+      //  for (int j=0; j<NradLegBins; j++) {
+      //    test[j] = legCoeffs[i*NradLegBins + j];
+      //  }
+      //  plt.print1d(test, "plots/testLeg" + to_string(i) + "_" + to_string(imgINFO[ifl].imgNum));
+      //}
 
-      plt.print1d(azmAvg, "plots/azimuthalAvg_" + to_string(imgINFO[ifl].imgNum));
+      plt.print1d(rawAzmAvg, "plots/azimuthalAvg_" + to_string(imgINFO[ifl].imgNum));
     }
     
     // Save image and info to tree
