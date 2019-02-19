@@ -23,7 +23,9 @@ void mergeClass::initializeVariables() {
   curRun   = "";
   _compareReference = false;
   smearedTime       = false;
-  didSMSnormalize      = false;
+  didSMSnormalize   = false;
+  didPairCorrSTD    = false;
+  didSubtractT0     = false;
 
   /////  Simulation results  /////
   atmLegDiff.resize(NradLegBins, 0.0);
@@ -545,7 +547,6 @@ void mergeClass::getRunMeanSTD() {
 
   /////  Reset all vectors  /////
   // Time dependent measurements
-  cout<<"start filling"<<endl;
   if (runAzmMeans.size() != stagePosInds.size()) {
     runLegMeans.resize(stagePosInds.size());
     runAzmMeans.resize(stagePosInds.size());
@@ -562,7 +563,6 @@ void mergeClass::getRunMeanSTD() {
       runPCorrSTD[i].resize(maxRbins, 0);
     }
   }
-  cout<<"start filling"<<endl;
   for (uint i=0; i<stagePosInds.size(); i++) {
     std::fill(runLegMeans[i].begin(), runLegMeans[i].end(), 0);
     std::fill(runAzmMeans[i].begin(), runAzmMeans[i].end(), 0);
@@ -571,11 +571,9 @@ void mergeClass::getRunMeanSTD() {
     std::fill(runAzmSTD[i].begin(), runAzmSTD[i].end(), 0);
     std::fill(runPCorrSTD[i].begin(), runPCorrSTD[i].end(), 0);
   }
-  cout<<"start filling"<<endl;
   std::vector<double>legNorms(NlegBins, 0);
   std::vector<double>azmNorms(NradAzmBins, 0);
   std::vector<double>pCorrNorms(maxRbins, 0);
-  cout<<"start filling"<<endl;
 
   // Reference measurements
   if (!runAzmRefMeans.size()) {
@@ -625,10 +623,12 @@ void mergeClass::getRunMeanSTD() {
   for (int ir=0; ir<NradAzmBins; ir++) {
     norm = 0;
     for (auto const & sRitr : scanReferences) {
-      for (auto const &pItr : sRitr.second) {
-        if (pItr.second.azmRef[ir] != NANVAL) {
-          runAzmRefMeans[ir] += pItr.second.azmRef[ir];
-          norm += 1;
+      for (auto const & pItr : sRitr.second) {
+        if (pItr.second.scale) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            runAzmRefMeans[ir] += pItr.second.azmRef[ir];
+            norm += 1;
+          }
         }
       }
     }
@@ -673,11 +673,13 @@ void mergeClass::getRunMeanSTD() {
     norm = 0;
     for (auto const & sRitr : scanReferences) {
       for (auto const & pItr : sRitr.second) {
-        if (pItr.second.azmRef[ir] != NANVAL) {
-          runAzmRefSTD[ir] 
-              += std::pow((pItr.second.azmRef[ir]
-                      - runAzmRefMeans[ir]), 2);
-          norm += 1;
+        if (pItr.second.scale) {
+          if (pItr.second.azmRef[ir] != NANVAL) {
+            runAzmRefSTD[ir] 
+                += std::pow((pItr.second.azmRef[ir]
+                        - runAzmRefMeans[ir]), 2);
+            norm += 1;
+          }
         }
       }
     }
@@ -723,11 +725,14 @@ void mergeClass::getRunMeanSTD() {
     if (verbose && (pItr.second == 0)) 
       std::cout << "\tCalculating azimuthal mean.\n";
     for (auto const & sAitr : scanAzmAvg) {
-      if (scanScale[sAitr.first][pItr.second] > 0) {
+      if (scanScale[sAitr.first][pItr.second] != 0) {
         for (int i=0; i<NradAzmBins; i++) {
           if (sAitr.second[pItr.second][i] != NANVAL) {
             runAzmMeans[pItr.second][i] += sAitr.second[pItr.second][i];
             azmNorms[i] += 1; //scanScale[sAitr.first][pItr.second];
+              if (pItr.second == 2 && i == 19) {
+                cout<<"mean scan "<<sAitr.first<<" : "<<sAitr.second[pItr.second][i]<<endl;
+              }
           }
         }
       }
@@ -735,10 +740,12 @@ void mergeClass::getRunMeanSTD() {
 
     for (int i=0; i<NradAzmBins; i++) {
       runAzmMeans[pItr.second][i] /= azmNorms[i];
+      if (didSubtractT0) {
+        runAzmMeans[pItr.second][i] -= runAzmRefMeans[i];
+      }
     }
 
 
-    cout<<"pcorr means"<<endl;
     for (auto const & sPitr : scanAzmPCorr) {
       if (scanScale[sPitr.first][pItr.second] > 0) {
         for (int ir=0; ir<maxRbins; ir++) {
@@ -751,7 +758,6 @@ void mergeClass::getRunMeanSTD() {
     for (int ir=0; ir<maxRbins; ir++) {
       runPCorrMeans[pItr.second][ir] /= pCorrNorms[ir];
     }
-    cout<<"pcorr means"<<endl;
 
     /////  Standard deviation calculation  /////
 
@@ -782,12 +788,26 @@ void mergeClass::getRunMeanSTD() {
     if (verbose && (pItr.second == 0)) 
       std::cout << "\tCalculating azimuthal std.\n";
     for (auto const & sAitr : scanAzmAvg) {
-      if (scanScale[sAitr.first][pItr.second]) {
+      if (scanScale[sAitr.first][pItr.second] != 0) {
         for (int i=0; i<NradAzmBins; i++) {
           if (sAitr.second[pItr.second][i] != NANVAL) {
-            runAzmSTD[pItr.second][i]
-                += std::pow((sAitr.second[pItr.second][i]
+            if (didSubtractT0) {
+              runAzmSTD[pItr.second][i]
+                  += std::pow(((sAitr.second[pItr.second][i] - runAzmRefMeans[i])
                         - runAzmMeans[pItr.second][i]), 2);
+              if (pItr.second == 2 && i == 19) {
+                cout<<"scan "<<sAitr.first<<" : "<<std::pow(((sAitr.second[pItr.second][i] - runAzmRefMeans[i]) - runAzmMeans[pItr.second][i]), 2)<<"   "<<runAzmMeans[pItr.second][i]<<endl;
+              }
+            }
+            else {
+              runAzmSTD[pItr.second][i]
+                  += std::pow((sAitr.second[pItr.second][i]
+                        - runAzmMeans[pItr.second][i]), 2);
+              if (pItr.second == 2 && i == 19) {
+                cout<<"scan "<<sAitr.first<<" : "<<std::pow(((sAitr.second[pItr.second][i]) - runAzmMeans[pItr.second][i]), 2)<<"   "<<runAzmMeans[pItr.second][i]<<endl;
+              }
+
+            }
           }
         }
       }
@@ -795,11 +815,14 @@ void mergeClass::getRunMeanSTD() {
 
     for (int i=0; i<NradAzmBins; i++) {
       runAzmSTD[pItr.second][i] = std::sqrt(runAzmSTD[pItr.second][i]/azmNorms[i]);
+      if (pItr.second == 2) {
+        cout<<"mean/std "<<i<<" : "<<runAzmMeans[pItr.second][i]<<"  "<<runAzmSTD[pItr.second][i]<<endl;
+      }
     }
 
     if (didPairCorrSTD) {
       for (auto const & sPitr : scanAzmPCorr) {
-        if (scanScale[sPitr.first][pItr.second]) {
+        if (scanScale[sPitr.first][pItr.second] != 0) {
           for (int ir=0; ir<maxRbins; ir++) {
             runPCorrSTD[pItr.second][ir]
                   += std::pow((sPitr.second[pItr.second][ir]
@@ -1049,7 +1072,8 @@ void mergeClass::removeOutliers() {
   ///////////////////////////////////////
   if (verbose)
     std::cout << "\tBeginning removing outliers in reference images.\n";
-  for (int k=0; k<3; k++) {
+  //FIX ME CHANGED k<3 to k<1
+  for (int k=0; k<1; k++) {
 
     /////  Calculate Mean and STD  /////
     getRunMeanSTD();
@@ -1103,6 +1127,8 @@ void mergeClass::removeOutliers() {
         }
         if (imageNoise > azmImageNoiseCut) {
           pItr.second.scale = 0;
+          cout<<"ERROR: should not be here for thomas compare"<<endl;
+          exit(0);
         }
       }
     }
@@ -1157,6 +1183,8 @@ void mergeClass::removeOutliers() {
         }
         if (imageNoise > azmImageNoiseCut) {
           scanScale[sAitr.first][pItr.second] = 0;
+          cout<<"ERROR: should not be here for thomas compare"<<endl;
+          exit(0);
         }
       }
     }
@@ -1301,7 +1329,15 @@ void mergeClass::scaleByFit() {
         // Scale lineout
         for (int iazm=0; iazm<NradAzmBins; iazm++) {
           if (sAzml.second[it][iazm] != NANVAL) {
+            if (sAzml.first == 56 && iazm == 19 && it==2) {
+              cout<<"CHECKING SCAN 56"<<endl;
+              cout<<"orig: "<<sAzml.second[it][iazm]<<endl;
+              cout<<"fits: "<<w(1)<<"  "<<w(0)<<endl;
+            }
             sAzml.second[it][iazm] = w(0)*sAzml.second[it][iazm] + w(1);
+            if (sAzml.first == 56 && iazm == 19 && it==2) {
+              cout<<"after: "<<sAzml.second[it][iazm]<<endl;
+            }
           }
         }
       }
@@ -1487,6 +1523,8 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
 
 void mergeClass::subtractT0() {
 
+  didSubtractT0 = true;
+
   for (int ilg=0; ilg<Nlegendres; ilg++) {
     // Subtract reference or time early from legendres
     if (!subtractReference) {
@@ -1553,7 +1591,7 @@ void mergeClass::subtractT0() {
 }
 
 
-void mergeClass::normalizeResults() {
+void mergeClass::normalizeScansResults() {
 
   double refReadoutNoise = 0;
   int refReadoutCount = 0;
@@ -1568,6 +1606,14 @@ void mergeClass::normalizeResults() {
     if (azmReference[iq] != NANVAL) {
       azmReference[iq] -= refReadoutNoise;
     }
+
+    for (auto & sRitr : scanReferences) {
+      for (auto & pItr : sRitr.second) {
+        if (pItr.second.azmRef[iq] != NANVAL) {
+          pItr.second.azmRef[iq] -= refReadoutNoise;
+        }
+      }
+    }
   }
 
 
@@ -1576,12 +1622,6 @@ void mergeClass::normalizeResults() {
   for (uint it=0; it<stagePosInds.size(); it++) {
     readoutNoise = 0;
     readoutCount = 0;
-    if (it==2) {
-      for (int iq=100; iq<105; iq++) {
-      cout<<"iq/val: "<<iq<<"  "<<azimuthalAvg[it][iq]<<endl;
-      }
-      cout<<"range: "<<readoutAzmBinStart<<"  "<<readoutAzmBinEnd<<endl;
-    }
     for (int iq=readoutAzmBinStart; iq<readoutAzmBinEnd; iq++) {
       if (azimuthalAvg[it][iq] != NANVAL) {
         readoutNoise += azimuthalAvg[it][iq];
@@ -1589,12 +1629,15 @@ void mergeClass::normalizeResults() {
       }
     }
     readoutNoise /= readoutCount;
-    if (it==2) {
-      cout<<"subtract: "<<readoutNoise<<endl;
-    }
     for (int iq=0; iq<NradAzmBins; iq++) {
       if (azimuthalAvg[it][iq] != NANVAL) {
         azimuthalAvg[it][iq] -= readoutNoise;
+      }
+
+      for (auto & sAzml : scanAzmAvg) {
+        if (sAzml.second[it][iq] != NANVAL) {
+          sAzml.second[it][iq] -= readoutNoise;
+        }
       }
     }
   }
@@ -1615,6 +1658,14 @@ void mergeClass::normalizeResults() {
   for (int iq=0; iq<NradAzmBins; iq++) {
     if (azmReference[iq] != NANVAL) {
       azmReference[iq] /= refNorm;
+    }
+
+    for (auto & sRitr : scanReferences) {
+      for (auto & pItr : sRitr.second) {
+        if (pItr.second.azmRef[iq] != NANVAL) {
+          pItr.second.azmRef[iq] /= refNorm;
+        }
+      }
     }
   }
 
@@ -1638,6 +1689,12 @@ void mergeClass::normalizeResults() {
     for (int iq=0; iq<NradAzmBins; iq++) {
       if (azimuthalAvg[it][iq] != NANVAL) {
         azimuthalAvg[it][iq] /= azmNorm;
+      }
+
+      for (auto & sAzml : scanAzmAvg) {
+        if (sAzml.second[it][iq] != NANVAL) {
+          sAzml.second[it][iq] /= azmNorm;
+        }
       }
     }
   }
@@ -1685,6 +1742,9 @@ void mergeClass::sMsNormalize() {
         azimuthalsMs[tm][ir] = NANVAL;
         runsMsMeans[tm][ir]  = NANVAL;
         runsMsSTD[tm][ir]    = NANVAL;
+      }
+      if (tm==2) {
+        cout<<"testing mean/std "<<ir<<" : "<<azimuthalAvg[tm][ir]<<"  "<<runAzmSTD[tm][ir]<<"    "<<azimuthalsMs[tm][ir]<<"  "<<runsMsSTD[tm][ir]<<endl;
       }
     }
     if (runAzmRefMeans[ir] != NANVAL) {

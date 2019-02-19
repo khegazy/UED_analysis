@@ -74,6 +74,7 @@ class mergeClass : public parameterClass {
     bool smearedTime;
     bool didSMSnormalize;
     bool didPairCorrSTD;
+    bool didSubtractT0;
 
 
     // Output files and location
@@ -137,7 +138,7 @@ class mergeClass : public parameterClass {
     void getImageMeanSTD();
     void mergeScans(bool refOnly=false, bool tdOnly=false);
     void subtractT0();
-    void normalizeResults();
+    void normalizeScansResults();
     void sMsNormalize();
     void smearTimeGaussian();
     void smearTimeFFT();

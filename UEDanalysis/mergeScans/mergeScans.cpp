@@ -157,6 +157,7 @@ int main(int argc, char* argv[]) {
 
   }
 
+  cout<<"Starting to make scan array"<<endl;
   std::vector< std::vector<double> > output(merge.scanAzmAvg.size());
   for (uint i=0; i<output.size(); i++) {
     output[i].resize(merge.NradAzmBins);
@@ -171,6 +172,7 @@ int main(int argc, char* argv[]) {
     }
     save::saveDat<double>(output, merge.mergeScansOutputDir + "scanArray_pos-" + to_string(pItr.first) + "_Bins[" + to_string(output.size()) + "," + to_string(merge.NradAzmBins) + "].dat");
   }
+  cout<<"Ending to make scan array"<<endl;
 
   ////////////////////////////////////////////
   /////  Subtract low order polynomials  /////
@@ -188,15 +190,17 @@ int main(int argc, char* argv[]) {
 
 
   //cout<<"removing outliers"<<endl;
-  merge.removeImageOutliers();
-  //merge.removeOutliers();
+  //merge.removeImageOutliers();
 
   merge.scaleByFit();
+  merge.removeOutliers();
+  merge.getRunMeanSTD();
+  exit(0);
 
   merge.mergeScans();
 
   // Normalize line outs
-  merge.normalizeResults();
+  merge.normalizeScansResults();
 
   // Get Mean and STD
   merge.getRunMeanSTD();
@@ -257,8 +261,12 @@ int main(int argc, char* argv[]) {
 
   /////  Normalize and get statistics  /////
 
+  cout<<"START COMPARING HERE"<<endl;
   // Normalize to get sM(s)
   merge.sMsNormalize();
+
+  // Make pair correlations
+  //merge.makePairCorrs();
 
   // Get Mean and STD
   merge.getRunMeanSTD();
@@ -285,12 +293,11 @@ int main(int argc, char* argv[]) {
       + runName + "-" + prefix + "azmAvgDiff["
       + to_string(merge.azimuthalAvg.size()) + ","
       + to_string(merge.azimuthalAvg[0].size()) + "].dat");
-
-  save::saveDat<double>(merge.azimuthalsMs, 
+  save::saveDat<double>(merge.runAzmSTD,
       merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "sMsAzmAvgDiff["
-      + to_string(merge.azimuthalAvg.size()) + ","
-      + to_string(merge.azimuthalAvg[0].size()) + "].dat");
+      + runName + "-" + prefix + "azmAvgSTD[" 
+      + to_string(merge.runAzmSTD.size()) + ","
+      + to_string(merge.runAzmSTD[0].size()) + "].dat");
 
   if (merge.smearedTime) {
     save::saveDat<double>(merge.smearedAzmAvg, 
@@ -300,15 +307,22 @@ int main(int argc, char* argv[]) {
         + to_string(merge.smearedAzmAvg.size()) + ","
         + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
     
-    save::saveDat<double>(merge.smearedAzmsMs, 
-      merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "tSmeared-"
-      + to_string(merge.timeSmearSTD) + "-sMsAzmAvgDiff["
-      + to_string(merge.smearedAzmAvg.size()) + ","
-      + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
+    if (merge.didSMSnormalize) {
+      save::saveDat<double>(merge.smearedAzmsMs, 
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix + "tSmeared-"
+        + to_string(merge.timeSmearSTD) + "-sMsAzmAvgDiff["
+        + to_string(merge.smearedAzmAvg.size()) + ","
+        + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
+    }
   }
 
   if (merge.didSMSnormalize) {
+    save::saveDat<double>(merge.azimuthalsMs, 
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix + "sMsAzmAvgDiff["
+        + to_string(merge.azimuthalAvg.size()) + ","
+        + to_string(merge.azimuthalAvg[0].size()) + "].dat");
     save::saveDat<double>(merge.runsMsMeans,
         merge.mergeScansOutputDir + "data-"
         + runName + "-" + prefix + "sMsMean[" 
@@ -316,7 +330,7 @@ int main(int argc, char* argv[]) {
         + to_string(merge.runAzmMeans[0].size()) + "].dat");
     save::saveDat<double>(merge.runsMsSTD,
         merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "sMsStandardDev[" 
+        + runName + "-" + prefix + "sMsSTD[" 
         + to_string(merge.runAzmSTD.size()) + ","
         + to_string(merge.runAzmSTD[0].size()) + "].dat");
 
@@ -328,10 +342,18 @@ int main(int argc, char* argv[]) {
     save::saveDat<double>(merge.runsMsRefSTD,
         merge.mergeScansOutputDir + "data-"
         + runName + "-" + prefix
-        + "referenceAzmsMsStandardDev[" 
+        + "referenceAzmsMsSTD[" 
         + to_string(merge.NradAzmBins) + "].dat");
   }
  
+  if (merge.didPairCorrSTD) {
+    save::saveDat<double>(merge.runPCorrSTD,
+        merge.mergeScansOutputDir + "data-"
+        + runName + "-" + prefix + "pairCorrSTD["
+        + to_string(merge.runPCorrSTD.size()) + ","
+        + to_string(merge.runPCorrSTD[0].size()) + "].dat");
+  }
+
 
 
   if (scanSearch) {
