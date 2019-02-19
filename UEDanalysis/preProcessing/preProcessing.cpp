@@ -144,7 +144,8 @@ int main(int argc, char* argv[]) {
 
   centerfnctr centfnctr;
   std::vector<double> center(2);
-  int centerC, centerR, Ncents;
+  float centerC, centerR;
+  int Ncents;
 
   double count;
 
@@ -298,8 +299,6 @@ int main(int argc, char* argv[]) {
       cv::GaussianBlur(imgMat, imgSmooth, cvSize(13,13), 2, 2);
       */
 
-      cout<<"image addr: "<<imgAddr<<endl;
-
       if (params.imgMatType.compare("uint16") == 0) {
         imgVec = imgProc::getImgVector<uint16_t>(imgSmooth, 
                     Nrows, Nrows/2, Ncols/2, true); 
@@ -354,6 +353,7 @@ int main(int argc, char* argv[]) {
         }
       }
       rsSTD = std::sqrt(rsSTD/rsCount);
+
 
       for (int ir=0; ir<Nrows; ir++) {
         for (int ic=0; ic<Ncols; ic++) {
@@ -670,7 +670,7 @@ int main(int argc, char* argv[]) {
     */
 
 
-  std::map<int, vector<int> > centers;
+  std::map<int, vector<float> > centers;
   ifstream infile("centers.txt");
   while (infile) {
     string s;
@@ -688,7 +688,7 @@ int main(int argc, char* argv[]) {
     while (ss) {
       if (!getline( ss, sss, ' ' )) break;
 
-      centers[stoi(pos)].push_back(std::round(stof(sss)));
+      centers[stoi(pos)].push_back(stof(sss));
     }
   }
 
@@ -831,9 +831,10 @@ int main(int argc, char* argv[]) {
  
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
 
-    //if (imgINFO[ifl].stagePos != 1543650) continue; 
+    //if (imgINFO[ifl].stagePos != 1542950) continue; 
     centerR = centers[imgINFO[ifl].stagePos][1];
     centerC = centers[imgINFO[ifl].stagePos][0];
+    cout<<"centers: "<<centerR<<"  "<<centerC<<endl;
 
     //cout<<"\n\n\n\nSTARTING"<<endl;
     /////  Check we are in the same run/scan  /////
@@ -1272,7 +1273,10 @@ int main(int argc, char* argv[]) {
             }
           }
 
-          radInd = (int)std::round(sqrt(pow(ir-centerR,2) + pow(ic-centerC,2)));
+          radInd = std::round(
+                      std::sqrt(
+                        std::pow(ir-centerR,2) + std::pow(ic-centerC,2)));
+
           if (radInd < params.NradAzmBins) {
             rawAzmAvg[radInd] += imgSubBkg[ir][ic];
             azmCounts[radInd] += 1;
@@ -1295,6 +1299,9 @@ int main(int argc, char* argv[]) {
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
       azmAvg[iq] = rawAzmAvg[iq];
+      //if (iq>=100 &&iq <=110) {
+      //  cout<<"azmAvg "<<iq<<" : "<<azmAvg[iq]<<endl;
+      //}
     }
     //save::saveDat<double>(azmAvg, "testcompareazmavg.dat");
       //plt.print1d(azmAvg, "azimuthalAvg_" + to_string(imgINFO[ifl].imgNum), logy, "true");
