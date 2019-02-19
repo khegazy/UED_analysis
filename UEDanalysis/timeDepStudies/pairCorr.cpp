@@ -195,6 +195,11 @@ int main(int argc, char* argv[]) {
     plt.printRC(tmdDiff, "./plots/importedTDdiff", pOpts, pVals);
   }
 
+
+  ///////////////////////////////////
+  /////  Importing Simulations  /////
+  ///////////////////////////////////
+
   std::string sMsSimName;
   std::vector<double> sMsSim(shape[1]), sMsSimDer(shape[1]);
   if (subtractReference) {
@@ -294,6 +299,8 @@ int main(int argc, char* argv[]) {
       lowQcoeffExists = true;
     }
   }
+
+
 
 
   ///////////////////////////////////////
