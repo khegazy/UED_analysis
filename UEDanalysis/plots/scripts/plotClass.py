@@ -19,12 +19,10 @@ class plotCLASS:
     ind1 = fileName.find("[")
     ind2 = fileName.find(",", ind1)
     while ind2 is not -1:
-      print("num", fileName[ind1+1:ind2])
       shape.append(int(fileName[ind1+1:ind2]))
       ind1 = ind2
       ind2 = fileName.find(",", ind1+1)
     ind2 = fileName.find("]", ind1)
-    print("inds", ind1, ind2)
     shape.append(int(fileName[ind1+1: ind2]))
 
     return shape
@@ -33,7 +31,6 @@ class plotCLASS:
 
 
   def importImage(self, fileName, getShape=True):
-    print("file", fileName)
     image = np.fromfile(fileName, dtype = np.double)
     if getShape:
       shape = self.getShape(fileName)
@@ -69,7 +66,8 @@ class plotCLASS:
 
   def print1d(self, 
       inpImages, outputName, 
-      X=None, xRange=None, normalize=None, 
+      X=None, xRange=None, 
+      errors=None, normalize=None, 
       scale=None, isFile=True,
       options=None):
 
@@ -80,8 +78,21 @@ class plotCLASS:
       if len(inpImages.shape) is 1:
         Nimages = 1
         inpImages = np.reshape(inpImages, (1,-1))
+        if errors is not None:
+          errors = np.reshape(errors, (1, -1))
       else:
         Nimages = inpImages.shape[0]
+
+    """
+    if options is not None:
+      if "errors" in options:
+        errors = options["errors"]
+      elif "errorFile" in options:
+        errors = []
+        for fl in options["errorFile"]:
+          err, _ = self.importImage(fl, False)
+          errors.append(err)
+    """
 
 
     handles = []
@@ -89,8 +100,14 @@ class plotCLASS:
     for i in range(Nimages):
       if isFile:
         image,_ = self.importImage(inpImages[i], False)
+        if errors is not None: 
+          if errors[i] is not None:
+            err, _ = self.importImage(errors[i], False)
       else:
         image = inpImages[i,:]
+        if errors is not None:
+          if errors[i] is not None:
+            err, _ = errors[i,:]
       if X is None:
         X = np.arange(image.shape[0])
         if xRange is not None:
@@ -99,20 +116,61 @@ class plotCLASS:
         if normalize is "max":
           if "normalize" in options:
             image /= np.amax(image[options["normalize"][0]:options["normalize"][1]])
+            if errors is not None:
+              if errors[i] is not None:
+                err /= np.amax(image[options["normalize"][0]:options["normalize"][1]])
           else:
             print("in max", np.amax(image))
-            image /= np.amax(image)
+            norm = np.amax(image)
+            image /= norm
+            if errors is not None:
+              if errors[i] is not None:
+                err /= norm
         elif normalize is "abs":
           image = np.abs(image)
         elif normalize is "0min":
           image -= np.amin(image)
         else:
           image -= np.mean(image[7:25])
-          image /= max(image[7:20])
+          norm = max(image[7:20])
+          image /= norm
+          if errors is not None:
+            if errors[i] is not None:
+              err /= norm
       if scale is not None:
         image *= scale[i]
+        if errors is not None:
+          image /= norm
 
-      h, = ax.plot(X, image, color=self.colors[i], linestyle='-')
+      if "xRebin" in options:
+        Nbins = int(np.ceil(float(image.shape[0])/options["xRebin"]))
+        pltImg  = np.zeros(Nbins)
+        pltX    = np.zeros(Nbins)
+        for j in range(Nbins):
+          pltImg[j] = np.mean(image[j*options["xRebin"]:(j+1)*options["xRebin"]])
+          pltX[j] = np.mean(X[j*options["xRebin"]:(j+1)*options["xRebin"]])
+
+        if errors is not None:
+          if errors[i] is not None:
+            pltErr = np.zeros(Nbins)
+            for j in range(Nbins):
+              pltErr[j] = np.mean(err[j*options["xRebin"]:(j+1)*options["xRebin"]]**2)
+              pltErr[j] /= len(err[j*options["xRebin"]:(j+1)*options["xRebin"]]) #SEM
+              pltErr[j] = np.sqrt(pltErr[j])
+      else:
+        pltImg = image
+        pltX = X
+        if errors is not None:
+          if errors[i] is not None:
+            pltErr = err
+
+      if errors is not None:
+        if errors[i] is not None:
+          h, _, _ = ax.errorbar(pltX, pltImg, yerr=pltErr, color=self.colors[i], linestyle='-')
+        else:
+          h, = ax.plot(pltX, pltImg, color=self.colors[i], linestyle='-')
+      else:
+        h, = ax.plot(pltX, pltImg, color=self.colors[i], linestyle='-')
       handles.append(h)
 
     ax.set_xlim(X[0], X[-1])
@@ -200,9 +258,10 @@ class plotCLASS:
       imageO,shape = self.importImage(inpImage)
       if "Diff" in inpImage:
         print("shape ",imageO.shape)
-        image = np.zeros((imageO.shape[0], 555/5), dtype=float)
-        for i in range(555/5):
-          image[:,i] = np.mean(imageO[:,i*5:(i+1)*5], axis=1)
+        image = np.zeros((imageO.shape[0], np.floor(555/8)+1), dtype=float)
+        for i in range(555/8):
+          image[:,i] = np.mean(imageO[:,i*8:(i+1)*8], axis=1)
+        image[:,-1] = np.mean(imageO[:,(i+1)*8:], axis=1)
       else :
         image = imageO
     else:
