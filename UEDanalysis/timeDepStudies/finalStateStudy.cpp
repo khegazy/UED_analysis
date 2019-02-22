@@ -17,12 +17,19 @@ int main(int argc, char* argv[]) {
   string runName(argv[1]);
   bool findBestTheoryMatch = false;
 
-  // Get parameters
+  ///  Get parameters  ///
   cout<<"RunName: "<<runName<<endl;
   parameterClass params(runName);
+  int mInd;
+  int offShift = 0;
+  int NfitParams = params.finalStates.size();
+  if (params.fsFitOffset) {
+    NfitParams += 1;
+    offShift = 1;
+  }
 
 
-  // Import Data
+  ///  Import Data  ///
   std::string diffFileName = "data-" + runName + "-azmAvgDiff";
   std::vector<int> shape  = save::getShape(
                                 params.mergeScansOutputDir, 
@@ -53,7 +60,140 @@ int main(int argc, char* argv[]) {
   save::importDat<double>(tmDpSMS, sMsFileName);
   save::importDat<double>(tmDpPairCorr, pairCorrFileName);
 
-  // Import reference
+  // Importing standard deviations
+  std::string sMsSEMfileName = 
+      params.mergeScansOutputDir 
+      + "data-" + runName + "-sMsSEM["
+      + to_string(shape[0]) + ","
+      + to_string(shape[1]) + "].dat";
+  std::string pairCorrSEMfileName = 
+      params.mergeScansOutputDir 
+      + "data-" + runName + "-pairCorrSEM["
+      + to_string(shape[0]) + ","
+      + to_string(params.maxRbins) + "].dat";
+
+
+  std::vector< std::vector<double> > tmDpSMSSEM(shape[0]);
+  std::vector< std::vector<double> > tmDpSMSvar(shape[0]);
+  std::vector< std::vector<double> > tmDpPairCorrSEM(shape[0]);
+  std::vector< std::vector<double> > tmDpPairCorrVar(shape[0]);
+  for (int it=0; it<shape[0]; it++) {
+    tmDpSMSSEM[it].resize(shape[1], 0);
+    tmDpSMSvar[it].resize(shape[1], 0);
+    tmDpPairCorrSEM[it].resize(params.maxRbins, 0);
+    tmDpPairCorrVar[it].resize(params.maxRbins, 0);
+  }
+  save::importDat<double>(tmDpSMSSEM, sMsSEMfileName);
+  save::importDat<double>(tmDpPairCorrSEM, pairCorrSEMfileName);
+
+  for (int it=0; it<shape[0]; it++) {
+    for (int iq=0; iq<shape[1]; iq++) {
+      tmDpSMSvar[it][iq] = std::pow(tmDpSMSSEM[it][iq], 2);
+    }
+
+    for (int ir=0; ir<params.maxRbins; ir++) {
+      tmDpPairCorrVar[it][ir] = std::pow(tmDpPairCorrSEM[it][ir], 2);
+    }
+  }
+
+  // Getting final state from data
+  std::vector<TH1*> hists(2);
+  std::vector<PLOToptions> opts(2);
+  std::vector<std::string> vals(2);
+  opts[0] = xLabel;   vals[0] = "Q [#AA^{-1}]";
+  opts[1] = xSpan;    vals[1] = to_string(0) + "," + to_string(params.maxQazm);
+  std::vector<double> finalState(params.NradAzmBins, 0);
+  std::vector<double> sMsFinalState(params.NradAzmBins, 0);
+  std::vector<double> sMsFinalStateScaled(params.NradAzmBins, 0);
+  std::vector<double> sMsFinalStateVar(params.NradAzmBins, 0);
+  std::vector<double> sMsFinalStateVarScaled(params.NradAzmBins, 0);
+  std::vector<double> sMsFinalStateSEM(params.NradAzmBins, 0);
+  std::vector<double> sMsFinalStateSEMScaled(params.NradAzmBins, 0);
+  std::vector<double> pairCorrFinalStateVar(params.maxRbins, 0);
+  std::vector<double> pairCorrFinalStateSEM(params.maxRbins, 0);
+
+  ///// Loop through events in the file /////
+  for (int it=shape[0]-1; it>shape[0]-1-params.NfinalPoints; it--) {
+    std::transform(tmDpDiffraction[it].begin(), tmDpDiffraction[it].end(),
+        finalState.begin(), finalState.begin(),
+        std::plus<double>());
+    std::transform(tmDpSMS[it].begin(), tmDpSMS[it].end(),
+        sMsFinalState.begin(), sMsFinalState.begin(),
+        std::plus<double>());
+    std::transform(tmDpSMSvar[it].begin(), tmDpSMSvar[it].end(),
+        sMsFinalStateVar.begin(), sMsFinalStateVar.begin(),
+        std::plus<double>());
+    std::transform(tmDpPairCorrVar[it].begin(), tmDpPairCorrVar[it].end(),
+        pairCorrFinalStateVar.begin(), pairCorrFinalStateVar.begin(),
+        std::plus<double>());
+    plt.print1d(tmDpSMSvar[it], "testVar_"+to_string(it));
+  //hists[0] = plt.print1d(simFinalState, "simFinalDiff");
+  //hists[0] = plt.print1d(simFinalState, "simFinalDiff");
+  //hists[1] = plt.print1d(tmDpDiffraction[it], "dataFinalDiff");
+  //plt.print1d(hists, "./compareFinalStateDiffraction_" + to_string(it), opts, vals);
+  }
+  delete hists[0];
+  delete hists[1];
+
+  for (int iq=0; iq<params.NradAzmBins; iq++) {
+    finalState[iq]        /= params.NfinalPoints;
+    sMsFinalState[iq]     /= params.NfinalPoints;
+    sMsFinalStateVar[iq]  /= std::pow(params.NfinalPoints, 2); // Power of two for SEM
+    sMsFinalStateSEM[iq]  = std::sqrt(sMsFinalStateVar[iq]);
+    sMsFinalStateScaled[iq]     = sMsFinalState[iq]
+                                    *exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+    sMsFinalStateSEMScaled[iq]  = sMsFinalStateSEM[iq]
+                                    *exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+    sMsFinalStateVarScaled[iq]  = sMsFinalStateVar[iq]
+                                    *std::pow(
+                                        exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar)), 2);
+  }
+    plt.print1d(sMsFinalStateVar, "testVar_Final");
+  for (int ir=0; ir<params.maxRbins; ir++) {
+    pairCorrFinalStateVar[ir]  /= std::pow(params.NfinalPoints, 2); // Power of two for SEM
+    pairCorrFinalStateSEM[ir]  = std::sqrt(pairCorrFinalStateVar[ir]);
+  }
+
+  std::string finalStateDataFileName = 
+      "data-" + runName 
+      + "_diffFinalState["
+      + to_string(shape[1]) + "].dat";
+  std::string finalStateDataSMSfileName = 
+      "data-" + runName 
+      + "_sMsFinalState["
+      + to_string(shape[1]) + "].dat";
+  std::string finalStateDataSMSScaledfileName = 
+      "data-" + runName 
+      + "_sMsFinalStateScaled["
+      + to_string(shape[1]) + "].dat";
+  std::string finalStateDataSMSSEMFileName = 
+      "data-" + runName 
+      + "_sMsFinalStateSEM["
+      + to_string(shape[1]) + "].dat";
+  std::string finalStateDataSMSSEMScaledFileName = 
+      "data-" + runName 
+      + "_sMsFinalStateSEMScaled["
+      + to_string(shape[1]) + "].dat";
+  std::string finalStateDataPairCorrSEMfileName = 
+      "data-" + runName 
+      + "_pairCorrFinalStateSEM["
+      + to_string(shape[1]) + "].dat";
+
+  save::saveDat<double>(finalState, 
+      params.mergeScansOutputDir + finalStateDataFileName);
+  save::saveDat<double>(sMsFinalState, 
+      params.mergeScansOutputDir + finalStateDataSMSfileName);
+  save::saveDat<double>(sMsFinalStateScaled, 
+      params.mergeScansOutputDir + finalStateDataSMSScaledfileName);
+  save::saveDat<double>(sMsFinalStateSEM, 
+      params.mergeScansOutputDir + finalStateDataSMSSEMFileName);
+  save::saveDat<double>(sMsFinalStateSEMScaled, 
+      params.mergeScansOutputDir + finalStateDataSMSSEMScaledFileName);
+  save::saveDat<double>(pairCorrFinalStateSEM, 
+      params.mergeScansOutputDir + finalStateDataPairCorrSEMfileName);
+
+
+  ///  Import Simulations  ///
   std::string simRefName =
       params.simOutputDir + "nitrobenzene_molDiffractionPatternLineOut_Qmax-"
       + to_string(params.maxQazm) + "_Ieb-"
@@ -70,7 +210,6 @@ int main(int argc, char* argv[]) {
       + to_string(params.elEnergy) + "_Bins["
       + to_string(shape[1]) + "].dat";
 
-
   std::vector<double> reference(shape[1]);
   std::vector<double> sMsReference(shape[1]);
   save::importDat<double>(reference, simRefName);
@@ -80,84 +219,48 @@ int main(int argc, char* argv[]) {
   plt.print1d(reference, "refTest");
   plt.print1d(sMsReference, "refsMsTest");
 
-  // Getting final state from data
-  std::vector<TH1*> hists(2);
-  std::vector<PLOToptions> opts(2);
-  std::vector<std::string> vals(2);
-  opts[0] = xLabel;   vals[0] = "Q [#AA^{-1}]";
-  opts[1] = xSpan;    vals[1] = to_string(0) + "," + to_string(params.maxQazm);
-  std::vector<double> finalState(params.NradAzmBins, 0);
-  std::vector<double> sMsFinalState(params.NradAzmBins, 0);
-  ///// Loop through events in the file /////
-  for (int it=shape[0]-1; it>shape[0]-1-params.NfinalPoints; it--) {
-    //if (it == 22 || it == 24) {
-    //  continue;
-    //}
-    std::transform(tmDpDiffraction[it].begin(), tmDpDiffraction[it].end(),
-        finalState.begin(), finalState.begin(),
-        std::plus<double>());
-    std::transform(tmDpSMS[it].begin(), tmDpSMS[it].end(),
-        sMsFinalState.begin(), sMsFinalState.begin(),
-        std::plus<double>());
-  //hists[0] = plt.print1d(simFinalState, "simFinalDiff");
-  //hists[0] = plt.print1d(simFinalState, "simFinalDiff");
-  //hists[1] = plt.print1d(tmDpDiffraction[it], "dataFinalDiff");
-  //plt.print1d(hists, "./compareFinalStateDiffraction_" + to_string(it), opts, vals);
-  }
-  delete hists[0];
-  delete hists[1];
-
-  for (int iq=0; iq<params.NradAzmBins; iq++) {
-    finalState[iq] /= params.NfinalPoints;
-    sMsFinalState[iq] /= params.NfinalPoints;
-  }
-
-  std::string finalStateDataFileName = 
-      "data-" + runName 
-      + "_diffFinalState["
-      + to_string(shape[1]) + "].dat";
-  std::string finalStateDataSMSfileName = 
-      "data-" + runName 
-      + "_sMsFinalState["
-      + to_string(shape[1]) + "].dat";
-
-  save::saveDat<double>(finalState, 
-      params.mergeScansOutputDir + finalStateDataFileName);
-  save::saveDat<double>(sMsFinalState, 
-      params.mergeScansOutputDir + finalStateDataSMSfileName);
-
 
   // Simulated final states
   int fillQbegin = (int)(shape[1]*params.fsQfitBegin/params.maxQazm);
   int fillQend   = (int)(shape[1]*params.fsQfitEnd/params.maxQazm);
   int fillRbegin = (int)(params.maxRbins*params.fsRfitBegin/params.maxR);
   int fillRend   = (int)(params.maxRbins*params.fsRfitEnd/params.maxR);
-  Eigen::Matrix<double, Eigen::Dynamic, 2> Xfit;
   Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Xqs;
   Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Xrs;
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Xfit;
   Eigen::Matrix<double, Eigen::Dynamic, 1> Yfit;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> W;
   Eigen::MatrixXd fit;
   Eigen::MatrixXd tmDpFit;
-  Xqs.resize(fillQend - fillQbegin, params.finalStates.size() + 1);
-  Xrs.resize(fillRend - fillRbegin, params.finalStates.size() + 1);
-  for (int i=0; i<fillQend - fillQbegin; i++) {
-    Xqs(i,0) = 1;
-  }
-  for (int i=0; i<fillRend - fillRbegin; i++) {
-    Xrs(i,0) = 1;
-  }
+  Xqs.resize(fillQend-fillQbegin, NfitParams);
+  Xrs.resize(fillRend-fillRbegin, NfitParams);
   std::vector<double> sMsFitCoeff(2,0), rawFitCoeff(2,0), pcFitCoeff(2,0);
   std::vector<double> pairCorrFinalState(params.maxRbins);
   std::vector<double> sMsFinalState_scaled(shape[1]);
   std::vector<double> finalState_scaled(shape[1]);
   std::vector<double> pairCorrFinalState_scaled(params.maxRbins);
+  std::vector< std::vector<double> > XqsOut(NfitParams);
+  std::vector< std::vector<double> > XrsOut(NfitParams);
   std::vector< std::vector<double> > simPairCorrFinalStates(params.finalStates.size());
   std::vector< std::vector<double> > simFinalDiffractions(params.finalStates.size());
   std::vector< std::vector<double> > simFinalSMSs(params.finalStates.size());
+
+  if (params.fsFitOffset) {
+    XqsOut[0].resize(fillQend-fillQbegin, 1);
+    XrsOut[0].resize(fillRend-fillRbegin, 1);
+    for (int i=0; i<fillQend - fillQbegin; i++) {
+      Xqs(i,0) = 1;
+    }
+    for (int i=0; i<fillRend - fillRbegin; i++) {
+      Xrs(i,0) = 1;
+    }
+  }
   for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
     simFinalDiffractions[ifs].resize(shape[1], 0);
     simFinalSMSs[ifs].resize(shape[1], 0);
     simPairCorrFinalStates[ifs].resize(params.maxRbins, 0);
+    XqsOut[ifs+offShift].resize(fillQend-fillQbegin, 0);
+    XrsOut[ifs+offShift].resize(fillRend-fillRbegin, 0);
   }
   for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
     std::string fsName = params.finalStates[ifs];
@@ -179,10 +282,10 @@ int main(int argc, char* argv[]) {
         + to_string(params.elEnergy) + "_Bins["
         + to_string(shape[1]) + "].dat";
 
-
     save::importDat<double>(simFinalDiffractions[ifs], simFinalName);
     save::importDat<double>(simFinalSMSs[ifs], simSMSfinalName);
-   
+
+
     // Simulation final state difference diffraction
     std::vector<double> simFinalState(shape[1]);
     std::vector<double> simSMSfinalState(shape[1]);
@@ -192,7 +295,6 @@ int main(int argc, char* argv[]) {
     }
     plt.print1d(simFinalState, fsName+"_simFinTest");
     plt.print1d(simSMSfinalState, fsName+"_simsMsFinTest");
-
 
     std::string finalStateSimFileName = fsName 
         + "_diffFinalState["
@@ -207,19 +309,60 @@ int main(int argc, char* argv[]) {
         simSMSfinalState, 
         params.simOutputDir + finalStateSimSMSfileName); 
           
-    // Fitting 
-    Xfit.resize(fillQend - fillQbegin, 2);
-    Yfit.resize(fillQend - fillQbegin, 1);
-    for (int iq=fillQbegin; iq<fillQend; iq++) {
-      Xfit(iq-fillQbegin,0)   = 1;
-      Xfit(iq-fillQbegin,1)   = simSMSfinalState[iq];
-      Xqs(iq-fillQbegin,ifs+1)= simSMSfinalState[iq];
-      Yfit(iq-fillQbegin,0)   = sMsFinalState[iq];
+
+    /////  Fitting Data  /////
+
+    Xfit.resize(fillQend-fillQbegin, 1+offShift);
+    Yfit.resize(fillQend-fillQbegin, 1);
+    W.resize(fillQend-fillQbegin, 1);
+    std::vector<double> YfitOut(params.NradAzmBins, 0);
+    std::vector<double> YfitSEMout(params.NradAzmBins, 0);
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      if ((iq >= fillQbegin) && (iq < fillQend)) {
+        mInd = iq - fillQbegin;
+        Xfit(mInd, 0) = 1;
+        Xfit(mInd, offShift) = simSMSfinalState[iq];
+        Xqs(mInd, ifs+offShift)     = simSMSfinalState[iq];
+        XqsOut[ifs+offShift][mInd]  = simSMSfinalState[iq];
+        if (params.fsFilterSMS) {
+          Yfit(mInd, 0) = sMsFinalStateScaled[iq];
+          W(mInd, 0)    = 1./sMsFinalStateVarScaled[iq];
+          Xfit(mInd, offShift)        *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+          Xqs(mInd, ifs+offShift)     *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+          XqsOut[ifs+offShift][mInd]  *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+        }
+        else {
+          Yfit(mInd, 0) = sMsFinalState[iq];
+          W(mInd, 0)    = 1./sMsFinalStateVar[iq];
+        }
+      }
+
+      if (params.fsFilterSMS) {
+        YfitOut[iq]     = sMsFinalStateScaled[iq];
+        YfitSEMout[iq]  = sMsFinalStateSEMScaled[iq];
+      }
+      else {
+        YfitOut[iq]     = sMsFinalState[iq];
+        YfitSEMout[iq]  = sMsFinalStateSEM[iq];
+      }
     }
 
-    fit = tools::normalEquation(Xfit, Yfit);
+    fit = tools::normalEquation(Xfit, Yfit, W);
+
+    if (params.fsFitOffset) {
+      std::fill(sMsFinalState_scaled.begin(), sMsFinalState_scaled.end(), fit(0));
+    }
+    else {
+      std::fill(sMsFinalState_scaled.begin(), sMsFinalState_scaled.end(), 0);
+    }
     for (int iq=0; iq<shape[1]; iq++) {
-      sMsFinalState_scaled[iq] = simSMSfinalState[iq]*fit(1) + fit(0);
+      if (params.fsFilterSMS) {
+        sMsFinalState_scaled[iq] += simSMSfinalState[iq]*fit(offShift)
+            *exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+      }
+      else {
+        sMsFinalState_scaled[iq] += simSMSfinalState[iq]*fit(offShift);
+      }
     }
 
     save::saveDat<double>(sMsFinalState_scaled, 
@@ -227,7 +370,21 @@ int main(int argc, char* argv[]) {
           + "_sMsFinalState_scaled[" 
           + to_string(shape[1]) + "].dat");
 
+    save::saveDat<double>(YfitOut,
+        params.mergeScansOutputDir 
+          + "/data-" + runName
+          + "_sMsFinalStateFittedTo["
+          + to_string(shape[1]) + "].dat");
+
+    save::saveDat<double>(YfitSEMout,
+        params.mergeScansOutputDir 
+          + "/data-" + runName
+          + "_sMsFinalStateSEMFittedTo["
+          + to_string(shape[1]) + "].dat");
+
+
   
+    /*
     for (int iq=fillQbegin; iq<fillQend; iq++) {
       Xfit(iq-fillQbegin,0) = 1;
       Xfit(iq-fillQbegin,1) = simFinalState[iq];
@@ -243,6 +400,7 @@ int main(int argc, char* argv[]) {
         "./results/sim-" + fsName 
           + "_diffFinalState_scaled[" 
           + to_string(shape[1]) + "].dat");
+          */
 
 
     ///////////////////////////////
@@ -273,12 +431,10 @@ int main(int argc, char* argv[]) {
           + " -Osuf _finalState").c_str());
     }
 
-    // Fitting 
     std::string simPairCorrName = 
         "./results/sim-" + fsName 
         + "_pairCorrOdd[" + to_string(params.maxRbins)
         + "].dat";
-    
     std::string pairCorrName = 
         "./results/data-" + runName 
         + "_finalState_pairCorrOdd[" 
@@ -287,19 +443,36 @@ int main(int argc, char* argv[]) {
     save::importDat<double>(simPairCorrFinalStates[ifs], simPairCorrName);
     save::importDat<double>(pairCorrFinalState, pairCorrName);
 
-    Xfit.resize(fillRend - fillRbegin, 2);
-    Yfit.resize(fillRend - fillRbegin, 1);
+
+    // Fitting 
+    Xfit.resize(fillRend-fillRbegin, 1+offShift);
+    Yfit.resize(fillRend-fillRbegin, 1);
+    W.resize(fillRend-fillRbegin, 1);
     for (int ir=fillRbegin; ir<fillRend; ir++) {
-      Xfit(ir-fillRbegin,0)   = 1;
-      Xfit(ir-fillRbegin,1)   = simPairCorrFinalStates[ifs][ir];
-      Xrs(ir-fillRbegin,ifs+1)= simPairCorrFinalStates[ifs][ir];
-      Yfit(ir-fillRbegin,0)   = pairCorrFinalState[ir];
+      mInd = ir - fillRbegin;
+      Xfit(mInd, 0) = 1;
+      Xfit(mInd, offShift) = simPairCorrFinalStates[ifs][ir];
+      Yfit(mInd, 0) = pairCorrFinalState[ir];
+      W(mInd, 0)    = 1/pairCorrFinalStateVar[ir];
+      Xrs(mInd, ifs+offShift)     = simPairCorrFinalStates[ifs][ir];
+      XrsOut[ifs+offShift][mInd]  = simPairCorrFinalStates[ifs][ir];
     }
 
-    fit = tools::normalEquation(Xfit, Yfit);
+    fit = tools::normalEquation(Xfit, Yfit, W);
+    if (params.fsFitOffset) {
+      std::fill(
+          pairCorrFinalState_scaled.begin(), 
+          pairCorrFinalState_scaled.end(), 
+          fit(0));
+    }
+    else {
+      std::fill(
+          pairCorrFinalState_scaled.begin(), 
+          pairCorrFinalState_scaled.end(), 
+          0);
+    }
     for (int ir=0; ir<params.maxRbins; ir++) {
-      /// FIXME: check if should be sim not paircorr
-      pairCorrFinalState_scaled[ir] = pairCorrFinalState[ir]*fit(1) + fit(0);
+      pairCorrFinalState_scaled[ir] += pairCorrFinalState[ir]*fit(offShift);
     }
 
     save::saveDat<double>(pairCorrFinalState_scaled, 
@@ -365,25 +538,69 @@ int main(int argc, char* argv[]) {
 
 
 
-  cout<<"starting fitting linear comb\n";
   ////////////////////////////////////////////////////////////
   /////  Fitting Linear Combination of All Final States  /////
   ////////////////////////////////////////////////////////////
 
+  std::string codeDir = "/reg/neh/home5/khegazy/baseTools/UEDanalysis/timeDepStudies/";
+  std::string XrsFileName = "./results/fitRvaluesX_Bins["
+      + to_string(XrsOut.size()) + ","
+      + to_string(XrsOut[0].size()) + "].dat";
+  std::string XqsFileName = "./results/fitSMSvaluesX_Bins["
+      + to_string(XqsOut.size()) + ","
+      + to_string(XqsOut[0].size()) + "].dat";
+  std::string coeffsFileName = "./results/fitCoefficients_Bins["
+      + to_string(XqsOut.size()) + "].dat";
+  std::string coeffErrsFileName = "./results/fitCoefficientErrors_Bins["
+      + to_string(XqsOut.size()) + "].dat";
+
+  save::saveDat<double>(XrsOut, XrsFileName);
+  save::saveDat<double>(XqsOut, XqsFileName);
+
   /////  Final State  /////
+  std::vector<double> Wout;
+  std::vector<double> Yout;
+  std::vector<double> fitCoeffs(NfitParams);
+  std::vector<double> fitCoeffErrs(NfitParams);
+  std::string WqFileName = "./results/fitQvaluesW_Bins["
+      + to_string(fillQend-fillQbegin) + "].dat";
+  std::string WrFileName = "./results/fitRvaluesW_Bins["
+      + to_string(fillRend-fillRbegin) + "].dat";
+  std::string YqFileName = "./results/fitQvaluesY_Bins["
+      + to_string(fillQend-fillQbegin) + "].dat";
+  std::string YrFileName = "./results/fitRvaluesY_Bins["
+      + to_string(fillRend-fillRbegin) + "].dat";
 
   ///  SMS  ///
-  Yfit.resize(fillQend - fillQbegin, 1);
+  Yout.resize(fillQend-fillQbegin);
+  Wout.resize(fillQend-fillQbegin);
   for (int iq=fillQbegin; iq<fillQend; iq++) {
-    Yfit(iq-fillQbegin,0)   = sMsFinalState[iq];
+    mInd = iq - fillQbegin;
+    if (params.fsFilterSMS) {
+      Yout[mInd]  = sMsFinalStateScaled[iq];
+      Wout[mInd]  = sMsFinalStateSEMScaled[iq];
+    }
+    else {
+      Yout[mInd]  = sMsFinalState[iq];
+      Wout[mInd]  = sMsFinalStateSEM[iq];
+    }
   }
 
-  fit = tools::normalEquation(Xqs, Yfit);
+  save::saveDat<double>(Wout, WqFileName);
+  save::saveDat<double>(Yout, YqFileName);
+
+  std::system(("python " + codeDir 
+      + "fitLinCurveFit.py --X " + XqsFileName
+      + " --Y " + YqFileName
+      + " --W " + WqFileName).c_str());
+
+  save::importDat<double>(fitCoeffs, coeffsFileName);
+  save::importDat<double>(fitCoeffErrs, coeffErrsFileName);
+
   std::vector<double> combinedQ(shape[1]);
   for (int iq=0; iq<shape[1]; iq++) {
-    combinedQ[iq] += fit(0);
-    for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
-      combinedQ[iq] += simFinalSMSs[ifs][iq]*fit(ifs+1);
+    for (int i=0; i<NfitParams; i++) {
+      combinedQ[iq] += XqsOut[i][iq]*fitCoeffs[i];
     }
   }
 
@@ -394,17 +611,29 @@ int main(int argc, char* argv[]) {
 
 
   ///  Pair Correlation  ///
-  Yfit.resize(fillRend - fillRbegin, 1);
+  Yout.resize(fillRend-fillRbegin);
+  Wout.resize(fillRend-fillRbegin);
   for (int ir=fillRbegin; ir<fillRend; ir++) {
-    Yfit(ir-fillRbegin,0)   = pairCorrFinalState[ir];
+    mInd = ir - fillRbegin;
+    Yout[mInd]  = pairCorrFinalState[ir];
+    Wout[mInd]  = pairCorrFinalStateVar[ir];
   }
 
-  fit = tools::normalEquation(Xrs, Yfit);
+  save::saveDat<double>(Wout, WrFileName);
+  save::saveDat<double>(Yout, YrFileName);
+
+  std::system(("python " + codeDir 
+      + "fitLinCurveFit.py --X " + XrsFileName
+      + " --Y " + YrFileName
+      + " --W " + WrFileName).c_str());
+
+  save::importDat<double>(fitCoeffs, coeffsFileName);
+  save::importDat<double>(fitCoeffErrs, coeffErrsFileName);
+
   std::vector<double> combinedR(params.maxRbins);
   for (int ir=0; ir<params.maxRbins; ir++) {
-    combinedR[ir] += fit(0);
-    for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
-      combinedR[ir] += simPairCorrFinalStates[ifs][ir]*fit(ifs+1);
+    for (int i=0; i<NfitParams; i++) {
+      combinedR[ir] += XrsOut[i][ir]*fitCoeffs[i];
     }
   }
 
@@ -414,42 +643,74 @@ int main(int argc, char* argv[]) {
       + to_string(combinedR.size()) + "].dat");
 
 
-  cout<<"starting time dep"<<endl;
   /////  Time Dependent  /////
-  Yfit.resize(fillQend - fillQbegin, 1);
+  Yout.resize(fillQend-fillQbegin);
+  Wout.resize(fillQend-fillQbegin);
   std::vector< std::vector<double> > combinedQs(tmDpSMS.size());
-  std::vector< std::vector<double> > tmDpQfits(params.finalStates.size()+1);
+  std::vector< std::vector<double> > tmDpQfits(NfitParams);
+  std::vector< std::vector<double> > tmDpQfitErrs(NfitParams);
+
+  ///  sMs  ///
   for (int i=0; i<(int)tmDpQfits.size(); i++) {
     tmDpQfits[i].resize(tmDpSMS.size());
+    tmDpQfitErrs[i].resize(tmDpSMS.size());
   }
   for (int it=0; it<(int)tmDpSMS.size(); it++) {
+    cout<<"time: "<<it<<endl;
     combinedQs[it].resize(params.NradAzmBins, 0);
     for (int iq=fillQbegin; iq<fillQend; iq++) {
-      Yfit(iq-fillQbegin,0) = tmDpSMS[it][iq];
+      mInd = iq - fillQbegin;
+      Yout[mInd]  = tmDpSMS[it][iq];
+      Wout[mInd]  = tmDpSMSSEM[it][iq];
+      if (params.fsFilterSMS) {
+        Yout[mInd] *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+        Wout[mInd] *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+      }
     }
 
-    tmDpFit = tools::normalEquation(Xqs, Yfit);
+    save::saveDat<double>(Wout, WqFileName);
+    save::saveDat<double>(Yout, YqFileName);
+
+    cout<<"Starting python fit"<<endl;
+    std::system(("python " + codeDir 
+        + "fitLinCurveFit.py --X " + XqsFileName
+        + " --Y " + YqFileName
+        + " --W " + WqFileName//).c_str());
+        + " --plot testFit_" + to_string(it)).c_str());
+
+    save::importDat<double>(fitCoeffs, coeffsFileName);
+    save::importDat<double>(fitCoeffErrs, coeffErrsFileName);
 
     for (int ifs=0; ifs<(int)tmDpQfits.size(); ifs++) {
-      tmDpQfits[ifs][it] = tmDpFit(ifs);
+      tmDpQfits[ifs][it]    = fitCoeffs[ifs];
+      tmDpQfitErrs[ifs][it] = fitCoeffErrs[ifs];
     }
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
-      combinedQs[it][iq] += tmDpFit(0);
-      for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
-        combinedQs[it][iq] += simFinalSMSs[ifs][iq]*tmDpFit(ifs+1);
+      for (int i=0; i<NfitParams; i++) {
+        combinedQs[it][iq] += XqsOut[i][iq]*fitCoeffs[i];
       }
     }
   }
-  save::saveDat<double>(tmDpQfits[0], 
-      "./results/sim-" + runName
-        + "-offset_sMsFitCoeffsLinComb_Bins[" 
-        + to_string(tmDpSMS.size()) + "].dat");
 
+  if (params.fsFitOffset) {
+    save::saveDat<double>(tmDpQfits[0], 
+        "./results/sim-" + runName
+          + "-offset_sMsFitCoeffsLinComb_Bins[" 
+          + to_string(tmDpSMS.size()) + "].dat");
+    save::saveDat<double>(tmDpQfitErrs[0], 
+        "./results/sim-" + runName
+          + "-offset_sMsFitCoeffErrorsLinComb_Bins[" 
+          + to_string(tmDpSMS.size()) + "].dat");
+  }
   for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
-    save::saveDat<double>(tmDpQfits[ifs+1], 
+    save::saveDat<double>(tmDpQfits[ifs+offShift], 
         "./results/sim-" + runName + "-" + params.finalStates[ifs]
           + "_sMsFitCoeffsLinComb_Bins[" 
+          + to_string(tmDpSMS.size()) + "].dat");
+    save::saveDat<double>(tmDpQfitErrs[ifs+offShift], 
+        "./results/sim-" + runName + "-" + params.finalStates[ifs]
+          + "_sMsFitCoeffErrorsLinComb_Bins[" 
           + to_string(tmDpSMS.size()) + "].dat");
   }
 
@@ -462,42 +723,67 @@ int main(int argc, char* argv[]) {
 
 cout<<"starting paircorr"<<endl;
 
-  Yfit.resize(fillRend - fillRbegin, 1);
+  ///  Pair Correlation  ///
+  Yout.resize(fillRend-fillRbegin);
+  Wout.resize(fillRend-fillRbegin);
   std::vector< std::vector<double> > combinedRs(tmDpPairCorr.size());
-  std::vector< std::vector<double> > tmDpRfits(params.finalStates.size()+1);
+  std::vector< std::vector<double> > tmDpRfits(NfitParams);
+  std::vector< std::vector<double> > tmDpRfitErrs(NfitParams);
   for (int i=0; i<(int)tmDpRfits.size(); i++) {
     tmDpRfits[i].resize(tmDpPairCorr.size());
+    tmDpRfitErrs[i].resize(tmDpPairCorr.size());
   }
   for (int it=0; it<(int)tmDpPairCorr.size(); it++) {
-    cout<<"init"<<endl;
     combinedRs[it].resize(params.NradAzmBins, 0);
     for (int ir=fillRbegin; ir<fillRend; ir++) {
-      Yfit(ir-fillRbegin,0) = tmDpPairCorr[it][ir];
+      mInd = ir - fillRbegin;
+      Yout[mInd] = tmDpPairCorr[it][ir];
+      Wout[mInd] = tmDpPairCorrSEM[it][ir];
     }
 
-    tmDpFit = tools::normalEquation(Xrs, Yfit);
+    save::saveDat<double>(Wout, WrFileName);
+    save::saveDat<double>(Yout, YrFileName);
+
+    std::system(("python " + codeDir 
+        + "fitLinCurveFit.py --X " + XrsFileName
+        + " --Y " + YrFileName
+        + " --W " + WrFileName).c_str());
+
+    save::importDat<double>(fitCoeffs, coeffsFileName);
+    save::importDat<double>(fitCoeffErrs, coeffErrsFileName);
 
     for (int ifs=0; ifs<(int)tmDpRfits.size(); ifs++) {
-      tmDpRfits[ifs][it] = tmDpFit(ifs);
+      tmDpRfits[ifs][it]    = fitCoeffs[ifs];
+      tmDpRfitErrs[ifs][it] = fitCoeffErrs[ifs];
     }
 
+
     for (int ir=0; ir<params.maxRbins; ir++) {
-      combinedRs[it][ir] += tmDpFit(0);
-      for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
-        combinedRs[it][ir] += simPairCorrFinalStates[ifs][ir]*tmDpFit(ifs+1);
+      for (int i=0; i<NfitParams; i++) {
+        combinedRs[it][ir] += XrsOut[i][ir]*fitCoeffs[i];
       }
     }
   }
 
-  save::saveDat<double>(tmDpRfits[0], 
-      "./results/sim-" + runName
-        + "-offset_pairCorrFitCoeffsLinComb_Bins[" 
-        + to_string(tmDpPairCorr.size()) + "].dat");
+  if (params.fsFitOffset) {
+    save::saveDat<double>(tmDpRfits[0], 
+        "./results/sim-" + runName
+          + "-offset_pairCorrFitCoeffsLinComb_Bins[" 
+          + to_string(tmDpPairCorr.size()) + "].dat");
+    save::saveDat<double>(tmDpRfitErrs[0], 
+        "./results/sim-" + runName
+          + "-offset_pairCorrFitCoeffErrorsLinComb_Bins[" 
+          + to_string(tmDpPairCorr.size()) + "].dat");
+  }
 
   for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
-    save::saveDat<double>(tmDpRfits[ifs+1], 
+    save::saveDat<double>(tmDpRfits[ifs+offShift], 
         "./results/sim-" + runName + "-" +params.finalStates[ifs] 
           + "_pairCorrFitCoeffsLinComb_Bins[" 
+          + to_string(tmDpSMS.size()) + "].dat");
+    save::saveDat<double>(tmDpRfitErrs[ifs+offShift], 
+        "./results/sim-" + runName + "-" +params.finalStates[ifs] 
+          + "_pairCorrFitCoeffErrorsLinComb_Bins[" 
           + to_string(tmDpSMS.size()) + "].dat");
   }
 
@@ -506,10 +792,6 @@ cout<<"starting paircorr"<<endl;
       + "_pairCorrFinalStateFitLinComb_Bins["
       + to_string(combinedRs.size()) + ","
       + to_string(combinedRs[0].size()) + "].dat");
-
-
-
-
 
 
 
