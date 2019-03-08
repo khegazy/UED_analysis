@@ -21,7 +21,7 @@
 
 using namespace std;
 
-enum PLOToptions {xLabel,yLabel,zLabel,xSpan,ySpan,zSpan,markerStyle,markerColor,markerSize,maximum,minimum,logx,logy,logz,pads,draw,fileType};
+enum PLOToptions {xLabel,yLabel,zLabel,xBinSpan,yBinSpan,zBinSpan,xSpan,ySpan,zSpan,markerStyle,markerColor,markerSize,maximum,minimum,logx,logy,logz,pads,draw,fileType};
 
 class PLOTclass {
 
@@ -38,6 +38,7 @@ class PLOTclass {
 	TH1* print1d(TH1* h, string name, PLOToptions opt, string val, string canv="orig");
 	TH1* print1d(TH1* h, string name, string canv="orig");
 	void print1d(vector<TH1*> hists, string name, string canv="orig");
+	void print1d(vector<TH1*> hists, string name, vector<PLOToptions> opts, vector<string> vals, string canv="orig");
 	TH1* print1d(vector<double> data, string name, string canv="orig");
 	TH1* print1d(vector<double> data, string name, PLOToptions opts, string vals, string canv="orig");
 	TH1* print1d(vector<double> data, string name, vector<PLOToptions> opts, vector<string> vals, string canv="orig");
@@ -83,6 +84,7 @@ class PLOTclass {
 	void executeCommand(TH1* h, PLOToptions opt, string inp);
 	void executeCommand(TH1* h, vector<PLOToptions> opts, vector<string> inps);
 	void setAxisSpan(TAxis* h, string range);
+	void setAxisBinSpan(TAxis* h, string range);
 	void drawHist(TH1* h, string opt);
 
    private:

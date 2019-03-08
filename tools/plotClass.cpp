@@ -83,8 +83,8 @@ TH1F* PLOTclass::plot1d(std::vector<double> data, std::string name) {
 
 TH1* PLOTclass::print1d(TH1* h, std::string name, std::vector<PLOToptions> opts, std::vector<std::string> vals, std::string canv) {
 
-  int id=-1;
   CANVS[canv]->can->cd();
+  int id=-1;
   for (int k=0; k<(int)opts.size(); k++) {
     if (opts[k] == draw) {id=k; continue;}
     executeCommand(h, opts[k], vals[k]);
@@ -123,6 +123,30 @@ void PLOTclass::print1d(std::vector<TH1*> hists, std::string name, std::string c
   for (uint ih=0; ih<hists.size(); ih++) hists[ih]->Draw("SAME");
   print(hists[0], name, canv); 
 }
+
+
+void PLOTclass::print1d(std::vector<TH1*> hists, std::string name, std::vector<PLOToptions> opts, std::vector<std::string> vals, std::string canv) {
+
+  CANVS[canv]->can->cd();
+  for (uint ih=0; ih<hists.size(); ih++) {
+    if (hists[ih]->GetMaximum() > hists[0]->GetMaximum()) hists[0]->SetMaximum();
+  }
+
+  for (int k=0; k<(int)opts.size(); k++) {
+    if (opts[k] == draw) {
+      cerr << "Implement Draw here/n"; 
+      exit(0);
+    }
+    for (uint ih=0; ih<hists.size(); ih++) {
+      executeCommand(hists[ih], opts[k], vals[k]);
+    }
+  }
+
+  hists[0]->Draw();
+  for (uint ih=0; ih<hists.size(); ih++) hists[ih]->Draw("SAME");
+  print(hists[0], name, canv); 
+}
+
 
 TH1* PLOTclass::print1d(std::vector<double> data, std::string name, std::vector<PLOToptions> opts, std::vector<std::string> vals, std::string canv) {
 
@@ -641,6 +665,29 @@ void PLOTclass::setAxisSpan(TAxis* ax, std::string range) {
 }
 
 
+void PLOTclass::setAxisBinSpan(TAxis* ax, std::string range) {
+
+  std::size_t spot;
+  spot = range.find(", ");
+  if (spot != std::string::npos) {
+    ax->SetRange(stof(range.substr(0,spot)), stof(range.substr(spot+2,(range.length()-(spot+2)))));
+    return;
+  }
+  spot = range.find(",");
+  if (spot != std::string::npos) {
+    ax->SetRange(stof(range.substr(0,spot)), stof(range.substr(spot+1,(range.length()-(spot+1)))));
+    return;
+  }
+  spot = range.find(" ");
+  if (spot != std::string::npos) {
+    ax->SetRange(stof(range.substr(0,spot)), stof(range.substr(spot+1,(range.length()-(spot+1)))));
+    return;
+  }
+
+  cerr<<"WARNING: Did not have the correct deliniation between min and max ("<<range<<"), must use ',' ' ' ', '!!!"<<std::endl;
+}
+
+
 void PLOTclass::doubleCanvas(std::string name, int width, int height, char type, float perc) {
 
   CANVS[name] = new canvas();
@@ -669,6 +716,9 @@ void PLOTclass::executeCommand(TH1* h, PLOToptions opt, std::string inp) {
 	    case xSpan: 	setAxisSpan(h->GetXaxis(), inp);   		return;
 	    case ySpan: 	setAxisSpan(h->GetYaxis(), inp);   		return;
 	    case zSpan: 	setAxisSpan(h->GetZaxis(), inp);   		return;
+	    case xBinSpan: 	setAxisBinSpan(h->GetXaxis(), inp);   		return;
+	    case yBinSpan: 	setAxisBinSpan(h->GetYaxis(), inp);   		return;
+	    case zBinSpan: 	setAxisBinSpan(h->GetZaxis(), inp);   		return;
 	    case markerStyle: 	h->SetMarkerStyle(stoi(inp));  			return; 
 	    case markerColor: 	h->SetMarkerColor(stoi(inp));   		return;
 	    case markerSize: 	h->SetMarkerSize(stof(inp));   			return;
