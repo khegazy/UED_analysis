@@ -94,7 +94,13 @@ namespace tools {
       PLOTclass* pltVerbose=NULL, std::string pltName="fftInput"); 
 
   // Machine Learning
-  Eigen::MatrixXd normalEquation(Eigen::MatrixXd X, Eigen::MatrixXd Y);
+  Eigen::MatrixXd normalEquation(
+      Eigen::MatrixXd X, 
+      Eigen::MatrixXd Y);
+  Eigen::MatrixXd normalEquation(
+      Eigen::MatrixXd X, 
+      Eigen::MatrixXd Y,
+      Eigen::VectorXd w);
   std::pair<Eigen::MatrixXcd, Eigen::VectorXcd>
     PCA(Eigen::MatrixXd inpArrays, bool zeroMean = true, bool unitVariance = true);
 
@@ -175,6 +181,7 @@ double tools::powellMin(fType fxn, vector<double>& p, vector<double> scale, vect
   vector<double> pP(Nvar), pE(Nvar), pf(Nvar), pi(Nvar), pdif(Nvar), avgDir(Nvar);
   vector< vector<double> > varDir;
 
+  cout<<"111"<<endl;
   varDir.resize(Nvar);
   for (int i=0; i<Nvar; i++) {
     varDir[i].resize(Nvar);
@@ -183,8 +190,11 @@ double tools::powellMin(fType fxn, vector<double>& p, vector<double> scale, vect
   }
 
 
+  cout<<"222"<<endl;
   fVal = fxn(p);
+  cout<<"333"<<endl;
   for (iter=0; ; ++iter) {
+    cout<<"iter: "<<iter<<endl;
     fValPo=fVal;
     pP=p;
     del=0;
@@ -242,8 +252,7 @@ double tools::powellMin(fType fxn, vector<double>& p, vector<double> scale, vect
     for (k=0; k<Nvar; k++) pass = pass && (fabs(pP[k]-p[k])<powellTol[k]);
     if (pass) break;
     if (iter > ITMAX) {
-      cerr << "ERROR: Powell method reached the maximum iterations without satisfying tolerance!!!" << endl;
-      exit(0);
+      throw std::string("ERROR: Powell method reached the maximum iterations without satisfying tolerance!!!");
     }
 
     // Recalculating the scale of the window around min guess
@@ -265,7 +274,7 @@ return fVal;
 template <typename fType>
 double tools::powellMin(fType fxn, vector<double>& p, double scale, double minScale, double powellTol, double fracTol1d, bool verbose) {
 
-  if (verbose) cout<<"ENTERING POWELLMIN"<<endl<<endl;
+  if (verbose) cout<<"ENTERING POWELLMIN HERE"<<endl<<endl;
   const int ITMAX = 200;
   int Nvar = p.size();
   double fVal, fValP, fValPo, del, vmag;
@@ -342,7 +351,7 @@ double tools::powellMin(fType fxn, vector<double>& p, double scale, double minSc
     for (k=0; k<Nvar; k++) pass = pass && (fabs(pP[k]-p[k])<powellTol);
     if (pass) break;
     if (iter > ITMAX) {
-      cerr<<"ERROR: Powell method reached the maximum iterations without satisfying tolerance!!!"<<endl;
+      throw std::string("ERROR: Powell method reached the maximum iterations without satisfying tolerance!!!");
       exit(0);
     }
 
