@@ -4,37 +4,6 @@
 using namespace std;
 
 
-
-class centerfnctr {
-
-    public:
-        int fxnType;
-        int minRadBin;
-        int centShellW;
-        imgProc::radProcTool* radProc;
-        std::vector< std::vector<double> >* img;
-
-        //centerfnctr();
-
-        double operator() (std::vector<double> vect) {
-          if (fxnType == 0)  return imgProc::centerSymXsqr(img, vect[0], vect[1], 8, 1, minRadBin, centShellW, true);
-          if (fxnType == 1)  return imgProc::centerOddLeg(img, vect[0], vect[1], 1, minRadBin, centShellW, true);
-          if (fxnType == 2)  {
-            if (!radProc) {
-              std::cerr << "ERROR: Must specifiy radProc in centerfnctr to use this option!!!\n";
-              exit(0);
-            }
-            return radProc->radialSliceVar(img, vect[0], vect[1], minRadBin, centShellW);
-          }
-          else {
-            cerr << "ERROR: Did not select a correct center finding alogrithm, now exiting!!!\n\n";
-            exit(0);
-          }
-          //N2 return imgProc::centerOddLeg(img, vect[0], vect[1], 1, 70, 40, true, NANVAL);
-        }
-};
-         
-
 int main(int argc, char* argv[]) {
 
 
@@ -45,9 +14,9 @@ int main(int argc, char* argv[]) {
 
 
   if (argc != 2) {
-    cerr << "ERROR: Must run program a list of files" 
-      << " ./preProcessing.exe runList.txt!!!" << endl;
-    exit(0);
+    std::cerr << "ERROR: Must run program a list of files" 
+      << " ./preProcessing.exe runList.txt!!!\n";
+    exit(1);
   }
 
   std::string runListName(argv[1]);
@@ -73,8 +42,8 @@ int main(int argc, char* argv[]) {
       doBackground = true;
     }
     else {
-      cerr << "ERROR: Cannot find runName!!!\n";
-      exit(0);
+      std::cerr << "ERROR: Cannot find runName!!!\n";
+      exit(1);
     }
     runName = runListName.substr(iPos, 
         runListName.find("_Scan-") - iPos);
@@ -84,6 +53,7 @@ int main(int argc, char* argv[]) {
   PLOTclass plt;
 
 
+  //plt.printRC(params.nanMap, "testingNANmap");
 
   const int Nlegendres = 1;
   const int NradLegBins = 50;
@@ -93,23 +63,27 @@ int main(int argc, char* argv[]) {
   const int imgSize = 895;
 
   if (Nlegendres != params.Nlegendres) {
-    cerr << "ERROR: parameter Nlegendres does not match with parameter class!!!\n";
-    exit(0);
+    std::cerr 
+      << "ERROR: parameter Nlegendres does not match with parameter class!!!\n";
+    exit(1);
   }
   if (NradLegBins != params.NradLegBins) {
-    cerr << "ERROR: parameter NradLegBins does not match with parameter class!!!\n";
-    exit(0);
+    std::cerr 
+      << "ERROR: parameter NradLegBins does not match with parameter class!!!\n";
+    exit(1);
   }
   if (imgSize != params.imgSize) {
-    cerr << "ERROR: parameter imgSize does not match with parameter class!!!\n";
-    exit(0);
+    std::cerr 
+      << "ERROR: parameter imgSize does not match with parameter class!!!\n";
+    exit(1);
   }
 
 
    // Make sure the image has odd number of bins
   if (!(imgSize%2) || !(imgSize%2)) {
-    cerr << "ERROR: imgSize and imgSize must be an odd number!!!" << endl;
-    exit(0);
+    std::cerr 
+      << "ERROR: imgSize and imgSize must be an odd number!!!\n";
+    exit(1);
   }
 
   imgProc::radProcTool radProc(params.shellWidth, params.NradAzmBins);
@@ -134,15 +108,23 @@ int main(int argc, char* argv[]) {
     stdRatioImg[ir].resize(imgSize, 0);
   }
 
-  fftw_complex* fftIn = (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgSize*imgSize);
-  fftw_complex* fftOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgSize*imgSize);
-  fftw_plan fftFref = fftw_plan_dft_2d(imgSize, imgSize, fftIn, fftOut, FFTW_FORWARD, FFTW_MEASURE);
-  fftw_plan fftBref = fftw_plan_dft_2d(imgSize, imgSize, fftIn, fftOut, FFTW_BACKWARD, FFTW_MEASURE);
+  fftw_complex* fftIn = 
+      (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgSize*imgSize);
+  fftw_complex* fftOut = 
+      (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgSize*imgSize);
+  fftw_plan fftFref = fftw_plan_dft_2d(
+      imgSize, imgSize, 
+      fftIn, fftOut, 
+      FFTW_FORWARD, FFTW_MEASURE);
+  fftw_plan fftBref = fftw_plan_dft_2d(
+      imgSize, imgSize, 
+      fftIn, fftOut, 
+      FFTW_BACKWARD, FFTW_MEASURE);
 
 
   std::vector< std::vector<double> > radBins;
 
-  centerfnctr centfnctr;
+  imgProc::centerfnctr centfnctr;
   std::vector<double> center(2);
   float centerC, centerR;
   int Ncents;
@@ -183,9 +165,21 @@ int main(int argc, char* argv[]) {
   ///// Filter Parameters  /////
   int filtFFToutSize = (int)(params.NradAzmBins/2 + 1);
   double* qSpace = (double*) fftw_malloc(sizeof(double)*(params.NradAzmBins));
-  fftw_complex* rSpace = (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*filtFFToutSize);
-  fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(params.NradAzmBins, qSpace, rSpace, FFTW_MEASURE);
-  fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(params.NradAzmBins, rSpace, qSpace, FFTW_MEASURE);
+  fftw_complex* rSpace = (fftw_complex*) fftw_malloc(
+      sizeof(fftw_complex)*filtFFToutSize);
+  fftw_plan filtFFTf = fftw_plan_dft_r2c_1d(
+      params.NradAzmBins, 
+      qSpace, rSpace, 
+      FFTW_MEASURE);
+  fftw_plan filtFFTb = fftw_plan_dft_c2r_1d(
+      params.NradAzmBins, 
+      rSpace, qSpace, 
+      FFTW_MEASURE);
+
+  Eigen::Matrix<double, Eigen::Dynamic, 2> X;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> Y;
+  Eigen::VectorXd w, fit;
+
 
   std::string filterName = 
       "/reg/neh/home/khegazy/analysis/filters/" + params.filterType
@@ -207,7 +201,28 @@ int main(int argc, char* argv[]) {
   std::vector<double> bandPassFilter(filtFFToutSize);
   save::importDat<double>(bandPassFilter, filterName);
 
-  // Calculate sMs normalization
+  /////  Testing/Debugging variables  /////
+  TH1F** xRayHitHistos = NULL;
+  if (params.xRayHitDist) {
+    xRayHitHistos = new TH1F*[2];
+    xRayHitHistos[0] = new TH1F("xRayHits_high", "xRayHits_high", 500, 0, params.XrayHighCut);
+    xRayHitHistos[1] = new TH1F("xRayHits_low", "xRayHits_low", 500, 0, params.XrayHighCut);
+  }
+
+  TH1F** radPixelHistos = NULL;
+  if (params.radPixDist) {
+    radPixelHistos = new TH1F*[params.NradAzmBins];
+    for (int i=0; i<params.NradAzmBins; i++) {
+      radPixelHistos[i] = new TH1F(
+            ("radPixDist_rad-" + to_string(i)).c_str(),
+            ("radPixDist_rad-" + to_string(i)).c_str(),
+            2000, -2000, 2000);
+    }
+  }
+
+
+
+  /////  Calculate sMs normalization  /////
   std::vector<double> atmDiff(params.NradAzmBins);
   std::vector<double> sMsNorm(params.NradAzmBins);
   if (!doRunLists) {
@@ -250,6 +265,7 @@ int main(int argc, char* argv[]) {
 
   string imgAddr = imgINFO[0].path + imgINFO[0].fileName;
   cv::Mat imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+  cv::Mat imgSmooth;
   int Nrows = imgMat.rows;
   int Ncols = imgMat.cols;
   std::vector< std::vector<double> > imgOrig(Nrows);
@@ -289,7 +305,7 @@ int main(int argc, char* argv[]) {
         }
       }
 
-      cv::Mat imgSmooth = imgMat;
+      imgSmooth = imgMat;
       /*
       cv::Mat imgSmooth(Nrows, Ncols, imgMat.type());
       cv::medianBlur(imgMat, imgSmooth, 5);
@@ -308,9 +324,9 @@ int main(int argc, char* argv[]) {
                     Nrows, Nrows/2, Ncols/2, true);
       }  
       else {
-        cerr << "ERROR: Do not recognize imgMatType = " 
+        std::cerr << "ERROR: Do not recognize imgMatType = " 
             + params.imgMatType + "!!!\n";
-        exit(0);
+        exit(1);
       }
 
       ///  Remove Xray hits  ///
@@ -456,7 +472,9 @@ int main(int argc, char* argv[]) {
             ind++;
           }
 
-          double mean = std::accumulate(collection.begin(), collection.end(), 0);
+          double mean = std::accumulate(
+              collection.begin(), 
+              collection.end(), 0);
           mean /= collection.size();
           imgBkg[ir][ic] = mean;
         }
@@ -559,11 +577,6 @@ int main(int argc, char* argv[]) {
                               /(2*params.pvSampleTimes));
         }
       }
-
-      //plt.print1d(pvPressure, "./plots/pressureSmooth");
-      //plt.print1d(pvPressureDer, "./plots/pressureDer");
-      //plt.print1d(pvOrigPressure, "./plots/pressure");
-      //exit(0);
     }
   }
 
@@ -640,213 +653,28 @@ int main(int argc, char* argv[]) {
   if (params.verbose) cout << "INFO: Tree and file are setup!\n";
 
 
-  //////////////////////////////////
-  /////  Checking if bad scan  /////
-  //////////////////////////////////
-
-  /*
-  if (std::find(params.badScans.begin(), params.badScans.end(), imgINFO[ifl].scan)
-        != params.badScans.end()) {
-    std::cout << "INFO: This is a bad scan, saving empty tree and exiting!!!\n";
-    tree->Write();
-    file->Close();
-    exit(1);
-  }
-  */
-  
-  //////////////////////////////////
-  /////  Rough center finding  /////
-  //////////////////////////////////
-  std::vector<int> centersCOM;
-  /*
-  if (params.verbose) cout << "\n\nINFO: Start COM center finding\n"; 
-  std::vector<int> centersCOM = imgProc::centerSearchCOM(imgINFO,
-      params.hotPixel, params.sigma,
-      params.blockCentR, params.blockCentC, params.minRad, params.maxRad,
-      params.meanInd, params.COMstdScale, params.verbose, NULL); //&plt);
-
-  if (params.verbose) std::cout << "COMcenters: " 
-    << centersCOM[0] << "  " << centersCOM[1] << endl;
-    */
-
-
-  std::map<int, vector<float> > centers;
-  ifstream infile("centers.txt");
-  while (infile) {
-    string s;
-    if (!getline( infile, s )) break;
-
-    istringstream ss( s );
-
-    string sss;
-    if (!getline( ss, sss, ' ' )) break;
-    if (stoi(sss) != imgINFO[0].scan) continue;
-
-    string pos;
-    getline( ss, pos, ' ' );
-    
-    while (ss) {
-      if (!getline( ss, sss, ' ' )) break;
-
-      centers[stoi(pos)].push_back(stof(sss));
-    }
-  }
-
-
-  /////////////////////////////////
-  /////  Fine center finding  /////
-  /////////////////////////////////
-
-  if (localTesting || true) {
-    /*
-    centersCOM[0] = 568;
-    centersCOM[1] = 495; //494;
-    centerR = centersCOM[0];
-    centerC = centersCOM[1];
-    cout<<"centers "<<centerR<<"  "<<centerC<<endl;
-    */
-  }
-  else {
-    if (params.verbose) cout << "\n\nINFO: Starting fine center Finding!\n";
-    centerR = centerC = Ncents = 0;
-    for (int icnt=0; icnt<std::min(params.NavgCenters, (int)imgINFO.size()); icnt++) {
-
-      /// Filling image std::vector ///
-      imgAddr = imgINFO[icnt].path + imgINFO[icnt].fileName;
-      imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-      cout<<"centering image addr: "<<imgAddr<<endl;
-
-      Nrows = imgMat.rows;
-      Ncols = imgMat.cols;
-      if (params.imgMatType.compare("uint16") == 0) {
-        if (params.hasLaserBkg) {
-          imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                      params.holeRad, params.holeR, params.holeC,
-                      &params.nanMap);
-        }
-        else {
-          imgCent = imgProc::getImgVector<uint16_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                      params.holeRad, params.holeR, params.holeC);
-        }
-      }  
-      else if (params.imgMatType.compare("uint32") == 0) {
-        if (params.hasLaserBkg) {
-          imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                      params.holeRad, params.holeR, params.holeC,
-                      &params.nanMap);
-        }
-        else {
-          imgCent = imgProc::getImgVector<uint32_t>(imgMat, 
-                      Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                      params.holeRad, params.holeR, params.holeC);
-        }
-      }  
-      else {
-        cerr << "ERROR: Do not recognize imgMatType = " 
-            + params.imgMatType + "!!!\n";
-        exit(0);
-      }
-
-      // Remove Xray hits
-      imgProc::removeXrayHits(
-          &imgCent, 
-          params.XrayHighCut, params.XrayLowCut, 
-          params.XraySTDcut, params.XrayWindow);
-
-      //  Remove pixel outliers
-      radProc.removeOutliers(imgCent,  
-          centersCOM[0], centersCOM[1], params.imgEdgeBuffer,
-          500, params.shellWidth, params.Npoly,
-          params.stdIncludeLeft, params.distSTDratioLeft,
-          params.stdCutLeft, params.meanBinSize,
-          params.stdIncludeRight, params.distSTDratioRight,
-          params.stdChangeRatio, params.stdCutRight,
-          imgINFO[icnt].stagePos, params.outlierMapSTDcut,
-          false, params.outlierVerbose, NULL);
-
-    
-      // Remove readout noise
-      if (params.verbose) std::cout << "\tSubtract readout noise.\n";
-      imgProc::removeReadOutNoise(imgCent);
-
-      if (params.pltVerbose) {
-        pltOpts[0] = minimum;	pltVals[0] = "0";
-        pltOpts[1] = maximum;	pltVals[1] = "200";
-        plt.printRC(imgCent, 
-            "plots/center_holeRemoval" + to_string(imgINFO[icnt].imgNum),
-            pltOpts, pltVals);
-      }
-   
-      center[0] = centersCOM[0];
-      center[1] = centersCOM[1];
-      centfnctr.radProc     = &radProc;
-      centfnctr.fxnType     = params.centerFxnType;
-      centfnctr.minRadBin   = params.centerMinRadBin;
-      centfnctr.centShellW  = params.centerShellWidth;
-      centfnctr.img         = &imgCent;
-      //centfnctr.verbose     = params.verbose;
-
-      if (params.verbose) std::cout << "\tSearching for center (PowellMin) ... ";
-      tools::powellMin<centerfnctr> (centfnctr, center, 
-          params.cntrScale, params.cntrMinScale, 
-          params.cntrPowellTol, params.cntrFracTol1d);
-      if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
-
-      //if ((curDate == "20131102") && (curScan == "LongScan1")) {
-      //  center[0] = 569;
-      //  center[1] = 490;
-      //}
-      centerR += center[0];
-      centerC += center[1];
-      Ncents += 1;
-
-      // Show image center
-      if (params.pltCent) {
-        TH2F* cImg = plt.plotRC(imgCent, "plots/centeredImage"+to_string(icnt), maximum, "1500");
-        for (int ir=(center[0])-5; ir<=center[0]+5; ir++) {
-          for (int ic=(center[1])-5; ic<=center[1]+5; ic++) {
-            if (sqrt(pow(ir-center[0],2)+pow(ic-center[1],2)) < 5) 
-              cImg->SetBinContent(ic, ir, 100000);
-          }
-        }
-        cImg->SetMinimum(-1);
-        plt.print2d(cImg, "plots/centeredImage"+to_string(icnt));
-        delete cImg;
-      }
-
-    }
-    centerR /= Ncents;
-    centerC /= Ncents;
-    if (params.verbose) cout << "INFO: Found center " << centerR 
-                  << " "<< centerC << "!\n\n";
-  }
-
-
   ///////////////////////////////////////
   /////  Processing images in scan  /////
   ///////////////////////////////////////
  
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
+    std::cout << "INFO: processing image: " << imgINFO[ifl].fileName << endl;
 
     //if (imgINFO[ifl].stagePos != 1542950) continue; 
-    centerR = centers[imgINFO[ifl].stagePos][1];
-    centerC = centers[imgINFO[ifl].stagePos][0];
-    cout<<"centers: "<<centerR<<"  "<<centerC<<endl;
 
-    //cout<<"\n\n\n\nSTARTING"<<endl;
     /////  Check we are in the same run/scan  /////
-    if ((imgINFO[ifl].run.compare(curRun) != 0) && (imgINFO[ifl].scan != curScan)) {
+    if ((imgINFO[ifl].run.compare(curRun) != 0) 
+        && (imgINFO[ifl].scan != curScan)) {
+
       std::cerr << "ERROR new image in run/scan " << imgINFO[ifl].run 
         << "/" << imgINFO[ifl].scan << " instead of " 
         << curRun << "/" << curScan << endl;
-      exit(0);
+      exit(1);
     }
 
     if (params.verbose) cout << "\tStage position: " 
       + to_string(imgINFO[ifl].stagePos) << endl;
+
 
     /////  Check if reference image  /////
     imgIsRef = 0;
@@ -855,6 +683,7 @@ int main(int argc, char* argv[]) {
         imgIsRef = 1;
       }
     }
+
 
     /////  Image number (ordered)  /////
     imgNum = imgINFO[ifl].imgNum;
@@ -873,6 +702,7 @@ int main(int argc, char* argv[]) {
       throttle = imgINFO[ifl].throttle;
     }
 
+
     /////  Get PV values  /////
     if (params.getPVs) {
       for (auto const & pv : params.pvMap) {
@@ -890,6 +720,110 @@ int main(int argc, char* argv[]) {
       }
     }
  
+
+    /////  Find Center  /////
+    imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
+    imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+
+    Nrows = imgMat.rows;
+    Ncols = imgMat.cols;
+    cv::GaussianBlur(imgMat, imgSmooth, cvSize(21,21), 5, 5);
+    if (params.imgMatType.compare("uint16") == 0) {
+      imgCent = imgProc::getImgVector<uint16_t>(imgSmooth, 
+                  Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+                  params.holeRad, params.holeR, params.holeC,
+                  &params.nanMap);
+    }  
+    else if (params.imgMatType.compare("uint32") == 0) {
+      imgCent = imgProc::getImgVector<uint32_t>(imgSmooth, 
+                  Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+                  params.holeRad, params.holeR, params.holeC,
+                  &params.nanMap);
+    }  
+    else {
+      std::cerr << "ERROR: Do not recognize imgMatType = " 
+          + params.imgMatType + "!!!\n";
+      exit(1);
+    }
+
+    // Remove Xray hits
+    imgProc::removeXrayHits(
+        &imgCent, 
+        params.XrayHighCut, params.XrayLowCut, 
+        params.XraySTDcut, params.XrayWindow);
+
+    // Average center at different radii
+    centerR = 0;
+    centerC = 0;
+    Ncents = 0;
+    for (auto const & cvi : params.meanInds) {
+
+      std::vector<int> indsR;
+      std::vector<int> indsC;
+      double val = imgCent[cvi][512];
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if ((imgCent[ir][ic] > val) && (imgCent[ir][ic] <= val + 5)) {
+            indsR.push_back(ir);
+            indsC.push_back(ic);
+          }
+        }
+      }
+
+      center[0] = std::accumulate(indsR.begin(), indsR.end(), 0);
+      center[0] /= indsR.size();
+      center[1] = std::accumulate(indsC.begin(), indsC.end(), 0);
+      center[1] /= indsC.size();
+      centfnctr.fxnType     = params.centerFxnType;
+      centfnctr.indsR       = &indsR;
+      centfnctr.indsC       = &indsC;
+      //centfnctr.verbose     = params.verbose;
+
+      if (params.verbose) std::cout << "\tSearching for center (PowellMin) ... ";
+      try {
+        tools::powellMin<imgProc::centerfnctr> (centfnctr, center, 
+            params.cntrScale, params.cntrMinScale, 
+            params.cntrPowellTol, params.cntrFracTol1d);
+      }
+      catch (std::string err) {
+        std::cerr << err << std::endl;
+        center[0] = std::accumulate(indsR.begin(), indsR.end(), 0);
+        center[0] /= indsR.size();
+        center[1] = std::accumulate(indsC.begin(), indsC.end(), 0);
+        center[1] /= indsC.size();
+      }
+      if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
+
+      //cout<<"temp cent: "<<center[0]<<"  "<<center[1]<<endl;
+      centerR += center[0];
+      centerC += center[1];
+      Ncents += 1;
+    }
+
+    centerR = std::round(centerR/Ncents);
+    centerC = std::round(centerC/Ncents);
+    //cout<<"final center "<<imgINFO[ifl].stagePos<<": "<<centerR<<"  "<<centerC<<endl;
+    // Show image center
+    if (params.pltCent) {
+      TH2F* cImg = plt.plotRC(
+          imgCent, 
+          "plots/centeredImage"
+            + to_string(imgINFO[ifl].stagePos), 
+          maximum, "1500");
+      for (int ir=(centerR)-5; ir<=centerR+5; ir++) {
+        for (int ic=(centerC)-5; ic<=centerC+5; ic++) {
+          if (sqrt(pow(ir-centerR,2)+pow(ic-centerC,2)) < 5) 
+            cImg->SetBinContent(ic, ir, 100000);
+        }
+      }
+      cImg->SetMinimum(-1);
+      plt.print2d(cImg, 
+          "plots/centeredImage"
+            + to_string(imgINFO[ifl].stagePos));
+      delete cImg;
+    }
+
+
     ///////  Load image  ///////
     imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
     if (params.verbose) cout << "INFO: Trying to open " << imgAddr << "\t .....";
@@ -897,49 +831,27 @@ int main(int argc, char* argv[]) {
     if (params.verbose) cout << "\tpassed!\n\n";
 
     if (params.imgMatType.compare("uint16") == 0) {
-      if (params.hasLaserBkg) {
-        imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, NULL,
-            params.holeRad, params.holeR, params.holeC);
-        imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-            params.holeRad, params.holeR, params.holeC,
-            &params.nanMap);
-      }
-      else {
-        imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, NULL,
-            params.holeRad, params.holeR, params.holeC);
-        imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-            params.holeRad, params.holeR, params.holeC,
-            &params.nanMap);
-      }
+      imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
+          Nrows, Nrows/2, Ncols/2, true, NULL,
+          params.holeRad, params.holeR, params.holeC);
+      imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
+          Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+          params.holeRad, params.holeR, params.holeC,
+          &params.nanMap);
     }
     else if (params.imgMatType.compare("uint32") == 0) {
-      if (params.hasLaserBkg) {
-        imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, NULL,
-            params.holeRad, params.holeR, params.holeC);
-        imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-            params.holeRad, params.holeR, params.holeC,
-            &params.nanMap);
-      }
-      else {
-        imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, NULL,
-            params.holeRad, params.holeR, params.holeC);
-        imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
-            Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-            params.holeRad, params.holeR, params.holeC,
-            &params.nanMap);
-      }
+      imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
+          Nrows, Nrows/2, Ncols/2, true, NULL,
+          params.holeRad, params.holeR, params.holeC);
+      imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
+          Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+          params.holeRad, params.holeR, params.holeC,
+          &params.nanMap);
     }
     else {
-      cerr << "ERROR: Do not recognize imgMatType = " 
+      std::cerr << "ERROR: Do not recognize imgMatType = " 
           + params.imgMatType + "!!!\n";
-      exit(0);
+      exit(1);
     }
    
 
@@ -951,45 +863,62 @@ int main(int argc, char* argv[]) {
     imgProc::removeXrayHits(
         &imgSubBkg, 
         params.XrayHighCut, params.XrayLowCut, 
-        params.XraySTDcut, params.XrayWindow);
+        params.XraySTDcut, params.XrayWindow,
+        xRayHitHistos);
+
+    if (params.pltVerbose) {
+      plt.printRC(imgSubBkg, "./plots/imgSubBkg_original");
+
+      std::vector< vector<double> > testplot(imgSubBkg.size());
+      for (int ir=0; ir<imgSubBkg.size(); ir++) {
+        testplot[ir].resize(imgSubBkg[ir].size(), 0);
+        for (int ic=0; ic<imgSubBkg[ir].size(); ic++) {
+          testplot[ir][ic] = imgSubBkg[ir][ic];
+          if (fabs(ir-centerR) < 7 && fabs(ic-centerC) < 7) {
+            testplot[ir][ic] = -1;
+          }
+        }
+      }
+
+      plt.printRC(testplot, "testingCenter", minimum, "0");
+    }
 
 
 
-    //cout<<"444"<<endl;
 
     /////  Remove pixel outliers  /////
-    /*
-    radProc.removeOutliers(imgOrig,  
-        centerR, centerC, params.imgEdgeBuffer, 
+    outlierImage = radProc.removeOutliers(imgSubBkg,  
+        centerR, centerC, params.imgEdgeBuffer,
         params.NradAzmBins, params.shellWidth, params.Npoly,
-        //imgOrig.size()/2, imgOrig.size()/2, params.shellWidth,
         params.stdIncludeLeft, params.distSTDratioLeft,
         params.stdCutLeft, params.meanBinSize,
         params.stdIncludeRight, params.distSTDratioRight,
         params.stdChangeRatio, params.stdCutRight,
         imgINFO[ifl].stagePos, params.outlierMapSTDcut,
-        false, (false || params.outlierVerbose), NULL);
-        */
+        true, params.outlierVerbose, 
+        NULL, radPixelHistos);
 
-    //cout<<"555"<<endl;
+    /*
     outlierImage = radProc.removeOutliersSimple(
         imgSubBkg, centerR, centerC, params.imgEdgeBuffer,
         params.NradAzmBins, params.shellWidth, params.Npoly,
         params.outlierSTDcut, imgINFO[ifl].stagePos, params.outlierMapSTDcut,
         true, (false || params.outlierVerbose), NULL);//, &plt);
-
-    /*
-    outlierImage = radProc.removeOutliers(imgSubBkg,  
-        centerR, centerC, params.imgEdgeBuffer,
+        
+    radProc.removeOutliers(imgOrig,  
+        centerR, centerC, params.imgEdgeBuffer, 
         params.NradAzmBins, params.shellWidth, params.Npoly,
-        //imgOrig.size()/2, imgOrig.size()/2, params.shellWidth,
         params.stdIncludeLeft, params.distSTDratioLeft,
         params.stdCutLeft, params.meanBinSize,
         params.stdIncludeRight, params.distSTDratioRight,
         params.stdChangeRatio, params.stdCutRight,
         imgINFO[ifl].stagePos, params.outlierMapSTDcut,
-        true, (false || params.outlierVerbose), NULL);//, &plt);
+        false, params.outlierVerbose, 
+        NULL, NULL);
+
+ 
         */
+
     
     if (params.pltVerbose) {
       //plt.printRC(outlierImage, "outlierSTD_" + imgINFO[ifl].run + "-" + to_string(imgINFO[ifl].scan) + "-" + to_string(imgINFO[ifl].stagePos));
@@ -999,7 +928,7 @@ int main(int argc, char* argv[]) {
                 + "-" + to_string(imgINFO[ifl].stagePos) + ".dat");
     }
 
-    ///  Find large clusters corresponding to laser spots  ///
+    ///  Removing small clusters  ///
     //std::vector< std::pair<uint, uint> > removePairs;
     /*
     std::vector< std::pair<uint, uint> > removePairs = imgProc::findClusters(
@@ -1014,7 +943,6 @@ int main(int argc, char* argv[]) {
             params.outliercMinScale, params.outliercMaxScale,
             outlierBkg, NULL); //&plt);
 
-    ///  Remove laser background from image by setting pixels = NANVAL  ///
     for (uint ip=0; ip<removePairs.size(); ip++) {
       imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
     }
@@ -1044,24 +972,16 @@ int main(int argc, char* argv[]) {
 
 
     ///// Remove readout noise  /////
-    /*
     if (params.verbose) std::cout << "INFO: Readout noise subtraction.\n";
-    if (params.hasLaserBkg) {
-      readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
-                        0.94*params.NradAzmBins, params.NradAzmBins, 
-                        params.imgEdgeBuffer, &params.nanMap);
-    }
-    else {
-      readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
-                        0.94*params.NradAzmBins, params.NradAzmBins,
-                        params.imgEdgeBuffer);
+    readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
+    //readoutNoise = imgProc::removeMedianReadOutNoise(imgSubBkg, centerR, centerC, 
+                      params.readoutAzmBinStart, params.readoutAzmBinEnd, 
+                      params.imgEdgeBuffer, &params.nanMap);
 
-      // Only use this when interested in reference images
-      //    background fit fails when subtracting readout
-      //    noise on the phosphor screen. Comment previous line.
-      //readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
-    }
-    */
+    // Only use this when interested in reference images
+    //    background fit fails when subtracting readout
+    //    noise on the phosphor screen. Comment previous line.
+    //readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
 
 
     //////////////////////////////////////////////////////
@@ -1070,7 +990,6 @@ int main(int argc, char* argv[]) {
     // We cluster background spots based on the assymetry of 
     //    the image. 
 
-    /*
     if (params.hasLaserBkg && params.laserClusterRemoval) {
       if (params.verbose) std::cout << "INFO: Laser background removal.\n";
       // Fill in hole based on symmetry
@@ -1211,7 +1130,6 @@ int main(int argc, char* argv[]) {
       delete plt.printRC(pltSubBkg, 
           "plots/imgSub_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
     }
-    */
 
 
     //////////////////////////////////////////////////////////
@@ -1262,15 +1180,15 @@ int main(int argc, char* argv[]) {
     std::fill(rawAzmAvg.begin(), rawAzmAvg.end(), 0);
     std::fill(azmCounts.begin(), azmCounts.end(), 0);
     for (int ir=0; ir<(int)imgSubBkg.size(); ir++) {
-      if (ir < params.imgEdgeBuffer || imgSubBkg.size() - ir < params.imgEdgeBuffer) continue;
+      if (ir < params.imgEdgeBuffer 
+          || imgSubBkg.size() - ir < params.imgEdgeBuffer) continue;
       for (int ic=0; ic<(int)imgSubBkg[ir].size(); ic++) {
-        if (ic < params.imgEdgeBuffer || imgSubBkg[ir].size() - ic < params.imgEdgeBuffer) continue;
+        if (ic < params.imgEdgeBuffer 
+            || imgSubBkg[ir].size() - ic < params.imgEdgeBuffer) continue;
 
         if (imgSubBkg[ir][ic] != NANVAL) {
-          if (params.hasLaserBkg) {
-            if (params.nanMap[ir][ic] == NANVAL) {
-              //continue; //FIX ME comment me out after comparing with thomas
-            }
+          if (params.nanMap[ir][ic] == NANVAL) {
+            continue; 
           }
 
           radInd = std::round(
@@ -1282,9 +1200,6 @@ int main(int argc, char* argv[]) {
             azmCounts[radInd] += 1;
           }
         }
-        else {
-          //cout<<"skipping nan"<<endl;
-        }
       }
     }
 
@@ -1295,18 +1210,6 @@ int main(int argc, char* argv[]) {
       else rawAzmAvg[ir] = NANVAL;
     }
 
-    rawAzmAvg.resize(params.NradAzmBins, NANVAL);
-
-    for (int iq=0; iq<params.NradAzmBins; iq++) {
-      azmAvg[iq] = rawAzmAvg[iq];
-      //if (iq>=100 &&iq <=110) {
-      //  cout<<"azmAvg "<<iq<<" : "<<azmAvg[iq]<<endl;
-      //}
-    }
-    //save::saveDat<double>(azmAvg, "testcompareazmavg.dat");
-      //plt.print1d(azmAvg, "azimuthalAvg_" + to_string(imgINFO[ifl].imgNum), logy, "true");
-
-    /*
     /////  Image norm  /////
     imgNorm = 0;
     count = 0;
@@ -1317,16 +1220,22 @@ int main(int argc, char* argv[]) {
     }
     imgNorm /= count;
 
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      if (rawAzmAvg[iq] != NANVAL) {
+        rawAzmAvg[iq] /= imgNorm;
+      }
+      azmAvg[iq] = rawAzmAvg[iq];
+    }
+
     /////  Build Reference AzmAvg  /////
     if (imgIsRef) {
       for (int iq=0; iq<params.NradAzmBins; iq++) {
-        refAzmAvg[iq] = (refAzmAvg[iq]*Nref + rawAzmAvg[iq]/imgNorm)/(Nref + 1);
+        refAzmAvg[iq] = (refAzmAvg[iq]*Nref + rawAzmAvg[iq])/(Nref + 1);
       }
       Nref++;
     }
 
-    /////  Filtering  /////
-
+    /////  Low Pass Filtering  /////
     std::vector<double> tstR(filtFFToutSize);
     if (!padRange) {
       while (rawAzmAvg[padRange] == NANVAL) {
@@ -1334,30 +1243,45 @@ int main(int argc, char* argv[]) {
       }
     }
     curPadRange = padRange;
-    while (fabs(1 - rawAzmAvg[curPadRange]/rawAzmAvg[curPadRange+1]) > 0.2) {
+    while (((rawAzmAvg[curPadRange+1] - rawAzmAvg[curPadRange])
+            /rawAzmAvg[curPadRange]) > 0.2) {
+    //while (fabs(1 - rawAzmAvg[curPadRange]/rawAzmAvg[curPadRange+1]) > 0.2) {
       curPadRange++;
     }
 
+    // Subtract Atomic scattering
+
+
+    // Change DC so pattern tends to 0
+    double filtBaseline = 0;
+    for (int iq=(int)(0.98*params.NradAzmBins); iq<params.NradAzmBins; iq++) {
+      filtBaseline += rawAzmAvg[iq];
+    }
+    filtBaseline /= params.NradAzmBins - (int)(0.98*params.NradAzmBins);
+
     qSpace[0] = 0;
     for (int iq=1; iq<params.NradAzmBins; iq++) {
-      qSpace[iq] = (rawAzmAvg[iq]/imgNorm)/atmDiff[iq];
+      qSpace[iq] = (rawAzmAvg[iq] - filtBaseline)/atmDiff[iq];
       if (iq < params.suppressBins) {
         if (iq < curPadRange && iq > 0) {
-          qSpace[iq] = rawAzmAvg[curPadRange]*(pow(curPadRange,3)/(atmDiff[iq]*imgNorm))/pow(iq,3);
+          qSpace[iq] = (rawAzmAvg[curPadRange] - filtBaseline)
+              *(pow(curPadRange,4)/atmDiff[iq])/pow(iq,4);
             //params.padMaxHeight*sin(PI/2*iq/padRange);
         }
-        qSpace[iq] *= pow(sin((PI/2)*iq/params.suppressBins),6);
+        qSpace[iq] *= pow(sin((PI/2)*iq/params.suppressBins), 6);
       }
     }
 
-    if (params.pltVerbose) {
+    if (params.pltFilterVerbose) {
       std::vector<double> tst(params.NradAzmBins);
       for (int iq=0; iq<params.NradAzmBins; iq++) {
         tst[iq] = qSpace[iq];
       }
       pltVals[0] = "-2";
       pltVals[1] = "2";
-      delete plt.print1d(tst, "./plots/filtInput_" + to_string(stagePos),pltOpts,pltVals);
+      delete plt.print1d(tst, 
+          "./plots/filtInput_" + to_string(stagePos),
+          pltOpts, pltVals);
     }
 
     fftw_execute(filtFFTf);
@@ -1370,25 +1294,58 @@ int main(int argc, char* argv[]) {
     fftw_execute(filtFFTb);
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
-      azmAvg[iq] = qSpace[iq]*atmDiff[iq]
-                          /sqrt(params.NradAzmBins);
-      if (iq < params.suppressBins) {
+      if (azmAvg[iq] != NANVAL) {
+        azmAvg[iq] = qSpace[iq]*atmDiff[iq]/sqrt(params.NradAzmBins);
+
+        if (iq < params.suppressBins) {
+          azmAvg[iq] /= pow(sin((PI/2)*iq/params.suppressBins), 6);
+        }
+        azmAvg[iq] += filtBaseline;
+
         if (iq < padRange) {
           azmAvg[iq] = NANVAL;
-        }
-        else {
-          azmAvg[iq] /= pow(sin((PI/2)*iq/params.suppressBins),6);
         }
       }
     }
 
-    if (true || params.pltVerbose) {
-      std::vector<double> tst1(params.NradAzmBins);
-      std::vector<double> tst2(params.NradAzmBins);
+    ///  Send high Q to 0 for filtered results  ///
+    filtBaseline = 0;
+    for (int iq=params.readoutAzmBinStart; iq<params.readoutAzmBinEnd; iq++) {
+      filtBaseline += azmAvg[iq];
+    }
+    filtBaseline /= params.readoutAzmBinEnd - params.readoutAzmBinStart;
+
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      if (azmAvg[iq] != NANVAL) {
+        azmAvg[iq] -= filtBaseline;
+      }
+    }
+
+    ///  Image norm filtered result ///
+    double filtImgNorm = 0;
+    count = 0;
+    for (int i=imgNormBinMin; i<imgNormBinMax; i++) {
+      if (azmAvg[i] == NANVAL) continue;
+      filtImgNorm += azmAvg[i];
+      count++;
+    }
+    filtImgNorm /= count;
+
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      if (azmAvg[iq] != NANVAL) {
+        azmAvg[iq] /= filtImgNorm;
+      }
+    }
+
+    ///  Plotting Filter Results  ///
+    if (params.pltFilterVerbose) {
+      std::vector<double> tst1(params.NradAzmBins, 0);
+      std::vector<double> tst2(params.NradAzmBins, 0);
       vector<TH1*> plts(2);
-      for (int iq=0; iq<params.NradAzmBins; iq++) {
-        tst1[iq] = rawAzmAvg[iq]/(imgNorm*atmDiff[iq]);
+      for (int iq=1; iq<params.NradAzmBins; iq++) {
+        tst1[iq] = rawAzmAvg[iq]/atmDiff[iq];
         tst2[iq] = azmAvg[iq]/atmDiff[iq];
+      //cout<<"tst2: "<<iq<<"  "<<tst2[iq]<<endl;
       }
       pltVals[0] = "-0.2";
       pltVals[1] = "0.2";
@@ -1396,23 +1353,17 @@ int main(int argc, char* argv[]) {
       plts[1] = plt.print1d(tst2, "./plots/filtOutp_" + to_string(stagePos),pltOpts, pltVals);
       plts[1]->SetLineColor(4);
       plts[0]->SetMaximum(40);
-      plts[0]->SetMinimum(0);
       plt.print1d(plts, "./plots/filtCompare_" + to_string(stagePos));
+      plts[0]->SetMinimum(1);
+      plt.print1d(
+          plts, "./plots/filtCompareLogy_" + to_string(stagePos), 
+          logy, "true");
       delete plts[0];
       delete plts[1];
     }
-    */
 
     /////  Plotting results  /////
-    if (true || params.pltVerbose) {
-      std::vector<double> test(NradLegBins);
-      //for (int i=0; i<params.Nlegendres; i++) {
-      //  for (int j=0; j<NradLegBins; j++) {
-      //    test[j] = legCoeffs[i*NradLegBins + j];
-      //  }
-      //  plt.print1d(test, "plots/testLeg" + to_string(i) + "_" + to_string(imgINFO[ifl].imgNum));
-      //}
-
+    if (params.pltVerbose) {
       plt.print1d(rawAzmAvg, "plots/azimuthalAvg_" + to_string(imgINFO[ifl].imgNum));
     }
     
@@ -1421,9 +1372,42 @@ int main(int argc, char* argv[]) {
   }
 
 
+  /////  Cleaning Up  /////
   tree->Write();
   file->Close();
-  cout<<endl<<endl<<endl;
+
+  if (params.xRayHitDist) {
+    std::vector<PLOToptions> xOpts(2);
+    std::vector<std::string> xVals(2);
+    xOpts[0] = logy;    xVals[0] = "true";
+    xOpts[1] = xLabel;  xVals[1] = "Pixel Value";
+    delete plt.print1d(xRayHitHistos[0], 
+        "./plots/xRayHitDist_highCut_scan-"+to_string(curScan), 
+        xOpts, xVals);
+    delete plt.print1d(xRayHitHistos[1], 
+        "./plots/xRayHitDist_lowCut_scan-"+to_string(curScan), 
+        xOpts, xVals);
+    delete[] xRayHitHistos;
+  }
+
+  if (params.radPixDist) {
+    std::vector<PLOToptions> xOpts(3);
+    std::vector<std::string> xVals(3);
+    xOpts[0] = logy;    xVals[0] = "true";
+    xOpts[1] = xLabel;  xVals[1] = "Pixel Value";
+    xOpts[2] = xBinSpan;   
+    for (int i=0; i<params.NradAzmBins; i++) {
+      xVals[2] = to_string(radPixelHistos[i]->FindFirstBinAbove(0.5) - 3)
+        + "," + to_string(radPixelHistos[i]->FindLastBinAbove(0.5) + 3);
+      radPixelHistos[i]->SetMinimum(0.5);
+      delete plt.print1d(radPixelHistos[i], 
+        "./plots/radPixDist_rad-" + to_string(i) 
+          + "_scan-"+to_string(curScan), 
+        xOpts, xVals);
+    }
+    delete[] radPixelHistos;
+  }
+
 
   // Release fftw memory
   fftw_destroy_plan(filtFFTf);
