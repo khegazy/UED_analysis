@@ -61,7 +61,8 @@ namespace imgProc {
   void removeXrayHits(
     std::vector<std::vector<double> >* img,
     double highCut, double lowCut, 
-    double stdCut, int window);
+    double stdCut, int window,
+    TH1F** plots=NULL);
   void averagePixel(cv::Mat &img, int row, int col);
   template<typename T>
   void averagePixelT(cv::Mat &img, int row, int col);
@@ -85,6 +86,59 @@ namespace imgProc {
   ////////////////////////////
   /////  Image Cleaning  /////
   ////////////////////////////
+
+  /////  Radial processing  /////
+  class radProcTool {
+    public:
+
+      //radProcTool(string inpIndPath);
+      radProcTool(int shellWidth, int maxRad);
+
+      double getMean(vector<double> vals);
+      double getMMean(vector<double> vals, vector<int> ord, double range, bool verbose=false);
+      void   getSmearedDist(std::map<int, double> &smearedDist, 
+                  vector<double> &vals, double stdev, bool verbose=false);
+      double getSTDev(vector<double> vals, double mean);
+      double getLeftSTDev(vector<double> vals, vector<int> ord, double mean);
+
+      int    getNrightEntries(vector<double> vals, vector<int> ord, double mean);
+      int    getNleftEntries(vector<double> vals, vector<int> ord, double mean);
+      int    getLeftOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
+      int    getRightOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
+      std::vector< std::vector<double> > removeOutliers(
+              vector< vector<double> > &image,
+              int centerR, int centerC, int buffer,
+              int maxRad, int shellWidth, int Npoly,
+              double stdIncludeLeft, double distSTDratioLeft,
+              double stdCutLeft, int meanBinSize,
+              double stdIncludeRight, double distSTDratioRight,
+              double stdChangeRatio, double stdCutRight,
+              int stg, double outlierMapSTDcut,
+              bool getOutlierImage, bool verbose, 
+              PLOTclass* pltVerbose, TH1F** radPixHistos=NULL);
+      std::vector< std::vector<double> > removeOutliersSimple(
+              vector< vector<double> > &image,
+              float centerR_f, float centerC_f, int buffer,
+              int maxRad, int shellWidth, int Npoly,
+              double stdCut, int stg, double outlierMapSTDcut,
+              bool getOutlierImage, bool verbose, PLOTclass* pltVerbose);
+      vector<double> getPolarLineOut(vector< vector<double> >* image, 
+              int centerR, int centerC, int rad, 
+              int shellWidth, int NangleBins, bool verbose=false);
+
+      double radialSliceVar(vector< vector<double> >* image,
+              int centerR, int centerC, 
+              int rad, int shellWidth, bool verbose=false);
+
+    private:
+      string indPath;
+      int makeMaxRad;
+
+      std::map<int, std::map<int, std::vector< std::vector<int> > > > allIndices;
+      void importIndices(int shellWidth, int rad);
+      void makeIndices(int shellWidth, int maxRad);
+      bool checkForIndices(int shellWidth, int rad);
+  };
 
   std::vector< std::vector<double> > asymmetrize(
           std::vector< std::vector<double> > inpImg,
@@ -135,9 +189,24 @@ namespace imgProc {
   double removeAvgReadOutNoise(std::vector< std::vector<double> > &img,
           int centerR, int centerC, double minRad, double maxRad, int buffer=20, 
           std::vector< std::vector<double> >* nanMap=NULL);
+  double removeMedianReadOutNoise(std::vector< std::vector<double> > &img,
+          int centerR, int centerC, double minRad, double maxRad, int buffer=20, 
+          std::vector< std::vector<double> >* nanMap=NULL);
 
 
   /////// Center Finding ///////
+  class centerfnctr {
+      public:
+          int fxnType;
+          int minRadBin;
+          int centShellW;
+          radProcTool* radProc;
+          std::vector<int>* indsR;
+          std::vector<int>* indsC;
+          std::vector< std::vector<double> >* img;
+
+          double operator() (std::vector<double> vect);
+  };
 
   std::vector<int> centerSearchCOM(std::vector<imgInfoStruct> &imgINFO,
       double hotPixel, double sigmaX,
@@ -227,59 +296,6 @@ namespace imgProc {
           const int Ncols, const int rebinCol,
           const int Nlg, const int NradBins,
           bool verbose);
-
-
-  /////  Radial processing  /////
-  class radProcTool {
-    public:
-
-      //radProcTool(string inpIndPath);
-      radProcTool(int shellWidth, int maxRad);
-
-      double getMean(vector<double> vals);
-      double getMMean(vector<double> vals, vector<int> ord, double range, bool verbose=false);
-      void   getSmearedDist(std::map<int, double> &smearedDist, 
-                  vector<double> &vals, double stdev, bool verbose=false);
-      double getSTDev(vector<double> vals, double mean);
-      double getLeftSTDev(vector<double> vals, vector<int> ord, double mean);
-
-      int    getNrightEntries(vector<double> vals, vector<int> ord, double mean);
-      int    getNleftEntries(vector<double> vals, vector<int> ord, double mean);
-      int    getLeftOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
-      int    getRightOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
-      std::vector< std::vector<double> > removeOutliers(
-              vector< vector<double> > &image,
-              int centerR, int centerC, int buffer,
-              int maxRad, int shellWidth, int Npoly,
-              double stdIncludeLeft, double distSTDratioLeft,
-              double stdCutLeft, int meanBinSize,
-              double stdIncludeRight, double distSTDratioRight,
-              double stdChangeRatio, double stdCutRight,
-              int stg, double outlierMapSTDcut,
-              bool getOutlierImage, bool verbose, PLOTclass* pltVerbose);
-      std::vector< std::vector<double> > removeOutliersSimple(
-              vector< vector<double> > &image,
-              int centerR, int centerC, int buffer,
-              int maxRad, int shellWidth, int Npoly,
-              double stdCut, int stg, double outlierMapSTDcut,
-              bool getOutlierImage, bool verbose, PLOTclass* pltVerbose);
-      vector<double> getPolarLineOut(vector< vector<double> >* image, 
-              int centerR, int centerC, int rad, 
-              int shellWidth, int NangleBins, bool verbose=false);
-
-      double radialSliceVar(vector< vector<double> >* image,
-              int centerR, int centerC, 
-              int rad, int shellWidth, bool verbose=false);
-
-    private:
-      string indPath;
-      int makeMaxRad;
-
-      std::map<int, std::map<int, std::vector< std::vector<int> > > > allIndices;
-      void importIndices(int shellWidth, int rad);
-      void makeIndices(int shellWidth, int maxRad);
-      bool checkForIndices(int shellWidth, int rad);
-  };
 
 
   ////// Others //////

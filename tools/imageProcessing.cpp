@@ -254,7 +254,8 @@ void imgProc::threshold(cv::Mat &mat, int hotpixel) {
 void imgProc::removeXrayHits(
     std::vector<std::vector<double> >* img,
     double highCut, double lowCut, 
-    double stdCut, int window) {
+    double stdCut, int window,
+    TH1F** plots) {
 
   std::vector<double> binStats;
   for (int ir=0; ir<(int)(*img).size(); ir++) {
@@ -267,6 +268,9 @@ void imgProc::removeXrayHits(
         for (int icc = ic; icc<(*img)[ir].size(); icc++) {
           (*img)[ir][icc] = NANVAL;
         }
+      }
+      else if (plots) {
+        plots[0]->Fill((*img)[ir][ic], 1);
       }
     }
   }
@@ -327,6 +331,9 @@ void imgProc::removeXrayHits(
             }
           }
         }
+      }
+      else if (plots) {
+        plots[1]->Fill((*img)[ir][ic], 1);
       }
     }
   }
@@ -402,6 +409,179 @@ double imgProc::removeReadOutNoise(std::vector< std::vector<double> > &img,
 }
 
 
+double imgProc::centerfnctr::operator() (std::vector<double> vect) {
+  if (fxnType == 0)  {
+    if (!img) {
+      std::cerr 
+        << "ERROR: Must specifiy img in centerfnctr to use this option!!!\n";
+      exit(1);
+    }
+    return imgProc::centerSymXsqr(
+        img, vect[0], vect[1], 
+        8, 1, minRadBin, centShellW, true);
+  }
+  if (fxnType == 1)  {
+    if (!img) {
+      std::cerr 
+        << "ERROR: Must specifiy img in centerfnctr to use this option!!!\n";
+      exit(1);
+    }
+    return imgProc::centerOddLeg(
+        img, vect[0], vect[1], 
+        1, minRadBin, centShellW, true);
+  }
+  if (fxnType == 2)  {
+    if (!radProc) {
+      std::cerr 
+        << "ERROR: Must specifiy radProc in centerfnctr to use this option!!!\n";
+      exit(1);
+    }    
+    if (!img) {
+      std::cerr 
+        << "ERROR: Must specifiy img in centerfnctr to use this option!!!\n";
+      exit(1);
+    }
+
+    return radProc->radialSliceVar(
+        img, vect[0], vect[1], 
+        minRadBin, centShellW);
+  }
+  if (fxnType == 3)  {
+    double loss = 0;
+    std::vector<float> dists(indsR->size());
+    for (uint i=0; i<indsR->size(); i++) {
+      dists[i] = std::sqrt(
+          std::pow((*indsR)[i] - vect[0], 2)
+          + std::pow((*indsC)[i] - vect[1], 2));
+    }
+
+    double meanR = std::accumulate(dists.begin(), dists.end(), 0);
+    meanR /= (float)dists.size();
+
+    for (uint i=0; i<indsR->size(); i++) {
+      loss += std::pow(meanR - dists[i], 2);
+    }
+    loss /= (float)dists.size();
+
+    return loss;
+  }
+  else {
+    cerr << "ERROR: Did not select a correct center finding alogrithm, now exiting!!!\n\n";
+    exit(0);
+  }
+  //N2 return imgProc::centerOddLeg(img, vect[0], vect[1], 1, 70, 40, true, NANVAL);
+}
+
+
+/*
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+std::vector<int> imgProc::findCenterSingleImg(imgInfoStruct info, 
+    double hotPixel, double sigma,
+    int blockCentR, int blockCentC, float minRad, float maxRad, 
+    int meanInd, double stdScale, bool verbose, PLOTclass* pltVerbose) {
+
+  // Create initial matrix
+  cv::Mat imgSum = cv::imread((imgINFO[0].path + imgINFO[0].fileName).c_str(),
+      CV_LOAD_IMAGE_ANYDEPTH);
+  imgSum.convertTo(imgSum, 5);
+  int Nrows = imgSum.rows;
+  int Ncols = imgSum.cols;
+
+  /////  Average images  /////
+  for (uint ifl=1; ifl<imgINFO.size(); ifl++) {
+
+    string imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
+    if (verbose) cout << "INFO: Trying to open " << imgAddr << "\t .....";
+    cv::Mat imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH);
+    imgProc::threshold(imgMat, hotPixel);
+    cv::add(imgSum, imgMat, imgSum, cv::Mat(), 5);
+    if (verbose) cout << "\tpassed!\n";
+  }
+  imgSum /= imgINFO.size();
+
+  /////  Smooth averaged image  /////
+  if (verbose) cout << "Smoothing  ...  ";
+  cv::Mat smoothMat;
+  int size = (int)(sigma*6);
+  size += 1 - size%2;
+  cv::GaussianBlur(imgSum, smoothMat, cvSize(size,size), sigma, sigma);
+
+  // Convert to vector
+  if (verbose) cout << "Vectorizing  ...  ";
+  std::vector< std::vector<double> > imgCent 
+        = imgProc::getImgVector<float>(smoothMat, Nrows, Nrows/2, Ncols/2);
+  if (pltVerbose) save::saveDat<double>(imgCent, "./results/centering_smoothed[" 
+      + to_string(Nrows) + "," + to_string(Ncols) + "].dat");
+
+  // Remove readout noise
+  if (verbose) cout << "Remove readout  ...  ";
+  imgProc::removeReadOutNoise(imgCent);
+  if (verbose) cout << "done\n";
+
+  /////  Find center by averaging points  /////
+
+  std::vector< std::vector<double> > testMap(Nrows);
+  if (verbose || pltVerbose) {
+    testMap.resize(Nrows);
+    for (uint ir=0; ir<Nrows; ir++) {
+      testMap[ir].resize(Ncols,0);
+    }
+  }
+
+  double weight, rad;
+  double count = 0;
+  double centerR = 0;
+  double centerC = 0;
+  double scale = imgCent[(int)(Nrows/2)][(int)(Ncols/2)];
+  double val = imgCent[meanInd][meanInd]*scale;
+  for (int ir=0; ir<(int)imgCent.size(); ir++) {
+    for (int ic=0; ic<(int)imgCent[ir].size(); ic++) {
+      imgCent[ir][ic] *= scale;
+      rad = std::sqrt(std::pow(ir-blockCentR, 2) + std::pow(ic-blockCentC, 2));
+      if ((rad < minRad) || (rad > maxRad)) continue;
+
+      weight = std::exp(-1*std::pow((val - imgCent[ir][ic])/val, 2)/stdScale);
+      //if (verbose) cout << "vals: " << val << "/" << imgCent[ir][ic] <<"    "<<std::pow((val - imgCent[ir][ic])/val, 2)/stdScale
+       // << "\tweight: "<<weight<<endl;
+
+      if (weight > 0.1) {
+        centerR += ir*weight;
+        centerC += ic*weight;
+        count += weight;
+
+        if (pltVerbose) {
+          testMap[ir][ic] = weight;
+        }
+      }
+    }
+  }
+
+  if (pltVerbose) {
+    save::saveDat<double>(testMap, "./results/centering_selectedRange["
+      + to_string(Nrows) + "," + to_string(Ncols) + "].dat");
+    pltVerbose->printRC(testMap, "plots/centering_selectedRange");
+  }
+  std::vector<int> result = {(int)(centerR/count), (int)(centerC/count)};
+
+  if (pltVerbose) {
+    cout<<"here"<<endl;
+    TH2F* cImg = pltVerbose->plotRC(imgCent, "plots/roughCenteredImage");
+    for (int ir=(result[0])-5; ir<=result[0]+5; ir++) {
+      for (int ic=(result[1])-5; ic<=result[1]+5; ic++) {
+        if (sqrt(pow(ir-result[0],2)+pow(ic-result[1],2)) < 5)
+          cImg->SetBinContent(ic, ir, -100000);
+      }
+    }
+    cImg->SetMinimum(-1);
+    pltVerbose->print2d(cImg, "plots/roughCenteredImage");
+    delete cImg;
+  }
+
+  return result;
+}
+*/
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -416,64 +596,6 @@ double imgProc::removeAvgReadOutNoise(std::vector< std::vector<double> > &img,
   double count = 0;
   double sum = 0;
   double rad;
-  bool searchCols;
-
-
-  /*
-  for (ir=centerR; ir<centerR+maxRad; ir++) {
-    searchCols = true;
-    for (ic=Ncols-1; searchCols && (ic>centerC); ic--) {
-      rad = std::sqrt(std::pow(ir-centerR, 2) + std::pow(ic-centerC, 2));
-      if (rad < maxRad) {
-        if (rad > minRad) {
-          if (img[ir][ic] != NANVAL) {
-            sum += img[ir][ic];
-            count++;
-            if (nanMap) {
-              if ((*nanMap)[ir][ic] == NANVAL) {
-                sum -= img[ir][ic];
-                count--;
-              }
-            }
-          }
-          if (img[ir][2*centerC-ic] != NANVAL) {
-            sum += img[ir][2*centerC-ic];
-            count++;
-            if (nanMap) {
-              if ((*nanMap)[ir][2*centerC-ic] == NANVAL) {
-                sum -= img[ir][2*centerC-ic];
-                count--;
-              }
-            }
-          }
-          if (img[2*centerR-ir][ic] != NANVAL) {
-            sum += img[2*centerR-ir][ic];
-            count++;
-            if (nanMap) {
-              if ((*nanMap)[2*centerR-ir][ic] == NANVAL) {
-                sum -= img[2*centerR-ir][ic];
-                count--;
-              }
-            }
-          }
-          if (img[2*centerR-ir][2*centerC-ic] != NANVAL) {
-            sum += img[2*centerR-ir][2*centerC-ic];
-            count++;
-            if (nanMap) {
-              if ((*nanMap)[2*centerR-ir][2*centerC-ic] == NANVAL) {
-                sum -= img[2*centerR-ir][2*centerC-ic];
-                count--;
-              }
-            }
-          }
-        }
-        else {
-          searchCols = false;
-        }
-      }
-    }
-  }
-  */
 
   for (ir=0; ir<Nrows; ir++) {
     if ((ir < buffer) || (ir + buffer >= Nrows)) continue;
@@ -494,8 +616,6 @@ double imgProc::removeAvgReadOutNoise(std::vector< std::vector<double> > &img,
     }
   }
 
-
-
   double readoutNoise = sum/count;
 
   sum = 0;
@@ -507,9 +627,58 @@ double imgProc::removeAvgReadOutNoise(std::vector< std::vector<double> > &img,
     }
   }
 
+  return readoutNoise;
+}
+
+
+double imgProc::removeMedianReadOutNoise(std::vector< std::vector<double> > &img, 
+    int centerR, int centerC, double minRad, double maxRad, int buffer, 
+    std::vector< std::vector<double> >* nanMap) {
+
+  /// Find image norm ///
+  std::vector<double> vals;
+  int Nrows = (int)img.size();
+  int Ncols = (int)img[0].size();
+  int ir, ic;
+  double rad;
+
+  for (ir=0; ir<Nrows; ir++) {
+    if ((ir < buffer) || (ir + buffer >= Nrows)) continue;
+    for (ic=0; ic<Ncols; ic++) {
+      if ((ic < buffer) || (ic + buffer >= Ncols)) continue;
+      rad = std::sqrt(std::pow(ir-centerR, 2) + std::pow(ic-centerC, 2));
+      if (rad > minRad && rad<maxRad ) {
+        if ((img[ir][ic] != NANVAL)) {
+          if (nanMap) {
+            if ((*nanMap)[ir][ic] == NANVAL) {
+              continue;
+            }
+          }
+          vals.push_back(img[ir][ic]);
+        }
+      }
+    }
+  }
+
+  vector<int> orderedInds(vals.size());
+  iota(orderedInds.begin(), orderedInds.end(), 0);
+  sort(orderedInds.begin(), orderedInds.end(),
+      [&vals](int i1, int i2)
+      {return vals[i1] < vals[i2];});
+
+  double readoutNoise = vals[orderedInds[vals.size()/2]];
+
+  for (ir=0; ir<Nrows; ir++) {
+    for (ic=0; ic<Ncols; ic++) {
+      if (img[ir][ic] != NANVAL) {
+        img[ir][ic] -= readoutNoise;
+      }
+    }
+  }
 
   return readoutNoise;
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -3392,11 +3561,14 @@ int imgProc::radProcTool::getRightOutliers(vector<double> &vals, vector<int> &or
 
 std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     vector< vector<double> > &image, 
-    int centerR, int centerC, int buffer,
+    float centerR_f, float centerC_f, int buffer,
     int maxRad, int shellWidth, int Npoly,
     double stdCut, int stg, double outlierMapSTDcut, 
-    bool getOutlierImage, bool verbose, PLOTclass* pltVerbose) {
+    bool getOutlierImage, bool verbose, 
+    PLOTclass* pltVerbose) {
 
+  int centerR = (int)centerR_f;
+  int centerC = (int)centerC_f;
   /*
   for (int ir=400; ir<405; ir++) {
     for (int ic=400; ic<405; ic++) {
@@ -3496,9 +3668,11 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
 
     double mean = getMean(vals);
     double stdev = getSTDev(vals, mean);
-    //if (rad <75) {
-    //  cout<<"mean/std "<<rad<<" : "<<mean<<" / "<<stdev<<endl;
-    //}
+    /*
+    if (rad %25 == 0) {
+      cout<<"mean/std "<<rad<<" : "<<mean<<" / "<<stdev<<endl;
+    }
+    */
 
     int ind = 0;
     vector<double> rms;
@@ -3521,8 +3695,8 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
       ind--;
     }
 
-    //if (rad < 75) {
-    //  cout<<"Count: "<<count<<"  "<<rms.size()<<endl;
+    //if (rad % 25 == 0) {
+    //  cout<<"Count: "<<rms.size()<<endl;
     /*
       for (uint k=0; k<rms.size(); k++) {
         cout<<rms[k]<<"   ";
@@ -3533,6 +3707,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
 
 
     /////  Outlier images  /////
+    
     // Image of outliers cut on right end
     if (getOutlierImage || pltVerbose) {
       for (int i=0; i<removedInds.size(); i++) {
@@ -3609,7 +3784,8 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
     double stdIncludeRight, double distSTDratioRight,
     double stdChangeRatio, double stdCutRight,
     int stg, double outlierMapSTDcut, 
-    bool getOutlierImage, bool verbose, PLOTclass* pltVerbose) {
+    bool getOutlierImage, bool verbose, 
+    PLOTclass* pltVerbose, TH1F** radPixHistos) {
 
 
   if (verbose) cout << "Entered removeOutliers\n";
@@ -3627,6 +3803,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
   vector<double> pltPixDist;
   int pdInd;
 
+  int Nreps = 3;
   vector<double> vals, angles;
   vector< vector<int> > indices;
   vector< vector<int> >* INDS;
@@ -3639,289 +3816,304 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
     checkForIndices(shellWidth, rad);
     if (verbose) cout << "found!\n";
 
-    // Filter out bins that are off the image or contain nans
-    if (verbose) cout << "\tFilling indices of non-NANVAL bins on image\n";
-    int ir, ic;
-    vals.clear();
-    angles.clear();
-    indices.clear();
-    INDS = &allIndices[shellWidth][rad];
-    for (uint i=0; i<(*INDS).size(); i++) {
-      ir = centerR + (*INDS)[i][0];
-      ic = centerC + (*INDS)[i][1];
-      if ((ir + buffer < image.size()) && (ir >= buffer)
-          && (ic + buffer < image[0].size()) && (ic >= buffer)) {
-        if (image[ir][ic] != NANVAL) {
-          vals.push_back(image[ir][ic]);
-          angles.push_back(tools::getAzmAngle((*INDS)[i][1], (*INDS)[i][0]));
-          std::vector<int> vInds{ir, ic};
-          indices.push_back(vInds);
+    for (int rep=0; rep<Nreps; rep++) { 
+
+      // Filter out bins that are off the image or contain nans
+      if (verbose) cout << "\tFilling indices of non-NANVAL bins on image\n";
+      int ir, ic;
+      vals.clear();
+      angles.clear();
+      indices.clear();
+      INDS = &allIndices[shellWidth][rad];
+      for (uint i=0; i<(*INDS).size(); i++) {
+        ir = centerR + (*INDS)[i][0];
+        ic = centerC + (*INDS)[i][1];
+        if ((ir + buffer < image.size()) && (ir >= buffer)
+            && (ic + buffer < image[0].size()) && (ic >= buffer)) {
+          if (image[ir][ic] != NANVAL) {
+            vals.push_back(image[ir][ic]);
+            angles.push_back(tools::getAzmAngle((*INDS)[i][1], (*INDS)[i][0]));
+            std::vector<int> vInds{ir, ic};
+            indices.push_back(vInds);
+          }
         }
       }
-    }
 
-    // Skip if vals is full of NANVAL
-    if (vals.size() < 2) continue;
+      // Skip if vals is full of NANVAL
+      if (vals.size() < 2) continue;
 
- 
-    // Subtract background fluctuations
-    X.resize(indices.size(), Npoly);
-    Y.resize(indices.size(), 1);
-    for (uint i=0; i<angles.size(); i++) {
-      for (int p=0; p<Npoly; p++) {
-        X(i,p) = std::pow(angles[i], p);
+   
+      // Subtract background fluctuations
+      X.resize(indices.size(), Npoly);
+      Y.resize(indices.size(), 1);
+      for (uint i=0; i<angles.size(); i++) {
+        for (int p=0; p<Npoly; p++) {
+          X(i,p) = std::pow(angles[i], p);
+        }
+        Y(i,0) = vals[i];
       }
-      Y(i,0) = vals[i];
-    }
-    Eigen::MatrixXd weights = tools::normalEquation(X, Y);
+      Eigen::MatrixXd weights = tools::normalEquation(X, Y);
 
-    for (uint i=0; i<angles.size(); i++) {
-      for (int p=0; p<Npoly; p++) {
-        vals[i] -= weights(p)*std::pow(angles[i], p);
-      }
-    }
-
-
-    // Order indices based on pixel values
-    if (verbose) cout << "\tOrdering indices\n";
-    std::vector<int> removedInds;
-    std::vector<double> removedVals;
-    vector<int> orderedInds(vals.size());
-    iota(orderedInds.begin(), orderedInds.end(), 0);
-    sort(orderedInds.begin(), orderedInds.end(),
-        [&vals](int i1, int i2)
-        {return vals[i1] < vals[i2];});
-
-
-
-
-    ///////////////////////////////////
-    /////  Remove pixel outliers  /////
-    ///////////////////////////////////
-
-    /////  Remove left outliers  /////
-    //cout<<"111"<<endl;
-    //cout<<"CHECKING: "<<stg<<"  "<<rad<<"  "<<vals.size()<<endl;
-
-    double mean = getMean(vals);
-    double stdev = getSTDev(vals, mean);
-    getSmearedDist(smearedDist, vals, stdev);
-
-    //double meanLeft = getMMean(vals, orderedInds, stdev/4, ((rad==28) && verbose && false));
-    double meanLeft;
-    double maxVal = 0;
-    if (pltVerbose) {
-      pltPixDist.resize(smearedDist.size(),0);
-      pdInd = 0;
-    }
-
-    for (auto dItr : smearedDist) {
-      if (dItr.second > maxVal*1.1) {
-        maxVal = dItr.second;
-        meanLeft = dItr.first;
+      for (uint i=0; i<angles.size(); i++) {
+        for (int p=0; p<Npoly; p++) {
+          vals[i] -= weights(p)*std::pow(angles[i], p);
+        }
       }
 
+
+      // Order indices based on pixel values
+      if (verbose) cout << "\tOrdering indices\n";
+      std::vector<int> removedInds;
+      std::vector<double> removedVals;
+      vector<int> orderedInds(vals.size());
+      iota(orderedInds.begin(), orderedInds.end(), 0);
+      sort(orderedInds.begin(), orderedInds.end(),
+          [&vals](int i1, int i2)
+          {return vals[i1] < vals[i2];});
+
+
+
+
+      ///////////////////////////////////
+      /////  Remove pixel outliers  /////
+      ///////////////////////////////////
+
+      /////  Remove left outliers  /////
+      //cout<<"111"<<endl;
+      //cout<<"CHECKING: "<<stg<<"  "<<rad<<"  "<<vals.size()<<endl;
+
+      double mean = getMean(vals);
+      double stdev = getSTDev(vals, mean);
+      getSmearedDist(smearedDist, vals, stdev);
+
+      //double meanLeft = getMMean(vals, orderedInds, stdev/4, ((rad==28) && verbose && false));
+      double meanLeft;
+      double maxVal = 0;
       if (pltVerbose) {
-        pltPixDist[pdInd] = dItr.second;
-        pdInd++;
+        pltPixDist.resize(smearedDist.size(),0);
+        pdInd = 0;
       }
-    }
 
-    if (pltVerbose) {
-      pltVerbose->MyC->cd();
-      std::string pltName = 
-          "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/plots/vals_" 
-          + to_string(stg) + "_" 
-          + to_string(rad) + "_"
-          + to_string(meanLeft) + "_"
-          + to_string(stdev) + "_"
-          + to_string(mean);
+      for (auto dItr : smearedDist) {
+        if (dItr.second > maxVal*1.1) {
+          maxVal = dItr.second;
+          meanLeft = dItr.first;
+        }
 
-      TH1F* h = pltVerbose->plot1d(pltPixDist, pltName,
-      //pltVerbose->print1d(pltPixDist, pltName,
-          xSpan, 
-          to_string(smearedDist.begin()->first) + ","
-          + to_string(smearedDist.rbegin()->first));
+        if (pltVerbose) {
+          pltPixDist[pdInd] = dItr.second;
+          pdInd++;
+        }
+      }
 
-      h->Draw();
-      TLine *lineL = new TLine(meanLeft, 0, meanLeft, 1000);
-      lineL->SetLineColor(kRed);
-      lineL->SetLineWidth(3);
-      lineL->Draw("SAME");
-      TLine *lineM = new TLine(mean, 0, mean, 1000);
-      lineM->SetLineColor(kBlue);
-      lineM->SetLineWidth(3);
-      lineM->Draw("SAME");
-      pltVerbose->MyC->Print((pltName + ".png").c_str());
+      if (pltVerbose && (rep == Nreps-1)) {
+        pltVerbose->MyC->cd();
+        pltVerbose->MyC->SetLogy(1);
+        std::string pltName = 
+            "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/plots/vals_" 
+            + to_string(stg) + "_" 
+            + to_string(rad) + "_"
+            + to_string(meanLeft) + "_"
+            + to_string(stdev) + "_"
+            + to_string(mean);
 
-      delete lineL;
-      delete lineM;
-      delete h;
-    }
- 
-    //cout<<"222"<<endl;
-    double stdevLeft = getLeftSTDev(vals, orderedInds, meanLeft);
-    //cout<<"333"<<endl;
-    double Nentries = getNleftEntries(vals, orderedInds, meanLeft);
-    //cout<<"444"<<endl;
-    double Noutliers = getLeftOutliers(vals, orderedInds,
+        TH1F* h = pltVerbose->plot1d(pltPixDist, pltName,
+            xSpan, 
+            to_string(smearedDist.begin()->first) + ","
+            + to_string(smearedDist.rbegin()->first));
+        h->SetMinimum(0.5);
+
+        h->Draw();
+        TLine *lineL = new TLine(meanLeft, 0, meanLeft, 1000);
+        lineL->SetLineColor(kRed);
+        lineL->SetLineWidth(3);
+        lineL->Draw("SAME");
+        TLine *lineM = new TLine(mean, 0, mean, 1000);
+        lineM->SetLineColor(kBlue);
+        lineM->SetLineWidth(3);
+        lineM->Draw("SAME");
+        pltVerbose->MyC->Print((pltName + ".png").c_str());
+
+        delete lineL;
+        delete lineM;
+        delete h;
+      }
+   
+      //cout<<"222"<<endl;
+      double stdevLeft = getLeftSTDev(vals, orderedInds, meanLeft);
+      //cout<<"333"<<endl;
+      double Nentries = getNleftEntries(vals, orderedInds, meanLeft);
+      //cout<<"444"<<endl;
+      double Noutliers = getLeftOutliers(vals, orderedInds,
+                        meanLeft, stdevLeft, stdIncludeLeft);
+      //cout<<"555"<<endl;
+
+      if (verbose) cout << "\tRemoving left outliers\n\t" 
+                        << meanLeft << "\t" << stdevLeft << "\t" 
+                        << (1 - Noutliers/Nentries) << endl;
+      while (((1 - Noutliers/Nentries) < distSTDratioLeft)
+              && (orderedInds.size() > 100)) {
+        for (int i=0; i<max((int)(orderedInds.size()*0.0012), 1); i++) {
+          removedInds.push_back(orderedInds[0]);
+          removedVals.push_back(vals[orderedInds[0]]);
+          vals[orderedInds[0]] = NANVAL;
+          image[indices[orderedInds[0]][0]][indices[orderedInds[0]][1]] = NANVAL;
+          orderedInds.erase(orderedInds.begin());
+        }
+
+        stdevLeft = getLeftSTDev(vals, orderedInds, meanLeft);
+        Nentries = getNleftEntries(vals, orderedInds, meanLeft);
+        Noutliers = getLeftOutliers(vals, orderedInds,
                       meanLeft, stdevLeft, stdIncludeLeft);
-    //cout<<"555"<<endl;
-
-    if (verbose) cout << "\tRemoving left outliers\n\t" 
-                      << meanLeft << "\t" << stdevLeft << "\t" 
-                      << (1 - Noutliers/Nentries) << endl;
-    while (((1 - Noutliers/Nentries) < distSTDratioLeft)
-            && (orderedInds.size() > 100)) {
-      for (int i=0; i<max((int)(orderedInds.size()*0.0012), 1); i++) {
-        removedInds.push_back(orderedInds[0]);
+      }
+      while (vals[orderedInds[0]] < meanLeft - stdCutLeft*stdevLeft) {
         removedVals.push_back(vals[orderedInds[0]]);
+        removedInds.push_back(orderedInds[0]);
         vals[orderedInds[0]] = NANVAL;
         image[indices[orderedInds[0]][0]][indices[orderedInds[0]][1]] = NANVAL;
         orderedInds.erase(orderedInds.begin());
       }
 
-      stdevLeft = getLeftSTDev(vals, orderedInds, meanLeft);
-      Nentries = getNleftEntries(vals, orderedInds, meanLeft);
-      Noutliers = getLeftOutliers(vals, orderedInds,
-                    meanLeft, stdevLeft, stdIncludeLeft);
-    }
-    while (vals[orderedInds[0]] < meanLeft - stdCutLeft*stdevLeft) {
-      removedVals.push_back(vals[orderedInds[0]]);
-      removedInds.push_back(orderedInds[0]);
-      vals[orderedInds[0]] = NANVAL;
-      image[indices[orderedInds[0]][0]][indices[orderedInds[0]][1]] = NANVAL;
-      orderedInds.erase(orderedInds.begin());
-    }
 
+      /////  Remove right outliers  /////
+      double stdevPrev;
+      double meanRight = getMean(vals);
+      double stdevRight = getSTDev(vals, meanRight);
+      Nentries = getNrightEntries(vals, orderedInds, meanRight);
+      Noutliers = getRightOutliers(vals, orderedInds,
+                    meanRight, stdevRight, stdIncludeRight);
+      
+      if (verbose) cout << "\tRemoving right outliers\n\t" 
+                        << meanRight << "\t" << stdevRight << "\t" 
+                        << (1 - Noutliers/Nentries) << endl;
+      while (((1 - Noutliers/Nentries) < distSTDratioRight) 
+              && (orderedInds.size() > 100)) {
 
-    /////  Remove right outliers  /////
-    double stdevPrev;
-    double meanRight = getMean(vals);
-    double stdevRight = getSTDev(vals, meanRight);
-    Nentries = getNrightEntries(vals, orderedInds, meanRight);
-    Noutliers = getRightOutliers(vals, orderedInds,
-                  meanRight, stdevRight, stdIncludeRight);
-    
-    if (verbose) cout << "\tRemoving right outliers\n\t" 
-                      << meanRight << "\t" << stdevRight << "\t" 
-                      << (1 - Noutliers/Nentries) << endl;
-    while (((1 - Noutliers/Nentries) < distSTDratioRight) 
-            && (orderedInds.size() > 100)) {
+        for (int i=0; i<(int)(orderedInds.size()*0.0012); i++) {
+          int ind = orderedInds.size() - 1;
+          removedVals.push_back(vals[orderedInds[ind]]);
+          removedInds.push_back(orderedInds[ind]);
+          vals[orderedInds[ind]] = NANVAL;
+          image[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = NANVAL;
+          orderedInds.erase(orderedInds.begin() + ind);
+        }
 
-      for (int i=0; i<(int)(orderedInds.size()*0.0012); i++) {
-        int ind = orderedInds.size() - 1;
+        // Break out of the the loop if the stdev does not change appreciably
+        meanRight = getMean(vals);
+        stdevPrev = stdevRight;
+        stdevRight = getSTDev(vals, meanRight);
+        if ((stdevPrev-stdevRight)/stdevRight < stdChangeRatio) {
+          if (verbose) cout << "\tbreaking by ratio\n";
+          break;
+        }
+
+        Noutliers = getRightOutliers(vals, orderedInds,
+                      meanRight, stdevRight, stdIncludeRight);
+        Nentries = getNrightEntries(vals, orderedInds, meanRight);
+      }
+      int ind = orderedInds.size() - 1;
+      while (vals[orderedInds[ind]] > meanRight + stdCutRight*stdevRight) {
         removedVals.push_back(vals[orderedInds[ind]]);
         removedInds.push_back(orderedInds[ind]);
         vals[orderedInds[ind]] = NANVAL;
         image[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = NANVAL;
         orderedInds.erase(orderedInds.begin() + ind);
+        ind = orderedInds.size() - 1;
       }
 
-      // Break out of the the loop if the stdev does not change appreciably
-      meanRight = getMean(vals);
-      stdevPrev = stdevRight;
-      stdevRight = getSTDev(vals, meanRight);
-      if ((stdevPrev-stdevRight)/stdevRight < stdChangeRatio) {
-        if (verbose) cout << "\tbreaking by ratio\n";
-        break;
-      }
 
-      Noutliers = getRightOutliers(vals, orderedInds,
-                    meanRight, stdevRight, stdIncludeRight);
-      Nentries = getNrightEntries(vals, orderedInds, meanRight);
-    }
-    int ind = orderedInds.size() - 1;
-    while (vals[orderedInds[ind]] > meanRight + stdCutRight*stdevRight) {
-      removedVals.push_back(vals[orderedInds[ind]]);
-      removedInds.push_back(orderedInds[ind]);
-      vals[orderedInds[ind]] = NANVAL;
-      image[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = NANVAL;
-      orderedInds.erase(orderedInds.begin() + ind);
-      ind = orderedInds.size() - 1;
-    }
+      //////////////////////////////
+      /////  Plotting results  /////
+      //////////////////////////////
 
-
-
-    //////////////////////////////
-    /////  Plotting results  /////
-    //////////////////////////////
-
-    /////  Outlier images  /////
-    // Image of outliers cut on right end
-    if (getOutlierImage || pltVerbose) {
-      for (int i=0; i<removedInds.size(); i++) {
-        removedOutliers[indices[removedInds[i]][0]]
-                       [indices[removedInds[i]][1]] = removedVals[i];
-      }
-    }
-
-    // Map of hot pixel stdevs using left mean/stdev with lower thresholds
-    if (getOutlierImage || pltVerbose) {
-      double oMean = getMean(vals);
-      double oSTDev = getSTDev(vals, oMean);
-      /*
-      for (uint i=0; i<indices.size(); i++) {
-        outlierSTDmap[indices[i][0]]
-                     [indices[i][1]] = pow((vals[i] - meanLeft)/stdevLeft, 4);
-      }
-      */
-
-      for (int i=0; i<removedInds.size(); i++) {
-        outlierSTDmap[indices[removedInds[i]][0]]
-                     [indices[removedInds[i]][1]] = pow((removedVals[i] - oMean)/oSTDev, 4);
-      }
-      auto inds = orderedInds.rbegin();
-      while ((vals[*inds] - oMean)/oSTDev > outlierMapSTDcut) {
-        outlierSTDmap[indices[*inds][0]]
-                     [indices[*inds][1]] = pow((vals[*inds] - oMean)/oSTDev, 4);
-        inds++;
-      }
-    }
-
-    /////  Distribution of pixel values for current ring  /////
-    if ((verbose && pltVerbose)) {
-      //cout << "\tSaving value distributions ... ";
-      std::vector<double> outP;
-      for_each(vals.begin(), vals.end(), [&outP](double d)
-          { if (d != NANVAL) {
-              outP.push_back(d);
+      if (rep == Nreps-1) {
+        /////  Outlier images  /////
+        if (radPixHistos) {
+          for (uint i=0; i<vals.size(); i++) {
+            if (vals[i] != NANVAL) {
+              radPixHistos[rad]->Fill(vals[i], 1);
             }
-          });
-      save::saveDat<double>(outP,  
-          "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/data/vals_" 
-          + to_string(stg) + "_" 
-          + to_string(rad) + "_"
-          + to_string(meanLeft) + "_"
-          + to_string(stdev) + "_"
-          + to_string(meanRight) + ".dat");
-      //cout << "saved\n";
-    }
-
-    /////  Polar lineout of ring  /////
-    if (verbose && pltVerbose) {
-      //cout << "\tSaving polar lineout ... ";
-      vector<double> outP = getPolarLineOut(&image, centerR, centerC, rad, shellWidth, 180);
-      save::saveDat<double>(outP, 
-                  "plots/data/polLO_"+to_string(stg) + "_" + to_string(rad) + ".dat");
-
-      std::fill(outP.begin(), outP.end(), 0);
-      std::vector<double> outPcount(outP.size(), 0);
-      for (auto oInd : orderedInds) {
-        outP[(int)(angles[oInd]*180/(2*PI))] += vals[oInd];
-        outPcount[(int)(angles[oInd]*180/(2*PI))] ++;
-      }
-      for (uint i=0; i<outP.size(); i++) {
-        if (outPcount[i]) {
-          outP[i] /= outPcount[i];
+          }
         }
-        else {
-          outP[i] = 0;
+
+        // Image of outliers cut on right end
+        if (getOutlierImage || pltVerbose) {
+          for (int i=0; i<removedInds.size(); i++) {
+            removedOutliers[indices[removedInds[i]][0]]
+                           [indices[removedInds[i]][1]] = removedVals[i];
+          }
+        }
+
+        // Map of hot pixel stdevs using left mean/stdev with lower thresholds
+        if (getOutlierImage || pltVerbose) {
+          double oMean = getMean(vals);
+          double oSTDev = getSTDev(vals, oMean);
+          /*
+          for (uint i=0; i<indices.size(); i++) {
+            outlierSTDmap[indices[i][0]]
+                         [indices[i][1]] = pow((vals[i] - meanLeft)/stdevLeft, 4);
+          }
+          */
+
+          for (int i=0; i<removedInds.size(); i++) {
+            outlierSTDmap[indices[removedInds[i]][0]]
+                         [indices[removedInds[i]][1]] = pow((removedVals[i] - oMean)/oSTDev, 4);
+          }
+          auto inds = orderedInds.rbegin();
+          while ((vals[*inds] - oMean)/oSTDev > outlierMapSTDcut) {
+            outlierSTDmap[indices[*inds][0]]
+                         [indices[*inds][1]] = pow((vals[*inds] - oMean)/oSTDev, 4);
+            inds++;
+          }
+        }
+
+        /////  Distribution of pixel values for current ring  /////
+        if ((verbose && pltVerbose)) {
+          //cout << "\tSaving value distributions ... ";
+          std::vector<double> outP;
+          for_each(vals.begin(), vals.end(), [&outP](double d)
+              { if (d != NANVAL) {
+                  outP.push_back(d);
+                }
+              });
+          save::saveDat<double>(outP,  
+              "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/data/vals_" 
+              + to_string(stg) + "_" 
+              + to_string(rad) + "_"
+              + to_string(meanLeft) + "_"
+              + to_string(stdev) + "_"
+              + to_string(meanRight) + ".dat");
+          //cout << "saved\n";
+        }
+
+        /////  Polar lineout of ring  /////
+        if (verbose && pltVerbose) {
+          //cout << "\tSaving polar lineout ... ";
+          vector<double> outP = getPolarLineOut(&image, centerR, centerC, rad, shellWidth, 180);
+          save::saveDat<double>(outP, 
+                      "./results/polLO_" + to_string(stg) 
+                      + "_" + to_string(rad) + ".dat");
+
+          std::fill(outP.begin(), outP.end(), 0);
+          std::vector<double> outPcount(outP.size(), 0);
+          for (auto oInd : orderedInds) {
+            outP[(int)(angles[oInd]*180/(2*PI))] += vals[oInd];
+            outPcount[(int)(angles[oInd]*180/(2*PI))] ++;
+          }
+          for (uint i=0; i<outP.size(); i++) {
+            if (outPcount[i]) {
+              outP[i] /= outPcount[i];
+            }
+            else {
+              outP[i] = 0;
+            }
+          }
+          save::saveDat<double>(outP, 
+                      "./results/polNormLO_" + to_string(stg) 
+                      + "_" + to_string(rad) + ".dat");
+          //cout << "saved\n";
         }
       }
-      save::saveDat<double>(outP, 
-                  "plots/data/polNormLO_"+to_string(stg) + "_" + to_string(rad) + ".dat");
-      //cout << "saved\n";
     }
   }
 
@@ -3931,11 +4123,11 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
   ////////////////////
 
   if (pltVerbose) {
-    save::saveDat<double>(removedOutliers, "plots/data/outlierRemoved_"
+    save::saveDat<double>(removedOutliers, "./results/outlierRemoved_"
                     + to_string(stg) + "_["
                     + to_string(removedOutliers.size()) + ","
                     + to_string(removedOutliers[0].size()) + "].dat");
-    save::saveDat<double>(outlierSTDmap, "plots/data/outlierSTD_"
+    save::saveDat<double>(outlierSTDmap, "./results/outlierSTD_"
                     + to_string(stg) + "_["
                     + to_string(outlierSTDmap.size()) + ","
                     + to_string(outlierSTDmap[0].size()) + "].dat");
