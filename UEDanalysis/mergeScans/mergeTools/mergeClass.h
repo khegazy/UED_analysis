@@ -82,11 +82,15 @@ class mergeClass : public parameterClass {
 
     // Statistics
     double scanImgAzmRefMean, scanImgAzmRefSTD;
+    double scanImgNormAzmRefMean, scanImgNormAzmRefSTD;
     std::vector<double> runLegRefMeans, runAzmRefMeans, runsMsRefMeans;
     std::vector<double> runLegRefSTD, runAzmRefSTD, runsMsRefSTD;
+    std::vector<double> runLegRefSEM, runAzmRefSEM, runsMsRefSEM;
     std::vector<double> scanImgAzmMeans, scanImgAzmSTDs;
+    std::vector<double> scanImgNormAzmMeans, scanImgNormAzmSTDs;
     std::vector< std::vector<double> > imgAzmRefMeans, imgAzmMeans;
     std::vector< std::vector<double> > runLegMeans, runAzmMeans, runsMsMeans, runPCorrMeans;
+    std::vector< std::vector<double> > runLegSEM, runAzmSEM, runsMsSEM, runPCorrSEM;
     std::vector< std::vector<double> > runLegSTD, runAzmSTD, runsMsSTD, runPCorrSTD;
 
     // Data containers
@@ -101,10 +105,11 @@ class mergeClass : public parameterClass {
     std::vector< std::vector< std::vector<double> > > smearedImg;
     std::map< int64_t, int > stagePosInds;
     std::map< int64_t, int > scanInds;
-    std::map< int, std::vector<double> > scanScale;
+    std::map< int, std::vector<double> > scanScale, scanImgNorms;
     std::map< int, std::vector< std::vector<double> > > scanLgndrs;
     std::map< int, std::vector< std::vector<double> > > scanAzmAvg, scanAzmPCorr;
     std::map< int, std::map<std::string, double> > labTimeParams;
+    std::map< int, std::pair<int, int> > labTimeMap;
     std::map< int, std::map< int, referenceStruct > > scanReferences;
 
 
@@ -118,13 +123,13 @@ class mergeClass : public parameterClass {
     std::vector<double> smoothImgNorm, smoothImgNormSTD;
 
     void compareSimulations(std::vector<std::string> radicals);
-    void addEntry(int scan, int64_t stagePos,
+    void addEntry(int scan, int64_t stagePos, int timeStamp,
                   std::vector<double>* azmAvg, 
                   std::vector<double>* legCoeffs,
                   double imgNorm);
     void addLabTimeParameter(int timeStamp,
                   std::string name, double value);
-    void addReference(int scan, int64_t stagePos,
+    void addReference(int scan, int64_t stagePos, int timeStamp,
                   std::vector<double>* azmAvg,
                   std::vector<double>* legCoeffs,
                   double imgNorm);
@@ -133,12 +138,17 @@ class mergeClass : public parameterClass {
     void removeLabTimeOutliers();
     void removeOutliers();
     void removeImageOutliers();
+    void removeImgNormOutliers();
+    void basicLessThanCut(std::string paramName, double cut);
+    void basicGreaterThanCut(std::string paramName, double cut);
+
     void scaleByFit();
-    void getRunMeanSTD();
+    void getRunMeanSTDSEM();
     void getImageMeanSTD();
+    void getImgNormMeanSTD();
     void mergeScans(bool refOnly=false, bool tdOnly=false);
     void subtractT0();
-    void normalizeScansResults();
+    void normalizeScansResults(); 
     void sMsNormalize();
     void smearTimeGaussian();
     void smearTimeFFT();
