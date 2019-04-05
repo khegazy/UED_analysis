@@ -141,6 +141,12 @@ int main(int argc, char* argv[]) {
     merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
     merge.addLabTimeParameter(timeStamp, "centerRstdRatio", centerRstdRatio);
     merge.addLabTimeParameter(timeStamp, "centerCstdRatio", centerCstdRatio);
+    for (uint i=0; i<imgRadSTD->size(); i++) {
+      merge.addLabTimeParameter(
+          timeStamp, 
+          "imgRadSTD" + to_string(i), 
+          (*imgRadSTD)[i]);
+    }
 
 
     // Ignore reference images taken before scan
@@ -164,6 +170,9 @@ int main(int argc, char* argv[]) {
 
   merge.basicGreaterThanCut("centerRstdRatio", 3);
   merge.basicGreaterThanCut("centerCstdRatio", 3);
+  for (uint i=0; i<imgRadSTD->size(); i++) {
+    merge.stdParamCut("imgRadSTD" + to_string(i), 3);
+  }
 
   ///  Subtract low order polynomials  ///
  
