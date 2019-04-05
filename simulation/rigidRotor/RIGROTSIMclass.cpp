@@ -15,7 +15,7 @@ RIGROTSIMclass::RIGROTSIMclass() {
   savePDFformat = "binary";
 
   cosOrder = 1;
-  cosEVals.resize(1);
+  cosSqEVals.resize(1);
 }
 
 
@@ -126,6 +126,81 @@ vector< complex<double> > RIGROTSIMclass::EVcos() {
     }
   }
 
+  return ExpVals;
+}
+
+
+vector< complex<double> > RIGROTSIMclass::EVsinCos() {
+
+  cout<<"start EVsincCos\n";
+  std::vector< complex<double> > ExpVals(cosOrder);
+  for (uint i=0; i<ExpVals.size(); i++) {
+    ExpVals[i] = std::complex<double>(0,0);
+  }
+
+  // Looping over m
+  //for (auto& sinCosItr : sinCos) {
+  for (int im=0; im<=MAXj; im++) {
+    if (sinCos.find(im) == sinCos.end()) {
+      std::cerr << "ERROR: sinCos does not have matrix for m=" 
+        << im << std::endl;
+      exit(1);
+    }
+    if (sinCos.find(-1*im) == sinCos.end()) {
+      std::cerr << "ERROR: sinCos does not have matrix for m=" 
+        << -1*im << std::endl;
+      exit(1);
+    }
+
+    auto sinCosMatP = sinCos[im];
+    auto sinCosMatM = sinCos[-1*im];
+
+    
+    // Looping over sincos power
+    for (uint ip=0; ip<sinCosOrder; ip++) {
+      
+      for (uint j=0; j<ip; j++) {
+        sinCosMatP = sinCosMatP*sinCosMatP;
+        sinCosMatM = sinCosMatM*sinCosMatM;
+      }
+
+      //if (ip==5) {
+        //cout<<"No loop"<<endl<<cosSqItr.second*cosSqItr.second*cosSqItr.second*cosSqItr.second*cosSqItr.second*cosSqItr.second<<endl;
+        //cout<<"\n\n\n\n"<<"Loop"<<cosMat<<endl;
+        //cout<<"\n\n\n\n"<<"Diff"<<cosMat - cosSqItr.second*cosSqItr.second*cosSqItr.second*cosSqItr.second*cosSqItr.second*cosSqItr.second<<endl;
+      //}
+      // Looping over J for each m in cosSq
+      for (int j=0; j<=MAXj-im; j++) {
+        // Looping over vibrational states
+        for (int iv=0; iv<NvibStates; iv++) {
+          // if/else accounts for 2j+1 multiplicity (only one m=0 state)
+            cout<<"EV: "<<im<<"  "<<j<<"  "<<iv<<"  "<<endl;
+          if (im) {
+            //cout<<"mat: "<<sinCosMatM.rows()<<"  "<<sinCosMatM.cols()<<endl;
+            //cout<<"vec: "<<eigenAmps[iv][j][im].rows()<<"  "<<eigenAmps[iv][j][im].cols()<<endl;
+            if (im==1) {
+            cout<<"vec: "<<eigenAmps[iv][j][im]<<endl;
+            cout<<"P: "<<0.5*rotThermalDist[iv][j+im]
+                        *eigenAmps[iv][j][im].dot(sinCosMatP*eigenAmps[iv][j][im])<<endl;
+            cout<<"M: "<<0.5*rotThermalDist[iv][j+im]
+                        *eigenAmps[iv][j][im].dot(sinCosMatM*eigenAmps[iv][j][im])<<endl;
+            }
+            ExpVals[ip] += 0.5*rotThermalDist[iv][j+im]
+                        *eigenAmps[iv][j][im].dot(sinCosMatP*eigenAmps[iv][j][im]);
+
+            ExpVals[ip] += 0.5*rotThermalDist[iv][j+im]
+                        *eigenAmps[iv][j][im].dot(sinCosMatM*eigenAmps[iv][j][im]);
+          }
+          else {
+            ExpVals[ip] += rotThermalDist[iv][j+im]
+                        *eigenAmps[iv][j][im].dot(sinCosMatP*eigenAmps[iv][j][im]);
+          }
+        }
+      }
+    }
+  }
+
+  cout<<"end EVsinCos\n";
   return ExpVals;
 }
 
@@ -299,7 +374,6 @@ int ij, im;
     }
   }
 
-  cout<<"exiting"<<endl;
   return pdf;
 }
 
@@ -320,6 +394,7 @@ double RIGROTSIMclass::timeInt(double fTime, double iTime) {
 
 void RIGROTSIMclass::sampleSim(string fileName) {
 
+      // Save PDF of the angular distribution
       if (ist == pdfSampleInds[ipi]) {
         std::vector< std::vector<double> > pdf = anglePDFCalc();
         if (savePDFformat == "ROOT") {
@@ -353,17 +428,29 @@ void RIGROTSIMclass::sampleSim(string fileName) {
 
 	ipi++;
       }
-      std::vector< std::complex<double> > expVals = EVcos();
-      for (uint i=0; i<cosOrder; i++) {
-        cosEVals[i][ist] = expVals[i].real();
+
+      // Calculate expectation values
+      if (doCosSqEV) {
+        std::vector< std::complex<double> > expVals = EVcos();
+        for (uint i=0; i<cosOrder; i++) {
+          cosSqEVals[i][ist] = expVals[i].real();
+        }
       }
+      if (doSinCosEV) {
+        std::vector< std::complex<double> > expVals = EVsinCos();
+        for (uint i=0; i<sinCosOrder; i++) {
+          sinCosEVals[i][ist] = expVals[i].real();
+        }
+      }
+
+      // Increment to the next sample time
       ist++;
 	
       return;
 }
 
 
-std::vector< std::vector<double> > RIGROTSIMclass::runSimulation() {
+void RIGROTSIMclass::runSimulation() {
 
 // Each |jm> eigenstate is propogated independently, when 
 //      expectation values or norms are calculated each 
@@ -678,6 +765,235 @@ cout<<"setup mats"<<endl;
   }
 
 
+  // Creating sin*cos matrix
+  if (doSinCosEV) {
+    for (int im=0; im<=MAXj; im++) {
+      sinCos[im].resize(MAXj+1-im, MAXj+1-im);
+      sinCos[im].setZero();
+      sinCos[-1*im].resize(MAXj+1-im, MAXj+1-im);
+      sinCos[-1*im].setZero();
+    }
+
+    int ir, ic;
+    std::string line, fileName;
+    for (int ij=1; ij<=MAXj; ij++) {
+      for (int ijj=ij; ijj<=MAXj; ijj++) {
+        if ((ijj - ij) % 2 == 1) {
+          fileName = 
+            "/reg/d/psdm/amo/amoi0314/scratch/lgndrInts/mANDmp1/assLegendreIntegral_l["
+            + to_string(ij) + "," + to_string(ijj) + "].txt";
+         
+          ifstream file(fileName.c_str());
+          if (file.is_open()) {
+            im = -1*ij;
+            while (getline(file, line)) {
+              //cout<<"m/val: "<<im<<"  "<<ij<<"/"<<ijj<<"  "<<sinCosSq[im].rows()<<"/"<<sinCosSq[im].cols()<<"   "+line<<endl;
+              lgndrInts[ij][im][ijj][im+1] = std::stod(line);
+              im++;
+            }
+          }
+          else {
+            std::cerr << "ERROR: Cannot find file " << fileName << std::endl;
+          }
+          file.close();
+          
+          fileName = 
+            "/reg/d/psdm/amo/amoi0314/scratch/lgndrInts/mp1ANDm/assLegendreIntegral_l["
+            + to_string(ij) + "," + to_string(ijj) + "].txt";
+         
+          file.open(fileName.c_str(), std::ifstream::in);
+          if (file.is_open()) {
+            im = -1*ij;
+            while (getline(file, line)) {
+              ir = ij - fabs(im);
+              ic = ijj - fabs(im);
+              lgndrInts[ij][im][ijj][im-1] = std::stod(line);
+              im++;
+            }
+          }
+          else {
+            std::cerr << "ERROR: Cannot find file " << fileName << std::endl;
+          }
+          file.close();
+
+        }
+      }
+    }
+
+    cout<<"starting to fill sincos"<<endl;
+    int mRange;
+    double lgInt1, lgInt2, lgInt3, lgInt4;
+    double cJpM, cJmM, cJpMp, cJmMp;
+    complexNumber.imag(0);
+    for (int ij=0; ij<=MAXj; ij++) {
+      for (int ijj=0; ijj<=MAXj; ijj++) {
+        if ((ijj - ij) % 2 == 1) {
+          if (ij > ijj) {
+            mRange = ijj;
+          }
+          else {
+            mRange = ij;
+          }
+cout<<"J: "<<ij<<" / "<<ijj<<endl;
+
+          // Filling sinCos matrix where m index is for m and m+1 ME
+          // <ij,im| sinCos |ijj,im>
+          for (int im=-1*mRange; im<=mRange; im++) {
+            cout<<"m: "<<im<<endl;
+            cout<<"111"<<endl;
+            cJpM  = 0;
+            cJpMp = 0;
+            cJmM  = 0;
+            cJmMp = 0;
+            if (ij + 1 >= fabs(im)) {
+              cJpM = std::sqrt(std::pow(ij-im+1, 2)*boost::math::factorial<double>(ij-im)
+                  /(4*PI*(2*ij+1)*boost::math::factorial<double>(ij+im)));
+            }
+            cout<<"111"<<endl;
+            if (ijj + 1 >= fabs(im) + 1) {
+              cJpMp = std::sqrt(boost::math::factorial<double>(ijj-im)
+                  /(4*PI*(2*ijj+1)*boost::math::factorial<double>(ijj+im)));
+            }
+            cout<<"111"<<endl;
+            if ((ij > 0) && (ij - 1 >= fabs(im))) {
+              cJmM = std::sqrt((ij+im)*boost::math::factorial<double>(ij-im)
+                  /(4*PI*(2*ij+1)*boost::math::factorial<double>(ij+im-1)));
+            }
+            cout<<"111"<<endl;
+            if ((ijj > 0) && (ijj - 1 > fabs(im) + 1)) {
+              cJmMp = std::sqrt((ijj-im)*(ijj-im-1)*boost::math::factorial<double>(ijj-im-2)
+                  /(4*PI*(2*ijj+1)*boost::math::factorial<double>(ijj+im)));
+            }
+
+
+            // WHAT DOES IT MEAN IF IJ-1 OR IJJ-1 < 0? ARE THE INTEGRALS 0? LOOK AT RECURSIVE RELATIIONS
+
+            cout<<"starting integrals"<<endl;
+            lgInt1 = 0;
+            lgInt2 = 0;
+            lgInt3 = 0;
+            lgInt4 = 0;
+
+            if ((ij + 1 <= MAXj) && (ijj + 1 <= MAXj)) {
+              if (lgndrInts.find(ij+1) == lgndrInts.end()) {
+                cout<<"Missing: "<<ij+1<<endl;
+              }
+              else {
+                if (lgndrInts[ij+1].find(im) == lgndrInts[ij+1].end()) {
+                  cout<<"Missing: "<<ij+1<<"  "<<im<<endl;
+                }
+                else {
+                  if (lgndrInts[ij+1][im].find(ijj+1) == lgndrInts[ij+1][im].end()) {
+                    cout<<"Missing: "<<ij+1<<"  "<<im<<"  "<<ijj+1<<endl;
+                  }
+                  else {
+                    if (lgndrInts[ij+1][im][ijj+1].find(im+1) == lgndrInts[ij+1][im][ijj+1].end()) {
+                      cout<<"Missing: "<<ij+1<<"  "<<im<<"  "<<ijj+1<<"  "<<im+1<<endl;
+                    }
+                  }
+                }
+              }
+
+              lgInt1 = lgndrInts[ij+1][im][ijj+1][im+1];
+                cout<<lgInt1<<endl;
+            }
+             
+            if ((ij + 1 <= MAXj) && (ijj - 1 >= 0)) {
+              if (lgndrInts.find(ij+1) == lgndrInts.end()) {
+                cout<<"Missing: "<<ij+1<<endl;
+              }
+              else {
+                if (lgndrInts[ij+1].find(im) == lgndrInts[ij+1].end()) {
+                  cout<<"Missing: "<<ij+1<<"  "<<im<<endl;
+                }
+                else {
+                  if (lgndrInts[ij+1][im].find(ijj-1) == lgndrInts[ij+1][im].end()) {
+                    cout<<"Missing: "<<ij+1<<"  "<<im<<"  "<<ijj-1<<endl;
+                  }
+                  else {
+                    if (lgndrInts[ij+1][im][ijj-1].find(im+1) == lgndrInts[ij+1][im][ijj-1].end()) {
+                      cout<<"Missing: "<<ij+1<<"  "<<im<<"  "<<ijj-1<<"  "<<im+1<<endl;
+                    }
+                  }
+                }
+              }
+
+              lgInt2 = lgndrInts[ij+1][im][ijj-1][im+1];
+                cout<<lgInt2<<endl;
+            }
+
+            if ((ij - 1 >= 0) && (ijj + 1 <= MAXj)) {
+              if (lgndrInts.find(ij-1) == lgndrInts.end()) {
+                cout<<"Missing: "<<ij-1<<endl;
+              }
+              else {
+                if (lgndrInts[ij-1].find(im) == lgndrInts[ij-1].end()) {
+                  cout<<"Missing: "<<ij-1<<"  "<<im<<endl;
+                }
+                else {
+                  if (lgndrInts[ij-1][im].find(ijj+1) == lgndrInts[ij-1][im].end()) {
+                    cout<<"Missing: "<<ij-1<<"  "<<im<<"  "<<ijj+1<<endl;
+                  }
+                  else {
+                    if (lgndrInts[ij-1][im][ijj+1].find(im+1) == lgndrInts[ij-1][im][ijj+1].end()) {
+                      cout<<"Missing: "<<ij-1<<"  "<<im<<"  "<<ijj+1<<"  "<<im+1<<endl;
+                    }
+                  }
+                }
+              }
+
+              lgInt3 = lgndrInts[ij-1][im][ijj+1][im+1];
+                cout<<lgInt3<<endl;
+            }
+
+            if ((ij - 1 >= 0) && (ijj - 1 >= 0)) {
+            if (lgndrInts.find(ij-1) == lgndrInts.end()) {
+                cout<<"Missing: "<<ij-1<<endl;
+              }
+              else {
+                if (lgndrInts[ij-1].find(im) == lgndrInts[ij-1].end()) {
+                  cout<<"Missing: "<<ij-1<<"  "<<im<<endl;
+                }
+                else {
+                  if (lgndrInts[ij-1][im].find(ijj-1) == lgndrInts[ij-1][im].end()) {
+                    cout<<"Missing: "<<ij-1<<"  "<<im<<"  "<<ijj-1<<endl;
+                  }
+                  else {
+                    if (lgndrInts[ij-1][im][ijj-1].find(im+1) == lgndrInts[ij-1][im][ijj-1].end()) {
+                      cout<<"Missing: "<<ij-1<<"  "<<im<<"  "<<ijj-1<<"  "<<im+1<<endl;
+                    }
+                  }
+                }
+              }
+                lgInt4 = lgndrInts[ij-1][im][ijj-1][im+1];
+                cout<<lgInt4<<endl;
+            }
+
+            complexNumber.real(
+                cJpM*cJpMp*lgInt1
+                - cJpM*cJmMp*lgInt2
+                + cJmM*cJpMp*lgInt3
+                - cJmM*cJmMp*lgInt4);
+
+            ir = ij - fabs(im);
+            ic = ijj - fabs(im);
+            sinCos[im].insert(ir, ic) = complexNumber; 
+          }
+        }
+      }
+    }
+
+    // Prune small values to speed up simulation
+    double prevPruneVal = prunefx.cutoff;
+    prunefx.cutoff = 1e-7;
+    for (auto & sinCosItr : sinCos) {
+      sinCosItr.second.prune(prunefx);
+    }
+    prunefx.cutoff = prevPruneVal;
+    cout<<"sinCos Mat\n"<<sinCos[-1]<<endl;
+  }
+
+
   cout<<"start sim"<<endl;
   ////////////////////////////////////
   /////  Simulating starts here  /////
@@ -691,10 +1007,20 @@ cout<<"setup mats"<<endl;
   double TnextSample, TnextPulse, endPulseSim;
   double timeEvolStep, dTimePulseEvol;
   NsampleSteps = sampleTimes.size(); 
-  cosEVals.resize(cosOrder);
-  for (uint i=0; i<cosOrder; i++) {
-    cosEVals[i].resize(NsampleSteps, 0);
+
+  if (doCosSqEV) {
+    cosSqEVals.resize(cosOrder);
+    for (uint i=0; i<cosOrder; i++) {
+      cosSqEVals[i].resize(NsampleSteps, 0);
+    }
   }
+  if (doSinCosEV) {
+    sinCosEVals.resize(cosOrder);
+    for (uint i=0; i<sinCosOrder; i++) {
+      sinCosEVals[i].resize(NsampleSteps, 0);
+    }
+  }
+
 
   while ((curTime <= endTimeAU) && (ist != NsampleSteps)) {
 
@@ -843,8 +1169,8 @@ cout<<"setup mats"<<endl;
   opts[1] = xLabel;             optVals[1] = "Time [ps]";
   opts[2] = yLabel;             optVals[2] = "<Cos^{2}#theta>";
 
-  //pltRR.print1d(cosEVals, "n2oAlignment", opts, optVals);
-  //pltRR.print1d(cosEVals, "n2oAlignment");
+  //pltRR.print1d(cosSqEVals, "n2oAlignment", opts, optVals);
+  //pltRR.print1d(cosSqEVals, "n2oAlignment");
 */
 
   /*
@@ -876,7 +1202,7 @@ cout<<"setup mats"<<endl;
 
   cout << "Time to simulate: " << double(clockEnd - clockBegin)/CLOCKS_PER_SEC << endl;
 
-  return cosEVals;
+  return;
 }
 
 

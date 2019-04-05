@@ -11,7 +11,8 @@
 #include <ctime>
 #include <Math/SpecFuncMathMore.h>
 #include <boost/math/special_functions/spherical_harmonic.hpp>
-#include "/reg/neh/home/khegazy/baseScripts/plotClass.h"
+#include <boost/math/special_functions/factorials.hpp>
+#include "/reg/neh/home/khegazy/baseTools/tools/tools.h"
 
 #include "distributions.h"
 
@@ -40,13 +41,17 @@ class RIGROTSIMclass {
         double pulseTlength;       	/* ps */       
         uint Npulses;                                   
         double pulseTspacing;   	/* ps */       
-                                                      
-        uint cosOrder;
+        
+        bool doCosSqEV;
+        bool doSinCosEV;
+        uint cosOrder, sinCosOrder;
         bool makePDFs;                                 
         std::string savePDFformat;
         double startPDFTime;		/* ps */
         double endPDFTime;          	/* ps */       
         std::vector<double> sampleTimes;
+        std::vector< std::vector<double> > cosSqEVals;
+        std::vector< std::vector<double> > sinCosEVals;
                                                        
         int MAXj;                                      
 	bool hasQuarterRev; 
@@ -61,12 +66,13 @@ class RIGROTSIMclass {
         std::vector< std::vector<double> > rotThermalDist;	
         std::map< int, std::map<int, std::map<int, 
           Eigen::SparseVector< complex<double> > > > > eigenAmps;      // Eigenvectors of |VJm>
+        std::map<int, Eigen::SparseMatrix< complex<double> > > sinCos;
         std::map<int, Eigen::SparseMatrix< complex<double> > > cosSq;
         std::map<int, Eigen::SparseMatrix< complex<double> > > cosSqExpDiag;
         std::map<int, Eigen::SparseMatrix< complex<double> > > cosSqTran;
 
         RIGROTSIMclass();
-        std::vector< std::vector<double> > runSimulation();
+        void runSimulation();
 
 
 
@@ -104,6 +110,7 @@ class RIGROTSIMclass {
 
 	void checkAmps();
         std::vector< complex<double> > EVcos();
+        std::vector< complex<double> > EVsinCos();
         std::vector< std::vector<double> > anglePDFCalc();
 	double laserPotential(double time);
 	double timeInt(double fTime, double iTime);
@@ -111,7 +118,6 @@ class RIGROTSIMclass {
 
         std::vector<uint> pdfSampleInds;
         std::vector<double> pulseTimes;
-        std::vector< std::vector<double> > cosEVals;
 
   	uint ist = 0;         // index of sampleTimes
   	uint ipt = 0;         // index of pulseTimes
@@ -122,6 +128,7 @@ class RIGROTSIMclass {
         std::map<std::string, std::vector<double>* > rotVibBconst;
         std::map<std::string, std::vector<double>* > rotVibDconst;
         std::map<std::string, std::vector<double>* > rotVibHconst;
+        std::map<int, std::map<int, std::map<int, std::map<int, double> > > > lgndrInts;
 
 };
 
