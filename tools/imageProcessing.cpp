@@ -265,7 +265,7 @@ void imgProc::removeXrayHits(
       }
 
       if ((*img)[ir][ic] > highCut) {
-        for (int icc = ic; icc<(*img)[ir].size(); icc++) {
+        for (int icc = ic; icc<(int)(*img)[ir].size(); icc++) {
           (*img)[ir][icc] = NANVAL;
         }
       }
@@ -459,7 +459,8 @@ double imgProc::centerfnctr::operator() (std::vector<double> vect) {
     meanR /= (float)dists.size();
 
     for (uint i=0; i<indsR->size(); i++) {
-      loss += std::pow(meanR - dists[i], 2);
+      loss += std::pow(meanR - dists[i], 2)
+                *std::exp(-0.5*std::pow(((*vals)[i] - meanVal)/valSTD, 2));
     }
     loss /= (float)dists.size();
 
@@ -730,7 +731,7 @@ std::vector<int> imgProc::centerSearchCOM(std::vector<imgInfoStruct> &imgINFO,
   std::vector< std::vector<double> > testMap(Nrows);
   if (verbose || pltVerbose) {
     testMap.resize(Nrows);
-    for (uint ir=0; ir<Nrows; ir++) {
+    for (int ir=0; ir<Nrows; ir++) {
       testMap[ir].resize(Ncols,0);
     }
   }
@@ -809,6 +810,75 @@ std::vector<int> imgProc::centerSearchCOM(std::vector<imgInfoStruct> &imgINFO,
 
   if (pltVerbose) {
     cout<<"here"<<endl;
+    TH2F* cImg = pltVerbose->plotRC(imgCent, "plots/roughCenteredImage");
+    for (int ir=(result[0])-5; ir<=result[0]+5; ir++) {
+      for (int ic=(result[1])-5; ic<=result[1]+5; ic++) {
+        if (sqrt(pow(ir-result[0],2)+pow(ic-result[1],2)) < 5)
+          cImg->SetBinContent(ic, ir, -100000);
+      }
+    }
+    cImg->SetMinimum(-1);
+    pltVerbose->print2d(cImg, "plots/roughCenteredImage");
+    delete cImg;
+  }
+
+  return result;
+}
+
+
+std::vector<int> imgProc::centerSearchCOM(
+    std::vector< std::vector<double> > imgCent, 
+    int blockCentR, int blockCentC, float minRad, float maxRad, 
+    int meanInd, double stdScale, bool verbose, PLOTclass* pltVerbose) {
+
+
+  /////  Find center by averaging points  /////
+  uint Nrows = imgCent.size();
+  uint Ncols = imgCent[0].size();
+  double weight, rad;
+  double count = 0;
+  double centerR = 0;
+  double centerC = 0;
+  double scale = imgCent[(int)(Nrows/2)][(int)(Ncols/2)];
+  double val = imgCent[meanInd][meanInd]*scale;
+  
+  std::vector< std::vector<double> > testMap(Nrows);
+  if (verbose || pltVerbose) {
+    testMap.resize(Nrows);
+    for (uint ir=0; ir<Nrows; ir++) {
+      testMap[ir].resize(Ncols,0);
+    }
+  }
+
+  for (int ir=0; ir<(int)imgCent.size(); ir++) {
+    for (int ic=0; ic<(int)imgCent[ir].size(); ic++) {
+      imgCent[ir][ic] *= scale;
+      rad = std::sqrt(std::pow(ir-blockCentR, 2) + std::pow(ic-blockCentC, 2));
+      if ((rad < minRad) || (rad > maxRad)) continue;
+
+      weight = std::exp(-1*std::pow((val - imgCent[ir][ic])/val, 2)/stdScale);
+
+      if (weight > 0.1) {
+        centerR += ir*weight;
+        centerC += ic*weight;
+        count += weight;
+
+        if (pltVerbose) {
+          testMap[ir][ic] = weight;
+        }
+      }
+    }
+  }
+
+  if (pltVerbose) {
+    save::saveDat<double>(testMap, "./results/centering_selectedRange["
+      + to_string(Nrows) + "," + to_string(Ncols) + "].dat");
+    pltVerbose->printRC(testMap, "plots/centering_selectedRange");
+  }
+
+  std::vector<int> result = {(int)(centerR/count), (int)(centerC/count)};
+
+  if (pltVerbose) {
     TH2F* cImg = pltVerbose->plotRC(imgCent, "plots/roughCenteredImage");
     for (int ir=(result[0])-5; ir<=result[0]+5; ir++) {
       for (int ic=(result[1])-5; ic<=result[1]+5; ic++) {
@@ -1072,7 +1142,6 @@ std::vector< std::pair<uint, uint> > imgProc::findClusters(
     }
   }
 
-  bool verbose = false;
   double irSqrd, energy, rad, sum, Nchecks;
   double rMin, rMax, cMin, cMax;
   int row, col;
@@ -2652,8 +2721,6 @@ std::vector<double> imgProc::legendreFit(std::vector< std::vector<double> > img,
   for (uint i=0; i<svSize; i++) {
     svMat.insert(i,i) = 0;
   }
-  uint ir, ic;
-  int irr, icc, indR, indC;
 
   // Remove nans
   int Nnans = 0;
@@ -2664,8 +2731,9 @@ std::vector<double> imgProc::legendreFit(std::vector< std::vector<double> > img,
   bool foundNan = false;
   bool inNan = false;
     
-  for (ir=0; ir<Nrows; ir++) {
-    for (ic=0; ic<Ncols; ic++) {
+  int irr, icc, indR, indC;
+  for (int ir=0; ir<Nrows; ir++) {
+    for (int ic=0; ic<Ncols; ic++) {
       indR = ir*rebin;
       indC = ic*rebin;
 
@@ -3402,7 +3470,7 @@ double imgProc::radProcTool::getMMean(vector<double> vals,
 
   for (; fabs(center - vals[ord[ind]]) <= range; ind++){
     weight++;
-    if (ind + 1 == ord.size()) break;
+    if (ind + 1 == (int)ord.size()) break;
   }
 
   if (verbose) cout<<"beginning vals: "<<center<<"  "<<weight<<endl;
@@ -3418,7 +3486,7 @@ double imgProc::radProcTool::getMMean(vector<double> vals,
     weight = 0;
     for (ind=0; center - vals[ord[ind]] > range; ind++){
     if (verbose) cout<<"test: "<<ind<<"  "<<center<<" "<<vals[ord[ind]]<<"  "<<range<<"  "<<ord.size()<<endl;
-      if (ind + 1 == ord.size()) {
+      if (ind + 1 == (int)ord.size()) {
         cerr << "ERROR: Reached end of indices without exiting!!!\n";
         break;
       }
@@ -3427,7 +3495,7 @@ double imgProc::radProcTool::getMMean(vector<double> vals,
 
     for (; fabs(center - vals[ord[ind]]) <= range; ind++) {
       weight++;
-      if (ind + 1 == ord.size()) break;
+      if (ind + 1 == (int)ord.size()) break;
     }
     //cout<<"\tcheck2: "<<ind<<" "<<vals[ord[ind]]<<endl;
   //cout<<"h6"<<endl;
@@ -3590,7 +3658,6 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
 
   // Plotting variables
   vector<double> pltPixDist;
-  int pdInd;
 
   vector<double> vals, angles;
   vector< vector<int> > indices;
@@ -3615,8 +3682,8 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     for (uint i=0; i<(*INDS).size(); i++) {
       ir = centerR + (*INDS)[i][0];
       ic = centerC + (*INDS)[i][1];
-      if ((ir + buffer < image.size()) && (ir >= buffer)
-          && (ic + buffer < image[0].size()) && (ic >= buffer)) {
+      if ((ir + buffer < (int)image.size()) && (ir >= buffer)
+          && (ic + buffer < (int)image[0].size()) && (ic >= buffer)) {
         if (image[ir][ic] != NANVAL) {
           vals.push_back(image[ir][ic]);
           angles.push_back(tools::getAzmAngle((*INDS)[i][1], (*INDS)[i][0]));
@@ -3710,7 +3777,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     
     // Image of outliers cut on right end
     if (getOutlierImage || pltVerbose) {
-      for (int i=0; i<removedInds.size(); i++) {
+      for (uint i=0; i<removedInds.size(); i++) {
         removedOutliers[indices[removedInds[i]][0]]
                        [indices[removedInds[i]][1]] = removedVals[i];
       }
@@ -3727,9 +3794,10 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
       }
       */
 
-      for (int i=0; i<removedInds.size(); i++) {
+      for (uint i=0; i<removedInds.size(); i++) {
         outlierSTDmap[indices[removedInds[i]][0]]
-                     [indices[removedInds[i]][1]] = pow((removedVals[i] - oMean)/oSTDev, 4);
+                     [indices[removedInds[i]][1]] 
+                        = pow((removedVals[i] - oMean)/oSTDev, 4);
       }
       /*
       auto inds = orderedInds.rbegin();

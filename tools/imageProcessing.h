@@ -200,9 +200,11 @@ namespace imgProc {
           int fxnType;
           int minRadBin;
           int centShellW;
+          double meanVal, valSTD;
           radProcTool* radProc;
           std::vector<int>* indsR;
           std::vector<int>* indsC;
+          std::vector<double>* vals;
           std::vector< std::vector<double> >* img;
 
           double operator() (std::vector<double> vect);
@@ -210,6 +212,11 @@ namespace imgProc {
 
   std::vector<int> centerSearchCOM(std::vector<imgInfoStruct> &imgINFO,
       double hotPixel, double sigmaX,
+      int blockCentR, int blockCentC, 
+      float minRad, float maxRad,
+      int meanInd, double stdScale,  
+      bool verbose, PLOTclass* pltVerbose=NULL);
+  std::vector<int> centerSearchCOM(std::vector< std::vector<double> > imgCent,
       int blockCentR, int blockCentC, 
       float minRad, float maxRad,
       int meanInd, double stdScale,  
