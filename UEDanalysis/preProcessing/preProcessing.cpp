@@ -51,6 +51,7 @@ int main(int argc, char* argv[]) {
 
   parameterClass params(runName);
   PLOTclass plt;
+  std::string imgCentCodeDir = "/reg/neh/home/khegazy/baseTools/UEDanalysis/preProcessing/";
 
 
   //plt.printRC(params.nanMap, "testingNANmap");
@@ -126,7 +127,9 @@ int main(int argc, char* argv[]) {
 
   imgProc::centerfnctr centfnctr;
   std::vector<double> center(2);
+  std::vector<long int> inpCenter(2);
   float centerC, centerR;
+  float centerRstdRatio, centerCstdRatio;
   int Ncents;
 
   double count;
@@ -268,6 +271,8 @@ int main(int argc, char* argv[]) {
   cv::Mat imgSmooth;
   int Nrows = imgMat.rows;
   int Ncols = imgMat.cols;
+  std::vector<double> imgRadSTD(params.meanInds.size());
+  std::vector< std::vector<double> > imgRadSTDs(imgINFO.size());
   std::vector< std::vector<double> > imgOrig(Nrows);
   std::vector< std::vector<double> > imgSubBkg(Nrows);
   std::vector< std::vector<double> > imgTemp(Nrows);
@@ -281,6 +286,9 @@ int main(int argc, char* argv[]) {
     imgTemp[ir].resize(Ncols, 0);
     imgLaserBkg[ir].resize(Ncols, 0);
     imgBkg[ir].resize(1024, 0);
+  }
+  for (uint i=0; i<imgINFO.size(); i++) {
+    imgRadSTDs[i].resize(params.meanInds.size());
   }
 
   //////////////////////////////////////////////
@@ -493,7 +501,6 @@ int main(int argc, char* argv[]) {
       delete plt.printRC(imgBkg, "plots/background-" + imgINFO[0].run);
     }
 
-    exit(0);
   }
 
 
@@ -582,6 +589,437 @@ int main(int argc, char* argv[]) {
 
 
 
+  /// For testing centers
+  std::map<int, vector<float> > centersComp;
+  ifstream infile("centers.txt");
+  while (infile) {
+    string s;
+    if (!getline( infile, s )) break;
+
+    istringstream ss( s );
+
+    string sss;
+    if (!getline( ss, sss, ' ' )) break;
+    if (stoi(sss) != imgINFO[0].scan) continue;
+
+    string pos;
+    getline( ss, pos, ' ' );
+
+    while (ss) {
+      if (!getline( ss, sss, ' ' )) break;
+
+      centersComp[stoi(pos)].push_back(stof(sss));
+    }
+  }
+
+    /////  Find Center  /////
+  //imgProc::centerfnctr centfnctr;
+  double meanR, meanC;
+  double stdR, stdC;
+  double centerValSTD = 2;
+  std::vector<double> resultsR(params.meanInds.size());
+  std::vector<double> resultsC(params.meanInds.size());
+  std::vector< std::vector<int> > centers(imgINFO.size());
+  std::vector< std::vector<double> > allMedVals(imgINFO.size());
+  std::vector< std::vector< std::vector<int> > > allIndsR(imgINFO.size());
+  std::vector< std::vector< std::vector<int> > > allIndsC(imgINFO.size());
+  std::vector< std::vector< std::vector<double> > > allCentVals(imgINFO.size());
+  for (ifl=0; ifl<imgINFO.size(); ifl++) {
+    centers[ifl].resize(2);
+    imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
+    imgMat = cv::imread(imgAddr.c_str(), CV_LOAD_IMAGE_ANYDEPTH); 
+
+    Nrows = imgMat.rows;
+    Ncols = imgMat.cols;
+    if (params.imgMatType.compare("uint16") == 0) {
+      imgCent = imgProc::getImgVector<uint16_t>(imgMat, //imgSmooth, 
+                  Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+                  params.holeRad, params.holeR, params.holeC,
+                  &params.nanMap);
+    }  
+    else if (params.imgMatType.compare("uint32") == 0) {
+      imgCent = imgProc::getImgVector<uint32_t>(imgMat, //imgSmooth, 
+                  Nrows, Nrows/2, Ncols/2, true, &imgBkg,
+                  params.holeRad, params.holeR, params.holeC,
+                  &params.nanMap);
+    }  
+    else {
+      std::cerr << "ERROR: Do not recognize imgMatType = " 
+          + params.imgMatType + "!!!\n";
+      exit(1);
+    }
+
+    /*
+    // Remove Xray hits
+    imgProc::removeXrayHits(
+        &imgCent, 
+        params.XrayHighCut, params.XrayLowCut, 
+        params.XraySTDcut, params.XrayWindow);
+
+    for (uint ir=0; ir<Nrows; ir++) {
+      for (uint ic=0; ic<Ncols; ic++) {
+        imgMat.at<imgMat.type()>(ir, ic) = imgCent[ir][ic];
+      }
+    }
+    */
+
+    int GSsize = (int)(params.sigma*5);
+    GSsize += 1 - GSsize%2;
+    cv::Mat imgSmooth(Nrows, Ncols, imgMat.type());
+    cv::medianBlur(imgMat, imgSmooth, 5);
+    cv::medianBlur(imgSmooth, imgMat, 5);
+    cv::GaussianBlur(
+        imgMat, imgSmooth, 
+        cvSize(GSsize, GSsize), 
+        params.sigma, params.sigma);
+
+    if (params.imgMatType.compare("uint16") == 0) {
+      imgCent = imgProc::getImgVector<uint16_t>(imgSmooth, 
+                  Nrows, Nrows/2, Ncols/2, true, NULL,
+                  params.holeRad+5, params.holeR, params.holeC,
+                  &params.nanMap);
+    }  
+    else if (params.imgMatType.compare("uint32") == 0) {
+      imgCent = imgProc::getImgVector<uint32_t>(imgSmooth, 
+                  Nrows, Nrows/2, Ncols/2, true, NULL,
+                  params.holeRad+5, params.holeR, params.holeC,
+                  &params.nanMap);
+    }  
+    else {
+      std::cerr << "ERROR: Do not recognize imgMatType = " 
+          + params.imgMatType + "!!!\n";
+      exit(1);
+    }
+
+    std::vector<int> centersCOM = imgProc::centerSearchCOM(imgCent,
+        params.blockCentR, params.blockCentC, params.minRad, params.maxRad,
+        params.meanInd, params.COMstdScale, true, NULL); //&plt);
+
+    cout<<"COM: "<<centersCOM[0]<<"  "<<centersCOM[1]<<endl;
+    centerR = 0;
+    centerC = 0;
+    Ncents  = 0;
+    double medVal;
+    std::vector<double> Rs, centVals;
+    std::vector<double> circVals(4);
+    std::vector<double> orderedInds(4);
+    std::vector<int> indsR, indsC, centerRemoveInds;
+    allIndsR[ifl].resize(params.meanInds.size());
+    allIndsC[ifl].resize(params.meanInds.size());
+    allCentVals[ifl].resize(params.meanInds.size());
+    allMedVals[ifl].resize(params.meanInds.size());
+    for (int i=0; i<params.meanInds.size(); i++) {
+      circVals[0] = imgCent[centersCOM[0]+params.meanInds[i]][centersCOM[1]];
+      circVals[1] = imgCent[centersCOM[0]-params.meanInds[i]][centersCOM[1]];
+      circVals[2] = imgCent[centersCOM[0]][centersCOM[1]+params.meanInds[i]];
+      circVals[3] = imgCent[centersCOM[0]][centersCOM[1]-params.meanInds[i]];
+      iota(orderedInds.begin(), orderedInds.end(), 0);
+      sort(orderedInds.begin(), orderedInds.end(),
+          [&circVals](int i1, int i2)
+          {return circVals[i1] < circVals[i2];});
+      medVal = (circVals[orderedInds[1]] + circVals[orderedInds[2]])/2.;
+
+      // Find indices with values close to medVal
+      indsR.clear();
+      indsC.clear();
+      centVals.clear();
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          if (fabs(imgCent[ir][ic] - medVal) < 4*centerValSTD) {
+            indsR.push_back(ir);
+            indsC.push_back(ic);
+            centVals.push_back(imgCent[ir][ic]);
+          }
+        }
+      }
+
+      // Remove indices far from cluster
+      for (int j=0; j<3; j++) {
+        meanR = 0;
+        Rs.resize(indsR.size());
+        for (uint k=0; k<indsR.size(); k++) {
+          Rs[k] = std::sqrt(
+                      std::pow(indsR[k] - centerR, 2)
+                      + std::pow(indsC[k] - centerC, 2));
+          meanR += Rs[k];
+        }
+        meanR /= indsR.size();
+
+        stdR = 0;
+        for (uint k=0; k<indsR.size(); k++) {
+          stdR += std::pow(meanR - Rs[k], 2);
+        }
+        stdR = std::sqrt(stdR/indsR.size());
+
+        centerRemoveInds.clear();
+        for (uint k=0; k<indsR.size(); k++) {
+          if (std::fabs(Rs[k] - meanR) > 4*stdR) {
+            centerRemoveInds.push_back(k);
+          }
+        }
+
+        for (int k=centerRemoveInds.size()-1; k>=0; k--) {
+          indsR.erase(indsR.begin()+centerRemoveInds[k]);
+          indsC.erase(indsC.begin()+centerRemoveInds[k]);
+          centVals.erase(centVals.begin()+centerRemoveInds[k]);
+        }
+      }
+
+      imgRadSTDs[ifl][i] = stdR;
+
+      allIndsR[ifl][i].resize(indsR.size());
+      allIndsC[ifl][i].resize(indsC.size());
+      allCentVals[ifl][i].resize(indsR.size());
+      for (uint k=0; k<indsR.size(); k++) {
+        allIndsR[ifl][i][k] = indsR[k];
+        allIndsC[ifl][i][k] = indsC[k];
+        allCentVals[ifl][i][k] = centVals[k];
+      }
+      allMedVals[ifl][i] = medVal;
+
+      center[0] = centersCOM[0];
+      center[1] = centersCOM[1];
+      centfnctr.radProc     = &radProc;
+      centfnctr.fxnType     = params.centerFxnType;
+      centfnctr.meanVal     = medVal;
+      centfnctr.valSTD      = centerValSTD;
+      centfnctr.vals        = &centVals;
+      centfnctr.indsR       = &indsR;
+      centfnctr.indsC       = &indsC;
+      //centfnctr.verbose     = params.verbose;
+
+      if (params.verbose) std::cout << "\tSearching for center (PowellMin) ... ";
+      tools::powellMin<imgProc::centerfnctr> (centfnctr, center,
+          params.cntrScale, params.cntrMinScale,
+          params.cntrPowellTol, params.cntrFracTol1d);
+      if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
+
+      double minLoss = 1e90;
+      int minR, minC;
+      for (int ir=-5; ir<=5; ir++) {
+        for (int ic=-5; ic<=5; ic++) {
+          std::vector<double> curCent{center[0]+ir, center[1]+ic};
+
+          if (minLoss > centfnctr(curCent)) {
+            minLoss = centfnctr(curCent);
+            minR = curCent[0];
+            minC = curCent[1];
+          }
+        }
+      }
+
+      resultsR[i] = minR;
+      resultsC[i] = minC;
+    }
+
+    meanR = std::accumulate(resultsR.begin(), resultsR.end(), 0);
+    meanR /= (float)resultsR.size();
+    meanC = std::accumulate(resultsC.begin(), resultsC.end(), 0);
+    meanC /= (float)resultsC.size();
+
+    stdR = 0;
+    stdC = 0;
+    for (uint k=0; k<params.meanInds.size(); k++) {
+      stdR += std::pow(meanR-resultsR[k], 2);
+      stdC += std::pow(meanC-resultsC[k], 2);
+    }
+    stdR = std::sqrt(stdR/params.meanInds.size());
+    stdC = std::sqrt(stdC/params.meanInds.size());
+
+    centerR = 0;
+    centerC = 0;
+    Ncents  = 0;
+    for (int k=0; k<params.meanInds.size(); k++) {
+      cout<<"\t"<<k<<"  "<<resultsR[k]<<"  "<<resultsC[k]<<"  ";
+      if ((std::fabs(resultsR[k]-meanR) <= 2*stdR) 
+          && (std::fabs(resultsC[k]-meanC) <= 2*stdC)) {
+
+        centerR += resultsR[k];
+        centerC += resultsC[k];
+        Ncents += 1;
+        cout<<"pass";
+      }
+      cout<<endl;
+    }
+
+    centers[ifl][0] = std::round(centerR/Ncents);
+    centers[ifl][1] = std::round(centerC/Ncents);
+
+    // Show image center
+    if (params.pltCent) {
+      TH2F* cImg = plt.plotRC(
+          imgCent, 
+          "plots/centeredImage"
+            + to_string(imgINFO[ifl].stagePos), 
+          maximum, "1500");
+      for (int ir=(centerR)-5; ir<=centerR+5; ir++) {
+        for (int ic=(centerC)-5; ic<=centerC+5; ic++) {
+          if (sqrt(pow(ir-centerR,2)+pow(ic-centerC,2)) < 5) 
+            cImg->SetBinContent(ic, ir, 100000);
+        }
+      }
+      cImg->SetMinimum(-1);
+      plt.print2d(cImg, 
+          "plots/centeredImage"
+            + to_string(imgINFO[ifl].stagePos));
+      delete cImg;
+    }
+  }
+
+  // Center mean
+  double centerRmeanTemp = 0;
+  double centerCmeanTemp = 0;
+  for (uint i=0; i<centers.size(); i++) {
+    centerRmeanTemp += centers[i][0];
+    centerCmeanTemp += centers[i][1];
+  }
+  centerRmeanTemp /= centers.size();
+  centerCmeanTemp /= centers.size();
+
+  // Center std
+  double centerRstd = 0;
+  double centerCstd = 0;
+  for (uint i=0; i<centers.size(); i++) {
+    centerRstd += std::pow(centerRmeanTemp-centers[i][0], 2);
+    centerCstd += std::pow(centerCmeanTemp-centers[i][1], 2);
+  }
+  centerRstd = std::sqrt(centerRstd/centers.size());
+  centerCstd = std::sqrt(centerCstd/centers.size());
+
+  // Center mean
+  double centerRmean = 0;
+  double centerCmean = 0;
+  Ncents      = 0;
+  for (uint i=0; i<centers.size(); i++) {
+    if ((fabs(centers[i][0] - centerRmeanTemp) < 2*centerRstd)
+        && (fabs(centers[i][1] - centerCmeanTemp) < 2*centerCstd)) {
+
+      centerRmean += centers[i][0];
+      centerCmean += centers[i][1];
+      Ncents++;
+    }
+  }
+  centerRmean /= Ncents;
+  centerCmean /= Ncents;
+
+
+  cout<<"FINDING ABS MIN"<<endl;
+  for (ifl=0; ifl<imgINFO.size(); ifl++) {
+    for (int i=0; i<params.meanInds.size(); i++) {
+      centfnctr.radProc     = &radProc;
+      centfnctr.fxnType     = params.centerFxnType;
+      centfnctr.meanVal     = allMedVals[ifl][i];
+      centfnctr.valSTD      = centerValSTD;
+      centfnctr.vals        = &allCentVals[ifl][i];
+      centfnctr.indsR       = &allIndsR[ifl][i];
+      centfnctr.indsC       = &allIndsC[ifl][i];
+      //centfnctr.verbose     = params.verbose;
+
+
+      double minLoss = 1e90;
+      int minR, minC;
+      for (int ir=-5; ir<=5; ir++) {
+        for (int ic=-5; ic<=5; ic++) {
+          std::vector<double> curCent{centerRmean+ir, centerCmean+ic};
+
+          if (minLoss > centfnctr(curCent)) {
+            minLoss = centfnctr(curCent);
+            minR = curCent[0];
+            minC = curCent[1];
+          }
+        }
+      }
+
+      resultsR[i] = minR;
+      resultsC[i] = minC;
+    }
+
+    meanR = std::accumulate(resultsR.begin(), resultsR.end(), 0);
+    meanR /= (float)resultsR.size();
+    meanC = std::accumulate(resultsC.begin(), resultsC.end(), 0);
+    meanC /= (float)resultsC.size();
+
+    stdR = 0;
+    stdC = 0;
+    for (uint k=0; k<params.meanInds.size(); k++) {
+      stdR += std::pow(meanR-resultsR[k], 2);
+      stdC += std::pow(meanC-resultsC[k], 2);
+    }
+    stdR = std::sqrt(stdR/params.meanInds.size());
+    stdC = std::sqrt(stdC/params.meanInds.size());
+
+    centerR = 0;
+    centerC = 0;
+    Ncents  = 0;
+    for (int k=0; k<params.meanInds.size(); k++) {
+      cout<<"\t"<<k<<"  "<<resultsR[k]<<"  "<<resultsC[k]<<"  ";
+      if ((std::fabs(resultsR[k]-meanR) <= 2.5*stdR) 
+          && (std::fabs(resultsC[k]-meanC) <= 2.5*stdC)) {
+
+        centerR += resultsR[k];
+        centerC += resultsC[k];
+        Ncents += 1;
+        cout<<"pass";
+      }
+      cout<<endl;
+    }
+
+    centers[ifl][0] = std::round(centerR/Ncents);
+    centers[ifl][1] = std::round(centerC/Ncents);
+
+    if (fabs(centers[ifl][0] - centersComp[imgINFO[ifl].stagePos][1])
+          /centersComp[imgINFO[ifl].stagePos][1] > 0.01 
+        || fabs(centers[ifl][1] - centersComp[imgINFO[ifl].stagePos][0])
+          /centersComp[imgINFO[ifl].stagePos][0] > 0.01) {
+
+      cout<<"centers do not match\t"<<scan<<"  "<<imgINFO[ifl].stagePos<<"\t"
+        <<centers[ifl][0]<<" / "<<centersComp[imgINFO[ifl].stagePos][1]<<" / "
+        <<fabs(centers[ifl][0]-centersComp[imgINFO[ifl].stagePos][1])
+          /centersComp[imgINFO[ifl].stagePos][1]<<"\t"<<centers[ifl][1]<<" / "
+        <<centersComp[imgINFO[ifl].stagePos][0]<<" / "
+        <<fabs(centers[ifl][1]-centersComp[imgINFO[ifl].stagePos][0])
+          /centersComp[imgINFO[ifl].stagePos][0]<<endl;
+    }
+  }
+
+  // Center mean
+  centerRmeanTemp = 0;
+  centerCmeanTemp = 0;
+  for (uint i=0; i<centers.size(); i++) {
+    centerRmeanTemp += centers[i][0];
+    centerCmeanTemp += centers[i][1];
+  }
+  centerRmeanTemp /= centers.size();
+  centerCmeanTemp /= centers.size();
+
+  // Center std
+  centerRstd = 0;
+  centerCstd = 0;
+  for (uint i=0; i<centers.size(); i++) {
+    centerRstd += std::pow(centerRmeanTemp-centers[i][0], 2);
+    centerCstd += std::pow(centerCmeanTemp-centers[i][1], 2);
+  }
+  centerRstd = std::sqrt(centerRstd/centers.size());
+  centerCstd = std::sqrt(centerCstd/centers.size());
+
+  // Center mean
+  centerRmean = 0;
+  centerCmean = 0;
+  Ncents      = 0;
+  for (uint i=0; i<centers.size(); i++) {
+    if ((fabs(centers[i][0] - centerRmeanTemp) < 2.5*centerRstd)
+        && (fabs(centers[i][1] - centerCmeanTemp) < 2.5*centerCstd)) {
+
+      centerRmean += centers[i][0];
+      centerCmean += centers[i][1];
+      Ncents++;
+    }
+  }
+
+  centerRmean /= Ncents;
+  centerCmean /= Ncents;
+
+
   //////////////////////////////
   /////  Making root file  /////
   //////////////////////////////
@@ -619,24 +1057,27 @@ int main(int argc, char* argv[]) {
   file = TFile::Open(rFileName.c_str(), "RECREATE");
   tree = new TTree("physics","physics");
 
-  tree->Branch("run", 	        &curRun);
-  tree->Branch("scan", 	        &curScan,       "scan/I");
-  tree->Branch("imgNum", 	&imgNum, 	"imgNum/I");
-  tree->Branch("imgIsRef", 	&imgIsRef, 	"imgIsRef/I");
-  tree->Branch("timeStamp", 	&timeStamp, 	"timeStamp/I");
-  tree->Branch("stagePos", 	&stagePos, 	"stagePos/I");
-  tree->Branch("t0StagePos",    &t0SP,		"t0StagePos/F");
-  tree->Branch("t0Time",	&t0Time,	"t0Time/F");
-  tree->Branch("throttle",      &throttle,      "throttle/F");
-  tree->Branch("centerC", 	&centerC, 	"centerC/I");
-  tree->Branch("centerR", 	&centerR, 	"centerR/I");
-  tree->Branch("imgNorm", 	&imgNorm, 	"imgNorm/F");
-  tree->Branch("readoutNoise", 	&readoutNoise, 	"readoutNoise/F");
-  tree->Branch("imgOrig", 	&imgOrig);
-  tree->Branch("imgSubBkg",     &imgSubBkg);
-  tree->Branch("legCoeffs",     &legCoeffs);
-  tree->Branch("rawAzmAvg",     &rawAzmAvg);
-  tree->Branch("azmAvg",    &azmAvg);
+  tree->Branch("run", 	          &curRun);
+  tree->Branch("scan", 	          &curScan,         "scan/I");
+  tree->Branch("imgNum", 	  &imgNum, 	    "imgNum/I");
+  tree->Branch("imgIsRef", 	  &imgIsRef, 	    "imgIsRef/I");
+  tree->Branch("timeStamp", 	  &timeStamp, 	    "timeStamp/I");
+  tree->Branch("stagePos", 	  &stagePos, 	    "stagePos/I");
+  tree->Branch("t0StagePos",      &t0SP,	    "t0StagePos/F");
+  tree->Branch("t0Time",	  &t0Time,	    "t0Time/F");
+  tree->Branch("throttle",        &throttle,        "throttle/F");
+  tree->Branch("centerC", 	  &centerC, 	    "centerC/I");
+  tree->Branch("centerR", 	  &centerR, 	    "centerR/I");
+  tree->Branch("centerCstdRatio", &centerCstdRatio, "centerCstdRatio/F");
+  tree->Branch("centerRstdRatio", &centerRstdRatio, "centerRstdRatio/F");
+  tree->Branch("imgNorm", 	  &imgNorm, 	    "imgNorm/F");
+  tree->Branch("readoutNoise", 	  &readoutNoise,    "readoutNoise/F");
+  tree->Branch("imgOrig", 	  &imgOrig);
+  tree->Branch("imgSubBkg",       &imgSubBkg);
+  tree->Branch("legCoeffs",       &legCoeffs);
+  tree->Branch("rawAzmAvg",       &rawAzmAvg);
+  tree->Branch("azmAvg",          &azmAvg);
+  tree->Branch("imgRadSTD",       &imgRadSTD);
 
   for (auto const & pv : params.pvMap) {
     pvVals[pv.first] = 0;
@@ -660,7 +1101,7 @@ int main(int argc, char* argv[]) {
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
     std::cout << "INFO: processing image: " << imgINFO[ifl].fileName << endl;
 
-    //if (imgINFO[ifl].stagePos != 1542950) continue; 
+    //if (imgINFO[ifl].stagePos != 1543950) continue; 
 
     /////  Check we are in the same run/scan  /////
     if ((imgINFO[ifl].run.compare(curRun) != 0) 
@@ -694,6 +1135,33 @@ int main(int argc, char* argv[]) {
     /////  Image capture time  /////
     timeStamp = imgINFO[ifl].time;
 
+    /////  Image radial stds  /////
+    for (uint i=0; i<imgRadSTD.size(); i++) {
+      imgRadSTD[i] = imgRadSTDs[ifl][i];
+    }
+
+    /////  Center  /////
+    
+    //centerR = std::round(centersComp[stagePos][1]);
+    //centerC = std::round(centersComp[stagePos][0]);
+    /*
+    centerR = centers[ifl][0];
+    centerC = centers[ifl][1];
+    centerRstdRatio = std::fabs(centerR - centerRmean)/centerRstd;
+    centerCstdRatio = std::fabs(centerC - centerCmean)/centerCstd;
+
+    if ((centerRstdRatio > params.centerSTDcut) 
+        || (centerCstdRatio > params.centerSTDcut)) {
+
+      centerR = centerRmean;
+      centerC = centerCmean;
+    }
+    */
+
+    centerR = centerRmean;
+    centerC = centerCmean;
+
+
     /////  Throttle  /////
     if (imgINFO[ifl].throttle == -1) {
       throttle = params.throttle;
@@ -720,108 +1188,6 @@ int main(int argc, char* argv[]) {
       }
     }
  
-
-    /////  Find Center  /////
-    imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
-    imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-
-    Nrows = imgMat.rows;
-    Ncols = imgMat.cols;
-    cv::GaussianBlur(imgMat, imgSmooth, cvSize(21,21), 5, 5);
-    if (params.imgMatType.compare("uint16") == 0) {
-      imgCent = imgProc::getImgVector<uint16_t>(imgSmooth, 
-                  Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                  params.holeRad, params.holeR, params.holeC,
-                  &params.nanMap);
-    }  
-    else if (params.imgMatType.compare("uint32") == 0) {
-      imgCent = imgProc::getImgVector<uint32_t>(imgSmooth, 
-                  Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                  params.holeRad, params.holeR, params.holeC,
-                  &params.nanMap);
-    }  
-    else {
-      std::cerr << "ERROR: Do not recognize imgMatType = " 
-          + params.imgMatType + "!!!\n";
-      exit(1);
-    }
-
-    // Remove Xray hits
-    imgProc::removeXrayHits(
-        &imgCent, 
-        params.XrayHighCut, params.XrayLowCut, 
-        params.XraySTDcut, params.XrayWindow);
-
-    // Average center at different radii
-    centerR = 0;
-    centerC = 0;
-    Ncents = 0;
-    for (auto const & cvi : params.meanInds) {
-
-      std::vector<int> indsR;
-      std::vector<int> indsC;
-      double val = imgCent[cvi][512];
-      for (int ir=0; ir<Nrows; ir++) {
-        for (int ic=0; ic<Ncols; ic++) {
-          if ((imgCent[ir][ic] > val) && (imgCent[ir][ic] <= val + 5)) {
-            indsR.push_back(ir);
-            indsC.push_back(ic);
-          }
-        }
-      }
-
-      center[0] = std::accumulate(indsR.begin(), indsR.end(), 0);
-      center[0] /= indsR.size();
-      center[1] = std::accumulate(indsC.begin(), indsC.end(), 0);
-      center[1] /= indsC.size();
-      centfnctr.fxnType     = params.centerFxnType;
-      centfnctr.indsR       = &indsR;
-      centfnctr.indsC       = &indsC;
-      //centfnctr.verbose     = params.verbose;
-
-      if (params.verbose) std::cout << "\tSearching for center (PowellMin) ... ";
-      try {
-        tools::powellMin<imgProc::centerfnctr> (centfnctr, center, 
-            params.cntrScale, params.cntrMinScale, 
-            params.cntrPowellTol, params.cntrFracTol1d);
-      }
-      catch (std::string err) {
-        std::cerr << err << std::endl;
-        center[0] = std::accumulate(indsR.begin(), indsR.end(), 0);
-        center[0] /= indsR.size();
-        center[1] = std::accumulate(indsC.begin(), indsC.end(), 0);
-        center[1] /= indsC.size();
-      }
-      if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
-
-      //cout<<"temp cent: "<<center[0]<<"  "<<center[1]<<endl;
-      centerR += center[0];
-      centerC += center[1];
-      Ncents += 1;
-    }
-
-    centerR = std::round(centerR/Ncents);
-    centerC = std::round(centerC/Ncents);
-    //cout<<"final center "<<imgINFO[ifl].stagePos<<": "<<centerR<<"  "<<centerC<<endl;
-    // Show image center
-    if (params.pltCent) {
-      TH2F* cImg = plt.plotRC(
-          imgCent, 
-          "plots/centeredImage"
-            + to_string(imgINFO[ifl].stagePos), 
-          maximum, "1500");
-      for (int ir=(centerR)-5; ir<=centerR+5; ir++) {
-        for (int ic=(centerC)-5; ic<=centerC+5; ic++) {
-          if (sqrt(pow(ir-centerR,2)+pow(ic-centerC,2)) < 5) 
-            cImg->SetBinContent(ic, ir, 100000);
-        }
-      }
-      cImg->SetMinimum(-1);
-      plt.print2d(cImg, 
-          "plots/centeredImage"
-            + to_string(imgINFO[ifl].stagePos));
-      delete cImg;
-    }
 
 
     ///////  Load image  ///////
@@ -1366,7 +1732,8 @@ int main(int argc, char* argv[]) {
     if (params.pltVerbose) {
       plt.print1d(rawAzmAvg, "plots/azimuthalAvg_" + to_string(imgINFO[ifl].imgNum));
     }
-    
+  
+
     // Save image and info to tree
     tree->Fill();
   }
