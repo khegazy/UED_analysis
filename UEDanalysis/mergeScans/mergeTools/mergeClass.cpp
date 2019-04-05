@@ -2257,3 +2257,86 @@ void mergeClass::basicGreaterThanCut(std::string paramName, double cut) {
 }
 
 
+void mergeClass::stdParamCut(std::string paramName, double cut) {
+
+  int scan;
+  int stagePos;
+
+  /////  Calculating the mean  /////
+  double mean   = 0;
+  double count  = 0;
+  for (auto const & timeItr : labTimeParams) {
+    scan      = labTimeMap[timeItr.first].first;
+    stagePos  = labTimeMap[timeItr.first].second;
+    if (scanReferences[scan].find(stagePos) != scanReferences[scan].end()) {
+      if (scanReferences[scan][stagePos].scale > 0) {
+        mean += labTimeParams[timeItr.first][paramName];
+        count += 1;
+      }
+    }
+    else if (stagePosInds.find(stagePos) != stagePosInds.end()) {
+      if (scanScale[scan][stagePosInds[stagePos]] > 0) {
+        mean += labTimeParams[timeItr.first][paramName];
+        count += 1;
+      }
+    }
+    else {
+      std::cerr << "ERROR: Cannot find image by scan / stagePos: "
+          << scan << " / " << stagePos<<endl;
+      exit(1);
+    }
+  }
+  mean /= count;
+
+  /////  Calculating the std  /////
+  double stdVal   = 0;
+  count  = 0;
+  for (auto const & timeItr : labTimeParams) {
+    scan      = labTimeMap[timeItr.first].first;
+    stagePos  = labTimeMap[timeItr.first].second;
+    if (scanReferences[scan].find(stagePos) != scanReferences[scan].end()) {
+      if (scanReferences[scan][stagePos].scale > 0) {
+        stdVal += std::pow(mean-labTimeParams[timeItr.first][paramName], 2);
+        count += 1;
+      }
+    }
+    else if (stagePosInds.find(stagePos) != stagePosInds.end()) {
+      if (scanScale[scan][stagePosInds[stagePos]] > 0) {
+        stdVal += std::pow(mean-labTimeParams[timeItr.first][paramName], 2);
+        count += 1;
+      }
+    }
+    else {
+      std::cerr << "ERROR: Cannot find image by scan / stagePos: "
+          << scan << " / " << stagePos<<endl;
+      exit(1);
+    }
+  }
+  stdVal = std::sqrt(stdVal/count);
+
+  /////  Make cut  /////
+  for (auto const & timeItr : labTimeParams) {
+    scan      = labTimeMap[timeItr.first].first;
+    stagePos  = labTimeMap[timeItr.first].second;
+    if (fabs(labTimeParams[timeItr.first][paramName] - mean)/stdVal > cut) {
+      int scan      = labTimeMap[timeItr.first].first;
+      int stagePos  = labTimeMap[timeItr.first].second;
+
+      if (scanReferences[scan].find(stagePos) != scanReferences[scan].end()) {
+        scanReferences[scan][stagePos].scale = 0;
+      }
+      else if (stagePosInds.find(stagePos) != stagePosInds.end()) {
+        scanScale[scan][stagePosInds[stagePos]] = 0;
+      }
+      else {
+        std::cerr << "ERROR: Cannot find image by scan / stagePos: "
+            << scan << " / " << stagePos<<endl;
+        exit(1);
+      }
+    }
+  }
+
+  return;
+}
+
+

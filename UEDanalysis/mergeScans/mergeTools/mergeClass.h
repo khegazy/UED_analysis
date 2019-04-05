@@ -139,6 +139,7 @@ class mergeClass : public parameterClass {
     void removeOutliers();
     void removeImageOutliers();
     void removeImgNormOutliers();
+    void stdParamCut(std::string paramName, double cut);
     void basicLessThanCut(std::string paramName, double cut);
     void basicGreaterThanCut(std::string paramName, double cut);
 
