@@ -501,6 +501,7 @@ int main(int argc, char* argv[]) {
       delete plt.printRC(imgBkg, "plots/background-" + imgINFO[0].run);
     }
 
+    exit(0);
   }
 
 
