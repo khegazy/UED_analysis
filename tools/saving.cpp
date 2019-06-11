@@ -26,6 +26,7 @@ std::vector<int> save::getShape(std::string folder, std::string filePrefix) {
     }
   }
 
+  cout<<"5"<<endl;
   cout << "INFO: Getting shape from " + fileName <<endl;
 
   std::vector<int> inds;
