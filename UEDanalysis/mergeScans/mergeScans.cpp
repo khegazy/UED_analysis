@@ -96,14 +96,6 @@ int main(int argc, char* argv[]) {
 
   int curScan;
   
-  ////////////////////////////////////////
-  /////  Compare simulation results  /////
-  ////////////////////////////////////////
-  
-  //if (merge.compareSims) {
-  //  merge.compareSimulations(merge.molName);
-  //}
-
   ///////////////////////////
   /////  Merging Scans  /////
   ///////////////////////////
@@ -122,6 +114,10 @@ int main(int argc, char* argv[]) {
   for (uint64_t ievt=0; ievt<Nentries; ievt++) {
     analysis.loadEvent(ievt);
 
+
+    //if (scan >= 75 && scan < 105) {
+    //  continue;
+    //}
     if (std::find(merge.badScans.begin(), merge.badScans.end(), scan) 
           != merge.badScans.end()) continue;
     auto badImgItr = merge.badImages.find(scan);
@@ -132,33 +128,59 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    merge.addLabTimeParameter(timeStamp, "scan", scan);
-    merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
-    merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
-    merge.addLabTimeParameter(timeStamp, "pressure", pressure);
-    merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
-    merge.addLabTimeParameter(timeStamp, "bunkerTemp", bunkerTemp);
-    merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
-    merge.addLabTimeParameter(timeStamp, "centerRstdRatio", centerRstdRatio);
-    merge.addLabTimeParameter(timeStamp, "centerCstdRatio", centerCstdRatio);
-    for (uint i=0; i<imgRadSTD->size(); i++) {
-      merge.addLabTimeParameter(
-          timeStamp, 
-          "imgRadSTD" + to_string(i), 
-          (*imgRadSTD)[i]);
-    }
+    bool fillLabParams = false;
 
-
-    // Ignore reference images taken before scan
-    if (imgIsRef) {
+    // Adding Reference Images
+    if (std::find(merge.refSubtractStagePos.begin(), 
+            merge.refSubtractStagePos.end(), stagePos) 
+          != merge.refSubtractStagePos.end()) {
       if (merge.verbose) std::cout << "INFO: Adding reference image.\n";
-
+    
       merge.addReference(scan, stagePos, timeStamp, azmAvg, legCoeffs, imgNorm);
-      continue;
+      fillLabParams = true;
     }
 
-    ///  Insert entries to respective maps  ///
-    merge.addEntry(scan, stagePos, timeStamp, azmAvg, legCoeffs, imgNorm);
+    // Adding Time Dependent Images
+    if (!imgIsRef) {
+      merge.addEntry(scan, stagePos, timeStamp, azmAvg, legCoeffs, imgNorm);
+      fillLabParams = true;
+    }
+
+    // Adding image parameters
+    if (fillLabParams) {
+      merge.addLabTimeParameter(timeStamp, "scan", scan);
+      merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
+      merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
+      merge.addLabTimeParameter(timeStamp, "centerRstdRatio", centerRstdRatio);
+      merge.addLabTimeParameter(timeStamp, "centerCstdRatio", centerCstdRatio);
+      for (uint i=0; i<imgRadSTD->size(); i++) {
+        merge.addLabTimeParameter(
+            timeStamp, 
+            "imgRadSTD" + to_string(i), 
+            (*imgRadSTD)[i]);
+      }
+      // Adding lab/setup parameters
+      for (auto const & pvInd : merge.pvMap) {
+        if (pvInd.first.compare("pressure") == 0) {
+          merge.addLabTimeParameter(timeStamp, "pressure", pressure);
+        }
+        else if (pvInd.first.compare("UVcounts") == 0) {
+          merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
+        }
+        else if (pvInd.first.compare("bunkerTemp") == 0) {
+          merge.addLabTimeParameter(timeStamp, "bunkerTemp", bunkerTemp);
+        }
+        else if (pvInd.first.compare("highBayTemp") == 0) {
+          merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
+        }
+        else {
+          std::cerr << "ERROR: Do not know how to add PV " 
+            << pvInd.first << "!!!\n";
+          exit(1);
+        }
+      }
+    }
+
 
   }
 
@@ -180,6 +202,7 @@ int main(int argc, char* argv[]) {
     std::cout << "INFO: Removing low order polynomials.\n";
   }
 
+  merge.removeImgNormOutliers();
   merge.removeLowPolynomials();
 
 
@@ -189,7 +212,6 @@ int main(int argc, char* argv[]) {
     std::cout << "INFO: Removing outliers.\n";
   }
 
-  merge.removeImgNormOutliers();
 
   merge.scaleByFit();
 
@@ -205,7 +227,7 @@ int main(int argc, char* argv[]) {
   merge.mergeScans();
 
   // Normalize line outs
-  merge.normalizeScansResults();
+  //merge.normalizeScansResults();
 
   // Get Mean, STD, and SEM
   merge.getRunMeanSTDSEM();
@@ -275,6 +297,10 @@ int main(int argc, char* argv[]) {
   if (merge.verbose) std::cout << "INFO: sMs Normalization.\n";
   merge.sMsNormalize();
 
+  // Gaussian smooth
+  if (merge.verbose) std::cout << "INFO: Gaussian Smearing Q.\n";
+  //merge.gaussianFilterQ();
+
   // Make pair correlations
   if (merge.verbose) std::cout << "INFO: Making pair correlations.\n";
   //merge.makePairCorrs();
@@ -300,6 +326,22 @@ int main(int argc, char* argv[]) {
   if (merge.verbose) 
     std::cout << "INFO: saving merged references after t0 subtraction.\n";
 
+  if (merge.pltVerbose) {
+    std::vector<double> test(merge.azimuthalsMs[0].size());
+    plt.print1d(merge.azmReference, "./plots/reference");
+    plt.printRC(merge.azimuthalAvg, "./plots/azmAvg");
+    if (merge.didSMSnormalize) {
+      plt.printRC(merge.azimuthalsMs, "./plots/azmAvgSMS");
+    for (uint i=0; i<test.size(); i++) {
+      test[i] = merge.azimuthalAvg[27][i]/merge.sMsAzmNorm[i];
+      if (i<50) {
+        test[i] = 0;
+      }
+    }
+    plt.print1d(test, "test1d");
+    }
+  }
+
   save::saveDat<double>(merge.azimuthalAvg, 
       merge.mergeScansOutputDir + "data-"
       + runName + "-" + prefix + "azmAvgDiff["
@@ -310,6 +352,18 @@ int main(int argc, char* argv[]) {
       + runName + "-" + prefix + "azmAvgSEM[" 
       + to_string(merge.runAzmSEM.size()) + ","
       + to_string(merge.runAzmSEM[0].size()) + "].dat");
+
+  save::saveDat<double>(merge.azmReference,
+      merge.mergeScansOutputDir + "data-"
+      + runName + "-" + prefix + "azmReference[" 
+      + to_string(merge.azmReference.size()) + "].dat");
+  for (auto & aItr : merge.azmIndReference) {
+    save::saveDat<double>(aItr.second,
+        merge.mergeScansOutputDir + "data-"
+        + runName + "_" + prefix + "reference-"
+        + to_string(aItr.first) + "_bins[" 
+        + to_string(merge.NradAzmBins) + "].dat");
+  }
 
   if (merge.smearedTime) {
     save::saveDat<double>(merge.smearedAzmAvg, 
