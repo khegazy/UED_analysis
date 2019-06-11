@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
       }
 
       for (int iq=0; iq<params.NradAzmBins; iq++) {
-        refAzmAvg[iq] = (refAzmAvg[iq]*Nref + (*filtAzmAvg)[iq])/(Nref + 1);
+        refAzmAvg[iq] = (refAzmAvg[iq]*Nref + (*azmAvg)[iq])/(Nref + 1);
       }
       Nref++;
     }
@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) {
 
     if (std::find(params.badScans.begin(), params.badScans.end(), scan)
           != params.badScans.end()) {
-      for (uint i=0; i<(*filtAzmAvg).size(); i++) {
+      for (uint i=0; i<(*azmAvg).size(); i++) {
         plotScan[ievt][i] = 0;
       }
       continue;
@@ -97,16 +97,16 @@ int main(int argc, char* argv[]) {
     if (badImgItr != params.badImages.end()) {
       if (std::find(badImgItr->second.begin(), badImgItr->second.end(), stagePos)
             != badImgItr->second.end()) {
-        for (uint i=0; i<(*filtAzmAvg).size(); i++) {
+        for (uint i=0; i<(*azmAvg).size(); i++) {
           plotScan[ievt][i] = 0;
         }
         continue;
       }
     }
 
-    for (uint i=0; i<(*filtAzmAvg).size(); i++) {
-      if ((*filtAzmAvg)[i] != NANVAL) {
-        plotScan[ievt][i] = ((*filtAzmAvg)[i] - refAzmAvg[i])*i;
+    for (uint i=0; i<(*azmAvg).size(); i++) {
+      if ((*azmAvg)[i] != NANVAL) {
+        plotScan[ievt][i] = ((*azmAvg)[i] - refAzmAvg[i])*i;
       }
       else {
         plotScan[ievt][i] = 0;

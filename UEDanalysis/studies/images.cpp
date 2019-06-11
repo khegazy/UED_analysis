@@ -62,13 +62,13 @@ int main(int argc, char* argv[]) {
           + runName + "_scan-" 
           + to_string(scan) + "_pos-" 
           + to_string(stagePos), opts, vals);
-      plt.print1d((*filtAzmAvg), "./plots/lineOut_"
+      plt.print1d((*azmAvg), "./plots/lineOut_"
           + runName + "_scan-" 
           + to_string(scan) + "_pos-" 
           + to_string(stagePos));
       for (int iq=0; iq<params.NradAzmBins; iq++) {
-        if (reference[iq] != 0 && (*filtAzmAvg)[iq] != NANVAL) {
-          diff[iq] = (*filtAzmAvg)[iq] - reference[iq];
+        if (reference[iq] != 0 && (*azmAvg)[iq] != NANVAL) {
+          diff[iq] = (*azmAvg)[iq] - reference[iq];
           if (count) {
             cout<<"COUNT: "<<count<<endl;
             count =0;

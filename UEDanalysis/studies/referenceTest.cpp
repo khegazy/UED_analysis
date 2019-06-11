@@ -35,21 +35,24 @@ int main(int argc, char* argv[]) {
   vector<double> refAvg(params.NradAzmBins,0);
   double count = 0;
   // Plot options
-  vector<PLOToptions> opts(2);
-  vector<string>  vals(2);
-  opts[0] = maximum;  vals[0] = "200";
-  opts[1] = minimum;  vals[1] = "-200";
+  vector<PLOToptions> opts(3);
+  vector<string>  vals(3);
+  opts[0] = maximum;  vals[0] = "10";
+  opts[1] = minimum;  vals[1] = "-10";
+  opts[2] = xSpan;    vals[2] = "0," + to_string(params.maxQazm);
 
   // Get reference
   vector<double> referenceAzm(params.NradAzmBins, 0);
   vector<string> runNames = {"20180627_1551", "20180629_1630", 
                              "20180630_1925", "20180701_0746"};
+
   for (uint i=0; i<runNames.size(); i++) {
     if (runName.compare(runNames[i]) == 0) continue;
 
     save::importDat(referenceAzm,
-        "../staticDiffraction/results/references-"
-        + runNames[i] + ".dat");
+        "../staticDiffraction/results/data-"
+        + runNames[i] + "-staticsMs["
+        + to_string(params.NradAzmBins) + "].dat");
 
     std::transform(referenceAzm.begin(), referenceAzm.end(),
         refAvg.begin(), refAvg.begin(),
@@ -62,14 +65,15 @@ int main(int argc, char* argv[]) {
       });
 
   save::importDat(referenceAzm,
-      "../staticDiffraction/results/references-"
-      + runName + ".dat");
+        "../staticDiffraction/results/data-"
+        + runName + "-staticsMs["
+        + to_string(params.NradAzmBins) + "].dat");
 
   std::transform(referenceAzm.begin(), referenceAzm.end(),
       refAvg.begin(), refAvg.begin(),
       std::plus<double>());
 
-  plt.print1d(refAvg, "./plots/referenceCompAllRef_" + runName,
+  plt.print1d(refAvg, "./plots/referenceCompAllRefsMs_" + runName,
                 opts, vals);
 
   cout<<"filling"<<endl;
@@ -77,6 +81,7 @@ int main(int argc, char* argv[]) {
   cout<<"filled"<<endl;
  
 
+  /*
   // Get sms norms
   vector<double> atmAzmDiff(params.NradAzmBins, 0.0);
   vector<double> sMsAzmNorm(params.NradAzmBins, 0.0);
@@ -131,7 +136,7 @@ int main(int argc, char* argv[]) {
 
   plt.print1d(refAvg, "./plots/referenceTest_" + runName,
                 maximum, "4");
-
+  */
 
   return 1;
 }
