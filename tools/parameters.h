@@ -8,17 +8,20 @@
 #include <cstdlib>
 #include <cmath>
 #include <map>
+#include <stdlib.h>
 #include "/reg/neh/home/khegazy/baseTools/tools/constants.h"
 
 
 class parameterClass {
   public:
 
+    std::string run;
+
     enum radicalEnum 
         {initialState, 
          finalState1, 
          finalState2, 
-         Nradicals};
+         finalState3};
     radicalEnum molecule;
     std::string molName;
 
@@ -44,6 +47,7 @@ class parameterClass {
     bool laserClusterRemoval;
 
     std::string preProcOutputDir;
+    std::string preProcI0OutputDir;
     std::string mergeScansOutputDir;
     std::string scanSearchOutputDir;
     std::string radialPixelDist;
@@ -51,10 +55,11 @@ class parameterClass {
 
 
     bool hasRef;
-    double refStagePos;
+    double refStagePosCut;
     bool subtractReference;
     float imgNormRadMin;
     float imgNormRadMax;
+    std::vector<int> refSubtractStagePos;
 
     // Pair correlation parameters
     int NautCpadding;
@@ -69,6 +74,15 @@ class parameterClass {
     double lowQfillSimScale;
     std::string fillLowQfile;
     bool fillLowQtheory;
+    bool fillLowQzeros;
+    bool fillLowQsine;
+    bool fillLowQfitTheory;
+
+    bool pCorrGaussFilter;
+    bool pCorrButterFilter;
+    std::string pCorrFilterType;
+    int   pCorrFilterOrder;
+    float pCorrWnHigh;
 
     // Analysis parameters
     std::vector< std::vector<double> > signalRranges;
@@ -78,18 +92,24 @@ class parameterClass {
     bool compareSims;
     bool simPairCorr;
     bool getBonds;
+    bool fsFitOffset;
+    bool fsFilterSMS;
     bool simPltVerbose;
     int NradSimBins;
+    int fitQbegin;
+    int fitQend;
     int fsQfitBegin;
     int fsQfitEnd;
     int fsRfitBegin;
     int fsRfitEnd;
+    double fsFilterVar;
     double Iebeam;
     double elEnergy;
     double screenDist;
     std::string xyzDir;
     std::string simOutputDir;
     std::vector<std::string> finalStates;
+    std::vector<std::string> intermediateStates;
     std::vector<std::string> xyzFiles;
     std::vector<std::string> radicalNames;
 
@@ -103,13 +123,16 @@ class parameterClass {
     double bkgSTDcut;
     std::string backgroundFolder;
     std::string backgroundImage;
+    std::string refCorrection;
 
     // Hot pixel removal
-    double hotPixel; 
     double XrayHighCut;
     double XrayLowCut;
     double XraySTDcut; 
     int    XrayWindow; 
+    bool   xRayHitDist;
+
+    double hotPixel; 
     int    shellWidth;
     int    Npoly;
     double stdIncludeLeft;
@@ -120,6 +143,8 @@ class parameterClass {
     double distSTDratioRight;
     double stdChangeRatio;   
     double stdCutRight;      
+    bool   radPixDist;
+
     double outlierSTDcut;
     bool   outlierVerbose;
     double outlierMapSTDcut;
@@ -143,7 +168,6 @@ class parameterClass {
     std::string indicesPath;
 
     // Center finding
-    int NavgCenters;
     int centerFxnType;
     int centerMinRadBin;
     int centerShellWidth;
@@ -157,12 +181,14 @@ class parameterClass {
     int minRad;
     int maxRad;
     int meanInd;
+    std::vector<int> meanInds;
     double COMstdScale;
 
     double cntrScale;
     double cntrMinScale;
     double cntrPowellTol;
     double cntrFracTol1d;
+    double centerSTDcut;
 
     // Laser Background Removal Parameters
     double  decayConst;
@@ -186,7 +212,12 @@ class parameterClass {
     float padMaxHeight;
     float WnLow;
     float WnHigh;
+    bool  pltFilterVerbose;
     std::string filterType;
+
+    // Remove low order polynomial noise
+    int NlowOrderPoly;
+    bool lowPolySubtractStudy;
 
     // Merging Scans
     bool  Qnormalize;
@@ -214,6 +245,12 @@ class parameterClass {
     float throttle;
     std::string pvFolder;
     std::map< std::string, std::string > pvMap;
+
+    // Power Scans
+    double range1Qbegin;
+    double range1Qend;
+    double range2Qbegin;
+    double range2Qend;
 
     // Time Zero
     std::vector< std::vector<double> > tZeroQranges;
