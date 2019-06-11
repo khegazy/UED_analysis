@@ -34,6 +34,7 @@
 //Home Grown
 #include "constants.h"
 #include "plotClass.h"
+#include "saving.h"
 
 using namespace std;
 
@@ -93,7 +94,7 @@ namespace tools {
       bool forwardFFT, bool centeredOrigin, 
       PLOTclass* pltVerbose=NULL, std::string pltName="fftInput"); 
 
-  // Machine Learning
+  // Fitting
   Eigen::MatrixXd normalEquation(
       Eigen::MatrixXd X, 
       Eigen::MatrixXd Y);
@@ -103,6 +104,13 @@ namespace tools {
       Eigen::VectorXd w);
   std::pair<Eigen::MatrixXcd, Eigen::VectorXcd>
     PCA(Eigen::MatrixXd inpArrays, bool zeroMean = true, bool unitVariance = true);
+  std::vector< std::vector<double> > pythonFit(
+      std::vector< std::vector<double> >* X,
+      std::vector<double>* Y,
+      std::vector<double>* W = NULL,
+      std::vector<double>* p0 = NULL,
+      bool globalMin = false,
+      std::vector< std::vector<double> >* searchRange = NULL);
 
   // Minimizing functions
   template <typename fType>

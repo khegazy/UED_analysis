@@ -82,13 +82,28 @@ Eigen::MatrixXd tools::SVDinvert(Eigen::MatrixXd &mat) {
 }
 
 
-Eigen::MatrixXd tools::normalEquation(Eigen::MatrixXd X, Eigen::MatrixXd Y) {
+Eigen::MatrixXd tools::normalEquation(
+    Eigen::MatrixXd X, 
+    Eigen::MatrixXd Y) {
 
-  Eigen::MatrixXd nrmInp = X.transpose()*X;
+  auto w = Eigen::VectorXd::Ones(X.rows());
+
+  return normalEquation(X, Y, w);
+}
+
+
+Eigen::MatrixXd tools::normalEquation(
+    Eigen::MatrixXd X, 
+    Eigen::MatrixXd Y, 
+    Eigen::VectorXd w) {
+
+  auto W = w.asDiagonal();
+  Eigen::MatrixXd nrmInp = X.transpose()*W*X;
   Eigen::MatrixXd norm = tools::SVDinvert(nrmInp);
 
-  return norm*(X.transpose()*Y);
+  return norm*(X.transpose()*W*Y);
 }
+
 
 std::pair<Eigen::MatrixXcd, Eigen::VectorXcd> 
   tools::PCA(Eigen::MatrixXd inpArrays, bool zeroMean, bool unitVariance) {
@@ -124,6 +139,74 @@ std::pair<Eigen::MatrixXcd, Eigen::VectorXcd>
           
   return results;
 }
+
+std::vector< std::vector<double> > tools::pythonFit(
+    std::vector< std::vector<double> >* X,
+    std::vector<double>* Y,
+    std::vector<double>* W,
+    std::vector<double>* p0,
+    bool globalMin,
+    std::vector< std::vector<double> >* searchRange) {
+
+  std::string XfileName = "./fitValuesY_Bins["
+      + to_string(X->size()) 
+      + "," + to_string((*X)[0].size()) + "].dat";
+  save::saveDat<double>((*X), XfileName);
+  std::string YfileName = "./fitValuesY_Bins["
+      + to_string(Y->size()) + "].dat";
+  save::saveDat<double>((*Y), YfileName);
+
+  std::string WfileName = "./fitValuesW_Bins["
+      + to_string(W->size()) + "].dat";
+  if (W != NULL) {
+    save::saveDat<double>((*W), WfileName);
+  }
+
+  std::string p0RangeFileName;
+  if (globalMin) {
+    p0RangeFileName += "./globalMinP0ranges["
+      + to_string(searchRange->size())
+      + "," + to_string((*searchRange)[0].size());
+    save::saveDat<double>((*searchRange), p0RangeFileName);
+  }
+
+
+  std::string codeDir = "/reg/neh/home/khegazy/baseTools/tools/";
+  std::string command = "python " + codeDir
+        + "fitLinCurveFit.py --X " + XfileName
+        + " --Y " + YfileName;
+  if (W != NULL) {
+    command += " --W " + WfileName;
+  }
+  if (globalMin) {
+    command += " --globalMin " + p0RangeFileName;
+  }
+  
+  std::vector< std::vector<double> > fitCoeffs(2);
+  fitCoeffs[0].resize(X->size());
+  fitCoeffs[1].resize(X->size());
+  std::string coeffsFileName = "./fitCoefficients_Bins["
+      + to_string(X->size()) + "].dat";
+  std::string coeffsErrFileName = "./fitCoefficientErrors_Bins["
+      + to_string(X->size()) + "].dat";
+
+  save::importDat<double>(fitCoeffs[0], coeffsFileName);
+  save::importDat<double>(fitCoeffs[1], coeffsErrFileName);
+
+  if (W != NULL) {
+    std::remove(WfileName.c_str());
+  }
+  if (globalMin) {
+    std::remove(p0RangeFileName.c_str());
+  }
+  std::remove(YfileName.c_str());
+  std::remove(XfileName.c_str());
+  std::remove(coeffsFileName.c_str());
+  std::remove(coeffsErrFileName.c_str());
+
+  return fitCoeffs;
+}
+   
 
 
 double tools::getAzmAngle(double X, double Y) {
