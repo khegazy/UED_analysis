@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
   bool givenFileName      = false;
   bool subtractReference  = false;
   bool fitLowQ            = false;
-  bool fillLowQzeros      = false;
+  bool fillLowQzeros      = params.fillLowQzeros;
   bool removeSkippedBins  = true;
   bool fitPC              = false;
   std::string fileName    = "NULL";
@@ -123,6 +123,10 @@ int main(int argc, char* argv[]) {
   }
   if (runName.compare("simulateReference") == 0) {
     removeSkippedBins = false;
+    params.fillLowQtheory    = false;
+    params.fillLowQzeros     = false;
+    params.fillLowQsine      = false;
+    params.fillLowQfitTheory = false;
   }
 
   /////  Plotting variables  /////
@@ -154,7 +158,7 @@ int main(int argc, char* argv[]) {
   if (!givenFileName) {
     shape = save::getShape( 
         params.mergeScansOutputDir,
-        "data-" + runName + "-sMsAzmAvgDiff");
+        "data-" + runName + "-sMsAzmAvgDiff[");
 
     assert(shape[1] == params.NradAzmBins);
 
@@ -186,7 +190,13 @@ int main(int argc, char* argv[]) {
     std::cout << "Retriving data from " << fileName << endl; 
 
   save::importDat<double>(tmdDiff, fileName);
-    
+   
+  double pCorrQcut = 8;
+  int NqBins = (int)(pCorrQcut*params.NradAzmBins/params.maxQazm);
+  for (uint tm=0; tm<tmdDiff.size(); tm++) {
+    tmdDiff[tm].resize(NqBins);
+  }
+
   if (params.pltVerbose) {
     std::vector<PLOToptions> pOpts(2);
     std::vector<std::string> pVals(2);
@@ -215,7 +225,7 @@ int main(int argc, char* argv[]) {
     save::importDat<double>(sMsSim, sMsSimName);
 
     for (int itm=0; itm<shape[0]; itm++) {
-      for (int iq=0; iq<shape[1]; iq++) {
+      for (int iq=0; iq<(int)tmdDiff[itm].size(); iq++) {
         tmdDiff[itm][iq] -= sMsSim[iq];
       }
     }
@@ -300,6 +310,67 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  std::vector< std::vector<double> > fitTmdDiff(tmdDiff.size());
+  if (params.fillLowQfitTheory) {
+    std::string simSMSrefName =
+        params.simOutputDir
+        + params.radicalNames[params.initialState]
+        + "_sMsPatternLineOut_Qmax-"
+        + to_string(params.maxQazm) + "_Ieb-"
+        + to_string(params.Iebeam) + "_scrnD-"
+        + to_string(params.screenDist) + "_elE-"
+        + to_string(params.elEnergy) + "_Bins["
+        + to_string(params.NradAzmBins) + "].dat";
+
+    std::vector<double> sMsReference(params.NradAzmBins);
+    save::importDat<double>(sMsReference, simSMSrefName);
+    
+    std::vector< std::vector<double> > simFinalSMSs(params.finalStates.size());
+    std::vector< std::vector<double> > tmdFitCoeffs(params.finalStates.size());
+    for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
+      std::string fsName = params.finalStates[ifs];
+ 
+      std::string simSMSfinalName =
+          params.simOutputDir + fsName
+          + "_sMsPatternLineOut_Qmax-"
+          + to_string(params.maxQazm) + "_Ieb-"
+          + to_string(params.Iebeam) + "_scrnD-"
+          + to_string(params.screenDist) + "_elE-"
+          + to_string(params.elEnergy) + "_Bins["
+          + to_string(params.NradAzmBins) + "].dat";
+ 
+      simFinalSMSs[ifs].resize(params.NradAzmBins);
+      save::importDat<double>(simFinalSMSs[ifs], simSMSfinalName);
+
+      for (int iq=0; iq<params.NradAzmBins; iq++) {
+        simFinalSMSs[ifs][iq] -= sMsReference[iq];
+      }
+
+      std::string fitCoeffFileName = 
+        "./results/sim-" + runName + "-" + params.finalStates[ifs]
+        + "_sMsFitCoeffsLinComb_Bins["
+        + to_string(tmdDiff.size()) + "].dat";
+
+      tmdFitCoeffs[ifs].resize(tmdDiff.size());
+      save::importDat<double>(tmdFitCoeffs[ifs], fitCoeffFileName);
+    }
+
+    for (uint i=0; i<tmdDiff.size(); i++) {
+      fitTmdDiff[i].resize(params.NradAzmBins, 0);
+    }
+    for (int itm=0; itm<(int)tmdDiff.size(); itm++) {
+      for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
+        for (int iq=0; iq<params.NradAzmBins; iq++) {
+          fitTmdDiff[itm][iq] += simFinalSMSs[ifs][iq]*tmdFitCoeffs[ifs][itm];
+        }
+      }
+      plt.print1d(fitTmdDiff[itm], "testing-" + to_string(itm));
+    }
+  }
+
+    
+
+
 
 
 
@@ -326,8 +397,8 @@ int main(int argc, char* argv[]) {
 
   int FFTcent = inpFFTsize/2;
   std::vector<double> fftInp(inpFFTsize);
-  std::vector<double> smoothed(params.NradAzmBins, 0);
-  std::vector<double> filter(params.NradAzmBins, 0);
+  std::vector<double> smoothed(NqBins, 0);
+  std::vector<double> filter(NqBins, 0);
   std::vector< std::vector<double> > results;
   std::vector< std::vector<double> > pairCorrEven(shape[0]);
   std::vector< std::vector<double> > pairCorrOdd(shape[0]);
@@ -344,6 +415,25 @@ int main(int argc, char* argv[]) {
   Eigen::Matrix<double, Eigen::Dynamic, 1> Y;
   X.resize(maxFitInd - params.NbinsSkip, 4);
   Y.resize(maxFitInd - params.NbinsSkip, 1);
+
+  std::vector<double> lowPassFilter(NqBins);
+  if (params.pCorrButterFilter) {
+    std::string filterName =
+        "/reg/neh/home/khegazy/analysis/filters/" + params.pCorrFilterType
+        + "Filter_Bins-" + to_string(NqBins)
+        + "_order-" + to_string(params.pCorrFilterOrder)
+        + "_WnHigh-"+ to_string(params.pCorrWnHigh) + ".dat";
+    if (!tools::fileExists(filterName)) {
+      cout << "\n\nINFO: Making new filter\n";
+      system(("python /reg/neh/home/khegazy/analysis/filters/makeFilters.py --Nbins "
+            + to_string(NqBins)
+            + " --Ftype " + params.pCorrFilterType
+            + " --Order " + to_string(params.pCorrFilterOrder)
+            + " --WnHigh " + to_string(params.pCorrWnHigh)).c_str());
+    }
+    save::importDat<double>(lowPassFilter, filterName);
+  }
+
 
   for (int itm=0; itm<shape[0]; itm++) {
 
@@ -442,7 +532,7 @@ int main(int argc, char* argv[]) {
 
 
     /////  Filling FFT Input  /////
-    for (iq=0; iq<params.NradAzmBins; iq++) {
+    for (iq=0; iq<NqBins; iq++) {
       if (params.fillLowQtheory) {
         if (iq < params.NbinsSkip) {
           tmdDiff[itm][iq] = lowQsim[iq];
@@ -465,12 +555,31 @@ int main(int argc, char* argv[]) {
           }
         }
       }
+      else if (params.fillLowQsine) {
+        if (iq < params.NbinsSkip) {
+          tmdDiff[itm][iq] = std::sin(iq*PI/(2*50))
+                              *tmdDiff[itm][params.NbinsSkip]
+                              /std::sin(params.NbinsSkip*PI/(2*50));
+        }
+      }
+      else if (params.fillLowQfitTheory) {
+        if (iq < params.NbinsSkip) {
+          tmdDiff[itm][iq] = fitTmdDiff[itm][iq];
+        }
+      }
+
 
       //  Apply Filter
-      filterScale = exp(-1*std::pow(iq, 2)
-                          /(2*params.filterVar));
-      smoothed[iq] = tmdDiff[itm][iq]*filterScale;
-      filter[iq] = filterScale;
+      if (params.pCorrGaussFilter) {
+        filterScale = exp(-1*std::pow(iq, 2)
+                            /(2*params.filterVar));
+        smoothed[iq] = tmdDiff[itm][iq]*filterScale;
+        filter[iq] = filterScale;
+      }
+      else if (params.pCorrButterFilter) {
+        smoothed[iq] = tmdDiff[itm][iq]*lowPassFilter[iq];
+        filter[iq] = lowPassFilter[iq];
+      }
     }
 
     if (params.pltVerbose) {
@@ -483,7 +592,7 @@ int main(int argc, char* argv[]) {
     /////  Apply FFT  /////
     if (mirrorDiffPattern) {
       fftInp[FFTcent] = smoothed[0];
-      for (iq=1; iq<params.NradAzmBins; iq++) {
+      for (iq=1; iq<NqBins; iq++) {
         fftInp[FFTcent+iq] = smoothed[iq];
         fftInp[FFTcent-iq] = smoothed[iq];
       }
@@ -491,7 +600,7 @@ int main(int argc, char* argv[]) {
                     false, true, NULL, "fftInp_" + to_string(itm));
     }
     else {
-      for (iq=0; iq<params.NradAzmBins; iq++) {
+      for (iq=0; iq<NqBins; iq++) {
         fftInp[iq] = smoothed[iq];
       }
       results = tools::fft1dRtoC(fftInp, fftB, qSpace, rSpace, 
