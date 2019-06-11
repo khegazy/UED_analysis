@@ -235,7 +235,7 @@ std::vector< std::vector<double> > RIGROTSIMclass::anglePDFCalc() {
   std::vector< std::vector< std::vector< std::vector< complex<double> > > > > YlmVec(MAXj+1);
   for (ij=0; ij<=MAXj; ij++) {
     int index = 0;
-    string fName = "/reg/neh/home/khegazy/simulations/rigidRotor/output/YlmRef_J-" 
+    string fName = "/reg/d/psdm/amo/amoi0314/scratch/YlmRef/YlmRef_J-" 
       + to_string(ij) + "_Nitr-" + to_string(Nitr) + ".dat";
 
     // Create file of Ylm if it doesn't exist
