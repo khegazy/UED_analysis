@@ -27,7 +27,9 @@
 #include "/reg/neh/home/khegazy/baseTools/tools/imageProcessing.h"
 #include "/reg/neh/home/khegazy/baseTools/tools/plotClass.h"
 #include "/reg/neh/home/khegazy/baseTools/tools/saveClass.h"
+#include "/reg/neh/home/khegazy/baseTools/tools/saving.h"
 #include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
+
 
 
 using namespace std;
@@ -55,17 +57,27 @@ using namespace std;
    Int_t           stagePos;
    Float_t         t0StagePos;
    Float_t         t0Time;
-   Float_t         pressure;
-   Float_t         pressureDer;
+   Float_t         throttle;
    Int_t           centerC;
    Int_t           centerR;
+   Float_t         centerCstdRatio;
+   Float_t         centerRstdRatio;
    Float_t         imgNorm;
    Float_t         readoutNoise;
    vector<vector<double> > *imgOrig;
    vector<vector<double> > *imgSubBkg;
    vector<double>  *legCoeffs;
+   vector<double>  *rawAzmAvg;
    vector<double>  *azmAvg;
-   vector<double>  *filtAzmAvg;
+   vector<double>  *imgRadSTD;
+   Float_t         UVcounts;
+   Float_t         UVcountsDer;
+   Float_t         bunkerTemp;
+   Float_t         bunkerTempDer;
+   Float_t         highBayTemp;
+   Float_t         highBayTempDer;
+   Float_t         pressure;
+   Float_t         pressureDer;
 
    // List of branches
    TBranch        *b_run;   //!
@@ -76,17 +88,27 @@ using namespace std;
    TBranch        *b_stagePos;   //!
    TBranch        *b_t0StagePos;   //!
    TBranch        *b_t0Time;   //!
-   TBranch        *b_pressure;   //!
-   TBranch        *b_pressureDer;   //!
+   TBranch        *b_throttle;   //!
    TBranch        *b_centerC;   //!
    TBranch        *b_centerR;   //!
+   TBranch        *b_centerCstdRatio;   //!
+   TBranch        *b_centerRstdRatio;   //!
    TBranch        *b_imgNorm;   //!
    TBranch        *b_readoutNoise;   //!
    TBranch        *b_imgOrig;   //!
    TBranch        *b_imgSubBkg;   //!
    TBranch        *b_legCoeffs;   //!
+   TBranch        *b_rawAzmAvg;   //!
    TBranch        *b_azmAvg;   //!
-   TBranch        *b_filtAzmAvg;   //!
+   TBranch        *b_imgRadSTD;   //!
+   TBranch        *b_UVcounts;   //!
+   TBranch        *b_UVcountsDer;   //!
+   TBranch        *b_bunkerTemp;   //!
+   TBranch        *b_bunkerTempDer;   //!
+   TBranch        *b_highBayTemp;   //!
+   TBranch        *b_highBayTempDer;   //!
+   TBranch        *b_pressure;   //!
+   TBranch        *b_pressureDer;   //!
 
 
 
@@ -157,17 +179,27 @@ void analysisClass::initialize(string fileList, string treeName) {
    fChain->SetBranchAddress("stagePos", &stagePos, &b_stagePos);
    fChain->SetBranchAddress("t0StagePos", &t0StagePos, &b_t0StagePos);
    fChain->SetBranchAddress("t0Time", &t0Time, &b_t0Time);
-   fChain->SetBranchAddress("pressure", &pressure, &b_pressure);
-   fChain->SetBranchAddress("pressureDer", &pressureDer, &b_pressureDer);
+   fChain->SetBranchAddress("throttle", &throttle, &b_throttle);
    fChain->SetBranchAddress("centerC", &centerC, &b_centerC);
    fChain->SetBranchAddress("centerR", &centerR, &b_centerR);
+   fChain->SetBranchAddress("centerCstdRatio", &centerCstdRatio, &b_centerCstdRatio);
+   fChain->SetBranchAddress("centerRstdRatio", &centerRstdRatio, &b_centerRstdRatio);
    fChain->SetBranchAddress("imgNorm", &imgNorm, &b_imgNorm);
    fChain->SetBranchAddress("readoutNoise", &readoutNoise, &b_readoutNoise);
    fChain->SetBranchAddress("imgOrig", &imgOrig, &b_imgOrig);
    fChain->SetBranchAddress("imgSubBkg", &imgSubBkg, &b_imgSubBkg);
    fChain->SetBranchAddress("legCoeffs", &legCoeffs, &b_legCoeffs);
+   fChain->SetBranchAddress("rawAzmAvg", &rawAzmAvg, &b_rawAzmAvg);
    fChain->SetBranchAddress("azmAvg", &azmAvg, &b_azmAvg);
-   fChain->SetBranchAddress("filtAzmAvg", &filtAzmAvg, &b_filtAzmAvg);
+   fChain->SetBranchAddress("imgRadSTD", &imgRadSTD, &b_imgRadSTD);
+   fChain->SetBranchAddress("UVcounts", &UVcounts, &b_UVcounts);
+   fChain->SetBranchAddress("UVcountsDer", &UVcountsDer, &b_UVcountsDer);
+   fChain->SetBranchAddress("bunkerTemp", &bunkerTemp, &b_bunkerTemp);
+   fChain->SetBranchAddress("bunkerTempDer", &bunkerTempDer, &b_bunkerTempDer);
+   fChain->SetBranchAddress("highBayTemp", &highBayTemp, &b_highBayTemp);
+   fChain->SetBranchAddress("highBayTempDer", &highBayTempDer, &b_highBayTempDer);
+   fChain->SetBranchAddress("pressure", &pressure, &b_pressure);
+   fChain->SetBranchAddress("pressureDer", &pressureDer, &b_pressureDer);
 
 }
 
