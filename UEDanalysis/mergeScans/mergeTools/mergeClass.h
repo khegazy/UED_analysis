@@ -37,8 +37,6 @@ class mergeClass : public parameterClass {
     std::string simFileNameSuffix;
 
     // Simulation results
-    std::vector<double> atmLegDiff, atmAzmDiff;
-    std::vector<double> molLegDiff, molAzmDiff;
 
     std::vector<double> Qazm;
     std::vector<double> Qleg;
@@ -64,6 +62,8 @@ class mergeClass : public parameterClass {
 
   public :
 
+    std::vector<double> atmLegDiff, atmAzmDiff;
+    std::vector<double> molLegDiff, molAzmDiff;
     // Constructors/Destructor
     mergeClass(std::string runName);
     void compareReference(std::string);
@@ -111,6 +111,7 @@ class mergeClass : public parameterClass {
     std::map< int, std::map<std::string, double> > labTimeParams;
     std::map< int, std::pair<int, int> > labTimeMap;
     std::map< int, std::map< int, referenceStruct > > scanReferences;
+    std::map< int, std::vector<double> > azmIndReference;
 
 
     std::map< int32_t, std::vector<double> > diffPs, legCoeff_map, pairCorr_map;
@@ -152,6 +153,7 @@ class mergeClass : public parameterClass {
     void normalizeScansResults(); 
     void sMsNormalize();
     void smearTimeGaussian();
+    void gaussianFilterQ();
     void smearTimeFFT();
     void makePairCorrs();
 
