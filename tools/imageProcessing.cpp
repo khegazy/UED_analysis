@@ -188,6 +188,34 @@ void imgProc::averagePixel(cv::Mat &mat, int row, int col) {
   }
 }
 
+
+std::vector<double> imgProc::gaussianSmooth1d(
+      std::vector<double> inp, 
+      double sigma, 
+      int totalRange) {
+
+  double norm, weight;
+  std::vector<double> out(inp.size(), 0);
+
+  int range = totalRange/2 + 1;
+
+  for (int i=0; i<(int)inp.size(); i++) {
+    norm = 0;
+    for (int j=-1*range; j<=range; j++) {
+      if ((i + j < 0) || (i + j >= (int)inp.size())) {
+        continue;
+      }
+
+      weight = std::exp(-1*j*j/(2*std::pow(sigma, 2)));
+      norm += weight;
+      out[i] += inp[i+j]*weight;
+    }
+    out[i] /= norm;
+  }
+
+  return out;
+}
+
     
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 void imgProc::threshold(vector< vector<double> >  &img, int hotpixel) {
@@ -3630,10 +3658,11 @@ int imgProc::radProcTool::getRightOutliers(vector<double> &vals, vector<int> &or
 std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     vector< vector<double> > &image, 
     float centerR_f, float centerC_f, int buffer,
-    int maxRad, int shellWidth, int Npoly,
+    int maxRad, int shellWidth, 
+    bool removeLowPoly, int Npoly,
     double stdCut, int stg, double outlierMapSTDcut, 
-    bool getOutlierImage, bool verbose, 
-    PLOTclass* pltVerbose) {
+    bool getOutlierImage,  
+    bool verbose, PLOTclass* pltVerbose) {
 
   int centerR = (int)centerR_f;
   int centerC = (int)centerC_f;
@@ -3697,20 +3726,26 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     if (vals.size() < 2) continue;
 
  
-    // Subtract background fluctuations
-    X.resize(indices.size(), Npoly);
-    Y.resize(indices.size(), 1);
-    for (uint i=0; i<angles.size(); i++) {
-      for (int p=0; p<Npoly; p++) {
-        X(i,p) = std::pow(angles[i], p);
+    if (removeLowPoly) {
+      // Subtract background fluctuations
+      X.resize(indices.size(), Npoly+1);
+      Y.resize(indices.size(), 1);
+      for (uint i=0; i<angles.size(); i++) {
+        for (int p=0; p<Npoly; p++) {
+          X(i,p+1) = std::pow(angles[i], 2*p+1);
+        }
+        X(i,0) = 1;
+        Y(i,0) = vals[i];
       }
-      Y(i,0) = vals[i];
-    }
-    Eigen::MatrixXd weights = tools::normalEquation(X, Y);
+      Eigen::MatrixXd weights = tools::normalEquation(X, Y);
 
-    for (uint i=0; i<angles.size(); i++) {
-      for (int p=0; p<Npoly; p++) {
-        //vals[i] -= weights(p)*std::pow(angles[i], p);
+
+      for (uint i=0; i<angles.size(); i++) {
+        for (int p=0; p<Npoly; p++) {
+          vals[i] -= weights(p+1)*std::pow(angles[i], 2*p+1);
+          image[indices[i][0]][indices[i][1]] 
+              -= weights(p+1)*std::pow(angles[i], 2*p+1);
+        }
       }
     }
 

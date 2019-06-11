@@ -71,6 +71,11 @@ namespace imgProc {
   template<typename T>
   void medianPixelT(cv::Mat &mat, int row, int col, int hotpixel);
 
+  std::vector<double> gaussianSmooth1d(
+      std::vector<double> inp, 
+      double sigma, 
+      int totalRange);
+
   double cubicInterpolate(double p[4], double x);
   double bicubicInterpolate(double p[4][4], double row, double col);
   template<typename T>
@@ -119,7 +124,8 @@ namespace imgProc {
       std::vector< std::vector<double> > removeOutliersSimple(
               vector< vector<double> > &image,
               float centerR_f, float centerC_f, int buffer,
-              int maxRad, int shellWidth, int Npoly,
+              int maxRad, int shellWidth, 
+              bool removeLowPoly, int Npoly,
               double stdCut, int stg, double outlierMapSTDcut,
               bool getOutlierImage, bool verbose, PLOTclass* pltVerbose);
       vector<double> getPolarLineOut(vector< vector<double> >* image, 
