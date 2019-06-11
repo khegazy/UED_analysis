@@ -152,7 +152,10 @@ int main(int argc, char* argv[]) {
 
     /////  Simulate pair correlation  /////
     if (params.simPairCorr) {
-      std::vector<double> pCorr = mc->simulatePairCorr(500, params.maxR, false, NULL);
+      std::vector<double> pCorr = mc->simulatePairCorr(
+          params.maxRbins, 
+          params.maxR, 
+          false, NULL);
 
       if (!pairCorr.size()) {
         pairCorr.resize(pCorr.size(), 0);
