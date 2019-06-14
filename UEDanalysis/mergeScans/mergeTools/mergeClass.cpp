@@ -214,7 +214,7 @@ void mergeClass::addReference(int scan, int64_t stagePos, int timeStamp,
   scanReferences[scan][stagePos].azmRef.resize(NradAzmBins, 0);
   for (int i=0; i<NradAzmBins; i++) {
     if ((*azmAvg)[i] != NANVAL) {
-      if (normalizeImgs) {
+      if (mergeNormalizeImgs) {
         scanReferences[scan][stagePos].azmRef[i] = (*azmAvg)[i]/imgNorm;
       }
       else {
@@ -229,7 +229,7 @@ void mergeClass::addReference(int scan, int64_t stagePos, int timeStamp,
   scanReferences[scan][stagePos].legRef.resize(NlegBins, 0);
   for (int i=0; i<NlegBins; i++) {
     if ((*legCoeffs)[i] != NANVAL) {
-      if (normalizeImgs) {
+      if (mergeNormalizeImgs) {
         scanReferences[scan][stagePos].legRef[i] = (*legCoeffs)[i]/imgNorm;
       }
       else {
@@ -311,7 +311,7 @@ void mergeClass::addEntry(int scan, int64_t stagePos, int timeStamp,
   scanScale[scan][pInd] = 1;
   scanImgNorms[scan][pInd] = imgNorm;
   for (uint i=0; i<(*legCoeffs).size(); i++) {
-    if (normalizeImgs) {
+    if (mergeNormalizeImgs) {
       scanLgndrs[scan][pInd][i] = (*legCoeffs)[i]/imgNorm;
     }
     else {
@@ -320,7 +320,7 @@ void mergeClass::addEntry(int scan, int64_t stagePos, int timeStamp,
   }
   for (uint i=0; i<(*azmAvg).size(); i++) {
     if ((*azmAvg)[i] != NANVAL) {
-      if (normalizeImgs) {
+      if (mergeNormalizeImgs) {
         scanAzmAvg[scan][pInd][i] = (*azmAvg)[i]/imgNorm;
       }
       else {
@@ -350,6 +350,103 @@ void mergeClass::addEntry(int scan, int64_t stagePos, int timeStamp,
   */
   
 }
+
+
+void mergeClass::saveInitialData() {
+
+  int scan, stagePos, pInd;
+
+  // Saving references
+  for (auto const & sItr : scanReferences) {
+    scan = sItr.first;
+    for (auto const & pItr : sItr.second) {
+      stagePos = pItr.first;
+      scanReferences_init[scan][stagePos].scale   = 
+          scanReferences[scan][stagePos].scale;
+      scanReferences_init[scan][stagePos].imgNorm = 
+          scanReferences[scan][stagePos].imgNorm;
+      scanReferences_init[scan][stagePos].azmRef.assign(
+          scanReferences[scan][stagePos].azmRef.begin(),
+          scanReferences[scan][stagePos].azmRef.end());
+      scanReferences_init[scan][stagePos].legRef.assign(
+          scanReferences[scan][stagePos].legRef.begin(),
+          scanReferences[scan][stagePos].legRef.end());
+    }
+  }
+
+
+  // Saving time dependent data
+  for (auto const & sItr : scanScale) {
+    scan = sItr.first;
+    scanScale_init[scan].resize(stagePosInds.size());
+    scanLgndrs_init[scan].resize(stagePosInds.size());
+    scanAzmAvg_init[scan].resize(stagePosInds.size());
+    for (auto const & pItr : stagePosInds) {
+      pInd = pItr.second;
+
+      scanScale_init[scan][pInd] = scanScale[scan][pInd];
+      scanLgndrs_init[scan][pInd].assign(
+          scanLgndrs[scan][pInd].begin(), 
+          scanLgndrs[scan][pInd].end());
+      scanAzmAvg_init[scan][pInd].assign(
+          scanAzmAvg[scan][pInd].begin(),
+          scanAzmAvg[scan][pInd].end());
+    }
+  }
+
+  return;
+}
+
+
+void mergeClass::reloadInitialData() {
+
+  int scan, stagePos, pInd;
+
+  // Reloading references
+  scanReferences.clear();
+  for (auto const & sItr : scanReferences_init) {
+    scan = sItr.first;
+    for (auto const & pItr : sItr.second) {
+      stagePos = pItr.first;
+      scanReferences[scan][stagePos].scale   = 
+          scanReferences_init[scan][stagePos].scale;
+      scanReferences[scan][stagePos].imgNorm = 
+          scanReferences_init[scan][stagePos].imgNorm;
+      scanReferences[scan][stagePos].azmRef.assign(
+          scanReferences_init[scan][stagePos].azmRef.begin(),
+          scanReferences_init[scan][stagePos].azmRef.end());
+      scanReferences[scan][stagePos].legRef.assign(
+          scanReferences_init[scan][stagePos].legRef.begin(),
+          scanReferences_init[scan][stagePos].legRef.end());
+    }
+  }
+
+
+  // Reloading time dependent data
+  scanScale.clear();
+  scanLgndrs.clear();
+  scanAzmAvg.clear();
+  for (auto const & sItr : scanScale_init) {
+    scan = sItr.first;
+    scanScale[scan].resize(stagePosInds.size());
+    scanLgndrs[scan].resize(stagePosInds.size());
+    scanAzmAvg[scan].resize(stagePosInds.size());
+    for (auto const & pItr : stagePosInds) {
+      pInd = pItr.second;
+
+      scanScale[scan][pInd] = scanScale_init[scan][pInd];
+      scanLgndrs[scan][pInd].assign(
+          scanLgndrs_init[scan][pInd].begin(), 
+          scanLgndrs_init[scan][pInd].end());
+      scanAzmAvg[scan][pInd].assign(
+          scanAzmAvg_init[scan][pInd].begin(),
+          scanAzmAvg_init[scan][pInd].end());
+    }
+  }
+
+  return;
+}
+
 
 /*
 void mergeClass::removeLabTimeOutliers() {
@@ -442,7 +539,6 @@ void mergeClass::getImgNormMeanSTD() {
   scanImgNormAzmRefMean = 0;
   scanImgNormAzmRefSTD = 0;
 
-  double norm = 0;
 
   //////////////////////////////
   /////  Reference Images  /////
@@ -452,7 +548,6 @@ void mergeClass::getImgNormMeanSTD() {
   // Azimuthal Reference
   if (verbose) 
     std::cout << "\tCalculating azimuthal mean.\n";
-  int refInd = 0;
   double siarCount = 0;
   for (auto const & sRitr : scanReferences) {
     for (auto const & pItr : sRitr.second) {
@@ -706,16 +801,16 @@ void mergeClass::getRunMeanSTDSEM() {
   std::vector<double>pCorrNorms(maxRbins, 0);
 
   // Reference measurements
-  if (!runAzmRefMeans.size()) {
-    runLegRefMeans.resize(NlegBins, 0);
-    runAzmRefMeans.resize(NradAzmBins, 0);
+  if (!runAzmRefMean.size()) {
+    runLegRefMean.resize(NlegBins, 0);
+    runAzmRefMean.resize(NradAzmBins, 0);
     runLegRefSTD.resize(NlegBins, 0);
     runAzmRefSTD.resize(NradAzmBins, 0);
     runLegRefSEM.resize(NlegBins, 0);
     runAzmRefSEM.resize(NradAzmBins, 0);
   }
-  std::fill(runLegRefMeans.begin(), runLegRefMeans.end(), 0);
-  std::fill(runAzmRefMeans.begin(), runAzmRefMeans.end(), 0);
+  std::fill(runLegRefMean.begin(), runLegRefMean.end(), 0);
+  std::fill(runAzmRefMean.begin(), runAzmRefMean.end(), 0);
   std::fill(runLegRefSTD.begin(), runLegRefSTD.end(), 0);
   std::fill(runAzmRefSTD.begin(), runAzmRefSTD.end(), 0);
 
@@ -758,17 +853,17 @@ void mergeClass::getRunMeanSTDSEM() {
       for (auto const & pItr : sRitr.second) {
         if (pItr.second.scale) {
           if (pItr.second.azmRef[ir] != NANVAL) {
-            runAzmRefMeans[ir] += pItr.second.azmRef[ir];
+            runAzmRefMean[ir] += pItr.second.azmRef[ir];
             norm += 1;
           }
         }
       }
     }
     if (norm) {
-      runAzmRefMeans[ir] /= norm;
+      runAzmRefMean[ir] /= norm;
     }
     else {
-      runAzmRefMeans[ir] = 0;
+      runAzmRefMean[ir] = 0;
     }
   }
 
@@ -809,7 +904,7 @@ void mergeClass::getRunMeanSTDSEM() {
           if (pItr.second.azmRef[ir] != NANVAL) {
             runAzmRefSTD[ir] 
                 += std::pow((pItr.second.azmRef[ir]
-                        - runAzmRefMeans[ir]), 2);
+                        - runAzmRefMean[ir]), 2);
             norm += 1;
           }
         }
@@ -872,7 +967,7 @@ void mergeClass::getRunMeanSTDSEM() {
     for (int i=0; i<NradAzmBins; i++) {
       runAzmMeans[pItr.second][i] /= azmNorms[i];
       if (didSubtractT0) {
-        runAzmMeans[pItr.second][i] -= runAzmRefMeans[i];
+        runAzmMeans[pItr.second][i] -= runAzmRefMean[i];
       }
     }
 
@@ -924,7 +1019,7 @@ void mergeClass::getRunMeanSTDSEM() {
           if (sAitr.second[pItr.second][i] != NANVAL) {
             if (didSubtractT0) {
               runAzmSTD[pItr.second][i]
-                  += std::pow(((sAitr.second[pItr.second][i] - runAzmRefMeans[i])
+                  += std::pow(((sAitr.second[pItr.second][i] - runAzmRefMean[i])
                         - runAzmMeans[pItr.second][i]), 2);
               if (pItr.second == 2 && i == 19) {
                 //cout<<"scan "<<sAitr.first<<" : "<<std::pow(((sAitr.second[pItr.second][i] - runAzmRefMeans[i]) - runAzmMeans[pItr.second][i]), 2)<<"   "<<runAzmMeans[pItr.second][i]<<endl;
@@ -985,6 +1080,206 @@ void mergeClass::getRunMeanSTDSEM() {
 
   return;
 }
+
+
+void mergeClass::bootstrapSEM() {
+
+  std::srand(time(NULL));
+  int NtimeSteps = stagePosInds.size();
+  std::vector<double> runAzmRefBstMeanCounts(NradAzmBins, 0);
+  std::vector<double> runAzmRefBstSEMCounts(NradAzmBins, 0);
+  std::vector< std::vector<double> > runAzmBstMeanCounts(NtimeSteps);
+  std::vector< std::vector<double> > runAzmBstSEMCounts(NtimeSteps);
+  std::vector< std::vector<double> > runAzmRefBstDist(mergeNbootstrap);
+  std::vector< std::vector<double> > runAzmRefBstDistCounts(mergeNbootstrap);
+  std::vector< std::vector< std::vector<double> > > runAzmBstDist(mergeNbootstrap);
+  std::vector< std::vector< std::vector<double> > > runAzmBstDistCounts(mergeNbootstrap);
+  runLegBstSEM.clear();     runLegBstSEM.resize(NtimeSteps);
+  runAzmBstSEM.clear();     runAzmBstSEM.resize(NtimeSteps);
+  runLegBstMeans.clear();   runLegBstMeans.resize(NtimeSteps);
+  runAzmBstMeans.clear();   runAzmBstMeans.resize(NtimeSteps);
+  runLegRefBstMean.clear(); runLegRefBstMean.resize(NradLegBins);
+  runAzmRefBstMean.clear(); runAzmRefBstMean.resize(NradAzmBins);
+  runLegRefBstSEM.clear();  runLegRefBstSEM.resize(NradLegBins);
+  runAzmRefBstSEM.clear();  runAzmRefBstSEM.resize(NradAzmBins);
+
+  std::vector<int> scans;
+  for (int it=0; it<NtimeSteps; it++) {
+    for (auto const & sItr : scanScale) {
+      if (sItr.second[it] != 0) {
+        if (std::find(scans.begin(), scans.end(), sItr.first) 
+            == scans.end()) {
+          scans.push_back(sItr.first);
+        }
+      }
+    }
+
+    runLegBstSEM[it].resize(NradLegBins, 0);
+    runAzmBstSEM[it].resize(NradAzmBins, 0);
+    runLegBstMeans[it].resize(NradLegBins, 0);
+    runAzmBstMeans[it].resize(NradAzmBins, 0);
+    runAzmBstMeanCounts[it].resize(NradAzmBins, 0);
+    runAzmBstSEMCounts[it].resize(NradAzmBins, 0);
+  }
+  int Nscans = (int)scans.size();
+
+  /////  Selecting Ensembles  /////
+
+  for (int bst=0; bst<mergeNbootstrap; bst++) {
+    std::cout << "Bootstrap: " << bst << std::endl;
+
+    runAzmBstDist[bst].resize(NtimeSteps);
+    runAzmBstDistCounts[bst].resize(NtimeSteps);
+    runAzmRefBstDist[bst].resize(NradAzmBins);
+    runAzmRefBstDistCounts[bst].resize(NradAzmBins);
+    for (int it=0; it<NtimeSteps; it++) {
+      runAzmBstDist[bst][it].resize(NradAzmBins, 0);
+      runAzmBstDistCounts[bst][it].resize(NradAzmBins, 0);
+    }
+
+    for (int isc=0; isc<Nscans; isc++) {
+      int scan = scans[(std::rand() % Nscans)];
+
+      // References
+      for (auto const & sRitr : scanReferences[scan]) {
+        if (sRitr.second.scale) {
+          for (int iazm=0; iazm<NradAzmBins; iazm++) {
+            if (sRitr.second.azmRef[iazm] != NANVAL) {
+              runAzmRefBstDist[bst][iazm] += sRitr.second.azmRef[iazm];
+              runAzmRefBstDistCounts[bst][iazm] += 1;
+            }
+          }
+        }
+      }
+
+      // Time Dependent Data
+      for (int it=0; it<NtimeSteps; it++) {
+        if (scanScale[scan][it] != 0) {
+          for (int iazm=0; iazm<NradAzmBins; iazm++) {
+            if (scanAzmAvg[scan][it][iazm] != NANVAL) {
+              runAzmBstDist[bst][it][iazm] += scanAzmAvg[scan][it][iazm];
+              runAzmBstDistCounts[bst][it][iazm] += 1;
+            }
+          }
+        }
+      }
+    }
+
+    for (int iazm=0; iazm<NradAzmBins; iazm++) {
+      if (runAzmRefBstDistCounts[bst][iazm] > 0) {
+        runAzmRefBstDist[bst][iazm]   /= runAzmRefBstDistCounts[bst][iazm];
+      }
+      else {
+        runAzmRefBstDist[bst][iazm] = NANVAL;
+      }
+
+      for (int it=0; it<NtimeSteps; it++) {
+        if (runAzmBstDistCounts[bst][it][iazm] > 0) {
+          runAzmBstDist[bst][it][iazm] /= runAzmBstDistCounts[bst][it][iazm];
+        }
+        else {
+          runAzmBstDist[bst][it][iazm] = NANVAL;
+        }
+        if (didSubtractT0) {
+          if ((runAzmBstDist[bst][it][iazm] != NANVAL)
+              && (runAzmRefBstDist[bst][iazm] != NANVAL)) {
+            runAzmBstDist[bst][it][iazm] -= runAzmRefBstDist[bst][iazm];
+          }
+          else {
+            runAzmBstDist[bst][it][iazm] = NANVAL;
+          }
+        }
+      }
+    }
+    //plt->print1d(runAzmRefBstDist[bst], "testingBstAzmRef_"+to_string(bst));
+    //plt->print1d(runAzmBstDist[bst][5], "testingBstAzm_"+to_string(bst));
+
+
+    // Calculating mean
+    for (int iazm=0; iazm<NradAzmBins; iazm++) {
+      if (runAzmRefBstDist[bst][iazm] != NANVAL) {
+        runAzmRefBstMean[iazm] += runAzmRefBstDist[bst][iazm];
+        runAzmRefBstMeanCounts[iazm] += 1;
+      }
+
+      for (int it=0; it<NtimeSteps; it++) {
+        if (runAzmBstDist[bst][it][iazm] != NANVAL) {
+          runAzmBstMeans[it][iazm] += runAzmBstDist[bst][it][iazm];
+          runAzmBstMeanCounts[it][iazm] += 1;
+        }
+      }
+    }
+  }
+
+  // Normalizing mean
+  for (int iazm=0; iazm<NradAzmBins; iazm++) {
+    if (runAzmRefBstMeanCounts[iazm] > 0) {
+      runAzmRefBstMean[iazm] /= runAzmRefBstMeanCounts[iazm];
+    }
+    else {
+      runAzmRefBstMean[iazm] = NANVAL;
+    }
+    for (int it=0; it<NtimeSteps; it++) {
+      if (runAzmBstMeanCounts[it][iazm] > 0) {
+        runAzmBstMeans[it][iazm] /= runAzmBstMeanCounts[it][iazm];
+      }
+      else {
+        runAzmBstMeans[it][iazm] = NANVAL;
+      }
+    }
+  }
+  plt->print1d(runAzmRefBstMean, "testingBstAzmRefMean");
+  plt->print1d(runAzmBstMeans[5], "testingBstAzmMean");
+
+  ////  Calculating STD of distribution of means: SEM  /////
+  // Sum square differences
+  for (int bst=0; bst<mergeNbootstrap; bst++) {
+    for (int iazm=0; iazm<NradAzmBins; iazm++) {
+      if ((runAzmRefBstDist[bst][iazm] != NANVAL)
+          && (runAzmRefBstMean[iazm] != NANVAL)) {
+        runAzmRefBstSEM[iazm] += std::pow(
+            runAzmRefBstDist[bst][iazm] - runAzmRefBstMean[iazm], 2);
+        runAzmRefBstSEMCounts[iazm] += 1;
+      }
+
+      for (int it=0; it<NtimeSteps; it++) {
+        if ((runAzmBstDist[bst][it][iazm] != NANVAL)
+            && (runAzmBstMeans[it][iazm] != NANVAL)) {
+          runAzmBstSEM[it][iazm] += std::pow(
+              runAzmBstDist[bst][it][iazm] - runAzmBstMeans[it][iazm], 2);
+          runAzmBstSEMCounts[it][iazm] += 1;
+        }
+      }
+    }
+  }
+
+  // Normalizing and taking sqrt
+  for (int iazm=0; iazm<NradAzmBins; iazm++) {
+    if (runAzmRefBstSEMCounts[iazm] > 0) {
+      runAzmRefBstSEM[iazm] = std::sqrt(
+          runAzmRefBstSEM[iazm]/runAzmRefBstSEMCounts[iazm]);
+    }
+    else {
+      runAzmRefBstSEM[iazm] = NANVAL;
+    }
+
+    for (int it=0; it<NtimeSteps; it++) {
+      if (runAzmBstSEMCounts[it][iazm] > 0) {
+        runAzmBstSEM[it][iazm] = std::sqrt(
+            runAzmBstSEM[it][iazm]/runAzmBstSEMCounts[it][iazm]);
+      }
+      else {
+        runAzmBstSEMCounts[it][iazm] = NANVAL;
+      }
+    }
+  }
+  plt->print1d(runAzmRefBstSEM, "testingBstAzmRefSEM");
+  plt->print1d(runAzmBstSEM[5], "testingBstAzmSEM");
+
+  return;
+}
+
+              
 
 
 void mergeClass::removeLowPolynomials() {
@@ -1306,12 +1601,12 @@ void mergeClass::removeOutliers() {
         int imageNoise = 0;
         for (int ir=0; ir<NradAzmBins; ir++) {
           if (pItr.second.azmRef[ir] != NANVAL) {
-            if ((fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
+            if ((fabs(pItr.second.azmRef[ir] - runAzmRefMean[ir])
                 > mergeImageSTDScale*runAzmRefSTD[ir])
                 || ((pItr.second.azmRef[ir] == NANVAL) && (ir >= azmNANend))) {
               imageNoise++;
             }      
-            if (fabs(pItr.second.azmRef[ir] - runAzmRefMeans[ir])
+            if (fabs(pItr.second.azmRef[ir] - runAzmRefMean[ir])
                 > mergeSTDscale*runAzmRefSTD[ir]) {
               pItr.second.azmRef[ir] = NANVAL;
             }    
@@ -1632,9 +1927,7 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
     std::vector<double> azmRefSplitDiff(NradAzmBins, 0);
     int splitInd = 0;
     std::map<int, int> normInd;
-    for (auto & aItr : azmIndReference) {
-      std::fill(aItr.second.begin(), aItr.second.end(), 0);
-    }
+    azmIndReference.clear();
     for (int ir=0; ir<NradAzmBins; ir++) {
       norm = 0;
       for (auto & nItr : normInd) {
@@ -1648,7 +1941,6 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
           }
           if (pItr.second.scale) {
             if (pItr.second.azmRef[ir] != NANVAL) {
-              if (ir==0) cout<<"checking: "<<sRitr.first<<"  "<<pItr.first<<"    "<<pItr.second.azmRef[ir]<<endl;
               azmReference[ir] += pItr.second.azmRef[ir];
               azmIndReference[pItr.first][ir] += pItr.second.azmRef[ir];
               norm += 1;
@@ -2007,36 +2299,79 @@ void mergeClass::sMsNormalize() {
 
   /////  Normalizing azimuthal average  /////
   azimuthalsMs.resize(stagePosInds.size());
-  runsMsMeans.resize(stagePosInds.size());
-  runsMsSEM.resize(stagePosInds.size());
+  if (!useBootstrapSEM) {
+    runsMsMeans.resize(stagePosInds.size());
+    runsMsSEM.resize(stagePosInds.size());
+  }
+  if (computeBootstrapSEM) {
+    runsMsBstMeans.resize(stagePosInds.size());
+    runsMsBstSEM.resize(stagePosInds.size());
+  }
   for (uint tm=0; tm<stagePosInds.size(); tm++) {
     azimuthalsMs[tm].resize(NradAzmBins, 0);
-    runsMsMeans[tm].resize(NradAzmBins, 0);
-    runsMsSEM[tm].resize(NradAzmBins, 0);
+    if (!useBootstrapSEM) {
+      runsMsMeans[tm].resize(NradAzmBins, 0);
+      runsMsSEM[tm].resize(NradAzmBins, 0);
+    }
+    if (computeBootstrapSEM) {
+      runsMsBstMeans[tm].resize(NradAzmBins, 0);
+      runsMsBstSEM[tm].resize(NradAzmBins, 0);
+    }
   }
-  runsMsRefMeans.resize(NradAzmBins, 0);
-  runsMsRefSEM.resize(NradAzmBins, 0);
+  if (!useBootstrapSEM) {
+    runsMsRefMean.resize(NradAzmBins, 0);
+    runsMsRefSEM.resize(NradAzmBins, 0);
+  }
+  if (computeBootstrapSEM) {
+    runsMsRefBstMean.resize(NradAzmBins, 0);
+    runsMsRefBstSEM.resize(NradAzmBins, 0);
+  }
+
 
   for (int ir=0; ir<NradAzmBins; ir++) {
     for (uint tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
-        azimuthalsMs[tm][ir] = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
-        runsMsMeans[tm][ir]  = runAzmMeans[tm][ir]*sMsAzmNorm[ir];
-        runsMsSEM[tm][ir]    = runAzmSEM[tm][ir]*sMsAzmNorm[ir];
+        azimuthalsMs[tm][ir]    = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
+        if (!useBootstrapSEM) {
+          runsMsMeans[tm][ir]     = runAzmMeans[tm][ir]*sMsAzmNorm[ir];
+          runsMsSEM[tm][ir]       = runAzmSEM[tm][ir]*sMsAzmNorm[ir];
+        }
+        if (computeBootstrapSEM) {
+          runsMsBstMeans[tm][ir]  = runAzmBstMeans[tm][ir]*sMsAzmNorm[ir];
+          runsMsBstSEM[tm][ir]    = runAzmBstSEM[tm][ir]*sMsAzmNorm[ir];
+        }
       }
       else {
-        azimuthalsMs[tm][ir] = NANVAL;
-        runsMsMeans[tm][ir]  = NANVAL;
-        runsMsSEM[tm][ir]    = NANVAL;
+        azimuthalsMs[tm][ir]    = NANVAL;
+        if (!useBootstrapSEM) {
+          runsMsMeans[tm][ir]     = NANVAL;
+          runsMsSEM[tm][ir]       = NANVAL;
+        }
+        if (computeBootstrapSEM) {
+          runsMsBstMeans[tm][ir]  = NANVAL;
+          runsMsBstSEM[tm][ir]    = NANVAL;
+        }
       }
     }
-    if (runAzmRefMeans[ir] != NANVAL) {
-      runsMsRefMeans[ir]  = runAzmRefMeans[ir]*sMsAzmNorm[ir];
-      runsMsRefSEM[ir]    = runAzmRefSEM[ir]*sMsAzmNorm[ir];
+    if (runAzmRefMean[ir] != NANVAL) {
+      if (!useBootstrapSEM) {
+        runsMsRefMean[ir]     = runAzmRefMean[ir]*sMsAzmNorm[ir];
+        runsMsRefSEM[ir]      = runAzmRefSEM[ir]*sMsAzmNorm[ir];
+      }
+      if (computeBootstrapSEM) {
+        runsMsRefBstMean[ir]  = runAzmRefBstMean[ir]*sMsAzmNorm[ir];
+        runsMsRefBstSEM[ir]   = runAzmRefBstSEM[ir]*sMsAzmNorm[ir];
+      }
     }
     else {
-      runsMsRefMeans[ir] = NANVAL;
-      runsMsRefSEM[ir]   = NANVAL;
+      if (!useBootstrapSEM) {
+        runsMsRefMean[ir]     = NANVAL;
+        runsMsRefSEM[ir]      = NANVAL;
+      }
+      if (computeBootstrapSEM) {
+        runsMsRefBstMean[ir]  = NANVAL;
+        runsMsRefBstSEM[ir]   = NANVAL;
+      }
     }
   }
 
@@ -2131,7 +2466,7 @@ void mergeClass::smearTimeGaussian() {
   int timeInd = 0;
   for (int tm=0; tm<NfineTimeDelays; tm++) {
     fineTimeDelays[tm] = timeDelays[0] + tm*minDist;
-    if (timeInd + 1 != azimuthalAvg.size()) {
+    if (timeInd + 1 != (int)azimuthalAvg.size()) {
       while (fabs(timeDelays[timeInd] - fineTimeDelays[tm]) >
           fabs(timeDelays[timeInd+1] - fineTimeDelays[tm])) {
         timeInd++;
@@ -2274,7 +2609,7 @@ void mergeClass::smearTimeFFT() {
   for (int iq=0; iq<NradAzmBins; iq++) {
     int timeInd = 0;
     for (int it=0; it<NfineTimeDelays; it++) {
-      if (timeInd + 1 != azimuthalAvg.size()) {
+      if (timeInd + 1 != (int)azimuthalAvg.size()) {
         while (fabs(timeDelays[timeInd] - fineTimeDelays[it]) >
             fabs(timeDelays[timeInd+1] - fineTimeDelays[it])) {
           timeInd++;
