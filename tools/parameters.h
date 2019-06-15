@@ -27,6 +27,7 @@ class parameterClass {
 
     std::vector<int> badScans;
     std::map< int, std::vector<int> > badImages;
+    std::map< int, std::vector< std::pair<float, float> > > badRegions;
     int Nlegendres;
     int NradLegBins;
     int NmaxRadBins;
