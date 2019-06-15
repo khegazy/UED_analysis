@@ -72,6 +72,7 @@ class parameterClass {
     double padDecayRat;
     double maxR;
     double lowQfillSimScale;
+    double pCorrQcut;
     std::string fillLowQfile;
     bool fillLowQtheory;
     bool fillLowQzeros;
@@ -143,7 +144,7 @@ class parameterClass {
     double distSTDratioRight;
     double stdChangeRatio;   
     double stdCutRight;      
-    bool   radPixDist;
+    bool   plotRadPixDist;
 
     double outlierSTDcut;
     bool   outlierVerbose;
@@ -221,9 +222,13 @@ class parameterClass {
 
     // Merging Scans
     bool  Qnormalize;
-    bool  normalizeImgs;
+    bool  mergeNormalizeImgs;
+    bool  useBootstrapSEM;
+    bool  computeBootstrapSEM;
+    bool  testMergeNbootStrap;
     int   timeFiltOrder;
     int   smearTimeBinWindow;
+    int   mergeNbootstrap;
     float mergeSTDscale;
     float mergeImageSTDScale;
     float legImageNoiseCut;
