@@ -126,6 +126,9 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    // Remove Q regions of certain stage positions
+    merge.removeBadRegions(azmAvg, stagePos);
+
     bool fillLabParams = false;
 
     // Adding Reference Images
@@ -352,7 +355,7 @@ int main(int argc, char* argv[]) {
     std::cout << "INFO: saving merged references after t0 subtraction.\n";
 
   if (!(merge.computeBootstrapSEM && merge.SEMisBootstrap) 
-      && !(merge.useBootstrapSEM && !merge.SEMisBootstrap)) {
+      && !(!merge.useBootstrapSEM && !merge.SEMisBootstrap)) {
     std::cerr << "ERROR: Cannot save SEM because method and "
       << "SEMisBootstrap do not align!!!\n";
     std::exit(1);

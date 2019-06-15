@@ -196,6 +196,25 @@ void mergeClass::compareSimulations(std::vector<std::string> radicals) {
 }
 
 
+void mergeClass::removeBadRegions(
+    std::vector<double>* azmAvg,
+    int64_t stagePos) {
+
+  if (badRegions.find(stagePos) != badRegions.end()) return;
+
+  int ind1, ind2;
+  for (auto const & rItr : badRegions[stagePos]) {
+    ind1 = NradAzmBins*rItr.first/maxQazm;
+    ind2 = NradAzmBins*rItr.second/maxQazm;
+    for (int i=ind1; i<ind2; i++) {
+      (*azmAvg)[i] = NANVAL;
+    }
+  }
+
+  return;
+}
+
+
 void mergeClass::addLabTimeParameter(
       int timeStamp,
       std::string name, 
