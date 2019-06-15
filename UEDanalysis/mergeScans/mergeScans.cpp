@@ -318,6 +318,11 @@ int main(int argc, char* argv[]) {
   if (merge.useBootstrapSEM) {
     if (merge.computeBootstrapSEM) {
       merge.bootstrapSEM();
+
+      // Testing the number of bootstrap loops are needed
+      if (merge.testMergeNbootStrap) {
+        merge.testSEMbootstrap();
+      }
     }
   }
   else {
@@ -345,6 +350,13 @@ int main(int argc, char* argv[]) {
   /////  Saving and plotting  /////
   if (merge.verbose) 
     std::cout << "INFO: saving merged references after t0 subtraction.\n";
+
+  if (!(merge.computeBootstrapSEM && merge.SEMisBootstrap) 
+      && !(merge.useBootstrapSEM && !merge.SEMisBootstrap)) {
+    std::cerr << "ERROR: Cannot save SEM because method and "
+      << "SEMisBootstrap do not align!!!\n";
+    std::exit(1);
+  }
 
   if (merge.pltVerbose) {
     std::vector<double> test(merge.azimuthalsMs[0].size());
