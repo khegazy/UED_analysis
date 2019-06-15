@@ -26,6 +26,7 @@ void mergeClass::initializeVariables() {
   didSMSnormalize   = false;
   didPairCorrSTD    = false;
   didSubtractT0     = false;
+  SEMisBootstrap    = false;
 
   /////  Simulation results  /////
   /*
@@ -1078,6 +1079,8 @@ void mergeClass::getRunMeanSTDSEM() {
     }
   }
 
+  SEMisBootstrap = false;
+
   return;
 }
 
@@ -1094,14 +1097,14 @@ void mergeClass::bootstrapSEM() {
   std::vector< std::vector<double> > runAzmRefBstDistCounts(mergeNbootstrap);
   std::vector< std::vector< std::vector<double> > > runAzmBstDist(mergeNbootstrap);
   std::vector< std::vector< std::vector<double> > > runAzmBstDistCounts(mergeNbootstrap);
-  runLegBstSEM.clear();     runLegBstSEM.resize(NtimeSteps);
-  runAzmBstSEM.clear();     runAzmBstSEM.resize(NtimeSteps);
-  runLegBstMeans.clear();   runLegBstMeans.resize(NtimeSteps);
-  runAzmBstMeans.clear();   runAzmBstMeans.resize(NtimeSteps);
-  runLegRefBstMean.clear(); runLegRefBstMean.resize(NradLegBins);
-  runAzmRefBstMean.clear(); runAzmRefBstMean.resize(NradAzmBins);
-  runLegRefBstSEM.clear();  runLegRefBstSEM.resize(NradLegBins);
-  runAzmRefBstSEM.clear();  runAzmRefBstSEM.resize(NradAzmBins);
+  runLegSEM.clear();     runLegSEM.resize(NtimeSteps);
+  runAzmSEM.clear();     runAzmSEM.resize(NtimeSteps);
+  runLegMeans.clear();   runLegMeans.resize(NtimeSteps);
+  runAzmMeans.clear();   runAzmMeans.resize(NtimeSteps);
+  runLegRefMean.clear(); runLegRefMean.resize(NradLegBins);
+  runAzmRefMean.clear(); runAzmRefMean.resize(NradAzmBins);
+  runLegRefSEM.clear();  runLegRefSEM.resize(NradLegBins);
+  runAzmRefSEM.clear();  runAzmRefSEM.resize(NradAzmBins);
 
   std::vector<int> scans;
   for (int it=0; it<NtimeSteps; it++) {
@@ -1114,10 +1117,10 @@ void mergeClass::bootstrapSEM() {
       }
     }
 
-    runLegBstSEM[it].resize(NradLegBins, 0);
-    runAzmBstSEM[it].resize(NradAzmBins, 0);
-    runLegBstMeans[it].resize(NradLegBins, 0);
-    runAzmBstMeans[it].resize(NradAzmBins, 0);
+    runLegSEM[it].resize(NradLegBins, 0);
+    runAzmSEM[it].resize(NradAzmBins, 0);
+    runLegMeans[it].resize(NradLegBins, 0);
+    runAzmMeans[it].resize(NradAzmBins, 0);
     runAzmBstMeanCounts[it].resize(NradAzmBins, 0);
     runAzmBstSEMCounts[it].resize(NradAzmBins, 0);
   }
@@ -1126,7 +1129,9 @@ void mergeClass::bootstrapSEM() {
   /////  Selecting Ensembles  /////
 
   for (int bst=0; bst<mergeNbootstrap; bst++) {
-    std::cout << "Bootstrap: " << bst << std::endl;
+    if (bst % 500 == 0) {
+      std::cout << "Bootstrap: " << bst << std::endl;
+    }
 
     runAzmBstDist[bst].resize(NtimeSteps);
     runAzmBstDistCounts[bst].resize(NtimeSteps);
@@ -1198,13 +1203,13 @@ void mergeClass::bootstrapSEM() {
     // Calculating mean
     for (int iazm=0; iazm<NradAzmBins; iazm++) {
       if (runAzmRefBstDist[bst][iazm] != NANVAL) {
-        runAzmRefBstMean[iazm] += runAzmRefBstDist[bst][iazm];
+        runAzmRefMean[iazm] += runAzmRefBstDist[bst][iazm];
         runAzmRefBstMeanCounts[iazm] += 1;
       }
 
       for (int it=0; it<NtimeSteps; it++) {
         if (runAzmBstDist[bst][it][iazm] != NANVAL) {
-          runAzmBstMeans[it][iazm] += runAzmBstDist[bst][it][iazm];
+          runAzmMeans[it][iazm] += runAzmBstDist[bst][it][iazm];
           runAzmBstMeanCounts[it][iazm] += 1;
         }
       }
@@ -1214,39 +1219,39 @@ void mergeClass::bootstrapSEM() {
   // Normalizing mean
   for (int iazm=0; iazm<NradAzmBins; iazm++) {
     if (runAzmRefBstMeanCounts[iazm] > 0) {
-      runAzmRefBstMean[iazm] /= runAzmRefBstMeanCounts[iazm];
+      runAzmRefMean[iazm] /= runAzmRefBstMeanCounts[iazm];
     }
     else {
-      runAzmRefBstMean[iazm] = NANVAL;
+      runAzmRefMean[iazm] = NANVAL;
     }
     for (int it=0; it<NtimeSteps; it++) {
       if (runAzmBstMeanCounts[it][iazm] > 0) {
-        runAzmBstMeans[it][iazm] /= runAzmBstMeanCounts[it][iazm];
+        runAzmMeans[it][iazm] /= runAzmBstMeanCounts[it][iazm];
       }
       else {
-        runAzmBstMeans[it][iazm] = NANVAL;
+        runAzmMeans[it][iazm] = NANVAL;
       }
     }
   }
-  plt->print1d(runAzmRefBstMean, "testingBstAzmRefMean");
-  plt->print1d(runAzmBstMeans[5], "testingBstAzmMean");
+  plt->print1d(runAzmRefMean, "testingBstAzmRefMean");
+  plt->print1d(runAzmMeans[5], "testingBstAzmMean");
 
   ////  Calculating STD of distribution of means: SEM  /////
   // Sum square differences
   for (int bst=0; bst<mergeNbootstrap; bst++) {
     for (int iazm=0; iazm<NradAzmBins; iazm++) {
       if ((runAzmRefBstDist[bst][iazm] != NANVAL)
-          && (runAzmRefBstMean[iazm] != NANVAL)) {
-        runAzmRefBstSEM[iazm] += std::pow(
-            runAzmRefBstDist[bst][iazm] - runAzmRefBstMean[iazm], 2);
+          && (runAzmRefMean[iazm] != NANVAL)) {
+        runAzmRefSEM[iazm] += std::pow(
+            runAzmRefBstDist[bst][iazm] - runAzmRefMean[iazm], 2);
         runAzmRefBstSEMCounts[iazm] += 1;
       }
 
       for (int it=0; it<NtimeSteps; it++) {
         if ((runAzmBstDist[bst][it][iazm] != NANVAL)
-            && (runAzmBstMeans[it][iazm] != NANVAL)) {
-          runAzmBstSEM[it][iazm] += std::pow(
-              runAzmBstDist[bst][it][iazm] - runAzmBstMeans[it][iazm], 2);
+            && (runAzmMeans[it][iazm] != NANVAL)) {
+          runAzmSEM[it][iazm] += std::pow(
+              runAzmBstDist[bst][it][iazm] - runAzmMeans[it][iazm], 2);
           runAzmBstSEMCounts[it][iazm] += 1;
         }
       }
@@ -1256,30 +1261,82 @@ void mergeClass::bootstrapSEM() {
   // Normalizing and taking sqrt
   for (int iazm=0; iazm<NradAzmBins; iazm++) {
     if (runAzmRefBstSEMCounts[iazm] > 0) {
-      runAzmRefBstSEM[iazm] = std::sqrt(
-          runAzmRefBstSEM[iazm]/runAzmRefBstSEMCounts[iazm]);
+      runAzmRefSEM[iazm] = std::sqrt(
+          runAzmRefSEM[iazm]/runAzmRefBstSEMCounts[iazm]);
     }
     else {
-      runAzmRefBstSEM[iazm] = NANVAL;
+      runAzmRefSEM[iazm] = NANVAL;
     }
 
     for (int it=0; it<NtimeSteps; it++) {
       if (runAzmBstSEMCounts[it][iazm] > 0) {
-        runAzmBstSEM[it][iazm] = std::sqrt(
-            runAzmBstSEM[it][iazm]/runAzmBstSEMCounts[it][iazm]);
+        runAzmSEM[it][iazm] = std::sqrt(
+            runAzmSEM[it][iazm]/runAzmBstSEMCounts[it][iazm]);
       }
       else {
-        runAzmBstSEMCounts[it][iazm] = NANVAL;
+        runAzmSEM[it][iazm] = NANVAL;
       }
     }
   }
-  plt->print1d(runAzmRefBstSEM, "testingBstAzmRefSEM");
-  plt->print1d(runAzmBstSEM[5], "testingBstAzmSEM");
+
+  SEMisBootstrap = true;
 
   return;
 }
 
-              
+
+void mergeClass::testSEMbootstrap() {
+
+  int Ntests = 4;
+  std::vector<int> testN(Ntests);
+  std::vector< std::vector<double> > testSEMvals(Ntests+1);
+
+  testN[0] = mergeNbootstrap;
+  testSEMvals[1].assign(
+      runAzmSEM[0].begin(),
+      runAzmSEM[0].end());
+  getRunMeanSTDSEM();
+  testSEMvals[0].assign(
+      runAzmSEM[0].begin(),
+      runAzmSEM[0].end());
+
+  int NbootstrapOrig = mergeNbootstrap;
+  for (int i=0; i<Ntests-1; i++) {
+    mergeNbootstrap = NbootstrapOrig*(i+1)*5;
+    bootstrapSEM();
+    testSEMvals[i+2].assign(
+        runAzmSEM[0].begin(),
+        runAzmSEM[0].end());
+    testN[i+1] = mergeNbootstrap;
+  }
+
+  ofstream outFile;
+  outFile.open("./results/mergeNbootstrapTest.txt");
+
+  outFile << "Ordering: \tSEM/" << testN[0];
+  for (int i=1; i<Ntests; i++) {
+    outFile << "\t\t" << testN[i-1] << "/" << testN[i];
+  }
+  outFile << "\n\n";
+  for (int i=0; i<NradAzmBins; i++) {
+    outFile << "Pixel " << i << ":";
+    for (int j=1; j<(int)testSEMvals.size(); j++) {
+      if ((testSEMvals[j-1][i] != 0) && (testSEMvals[j][i] != 0)) {
+        outFile << "   \t" << testSEMvals[j-1][i]/testSEMvals[j][i];
+      }
+      else {
+        outFile << "\t\t";
+      }
+    }
+    outFile << std::endl;
+  }
+  outFile.close();
+
+  std::cerr << "EXITING AFTER TESTING mergeNbootstrap!!!\n";
+  exit(0);
+
+  return;
+}
 
 
 void mergeClass::removeLowPolynomials() {
@@ -2299,79 +2356,37 @@ void mergeClass::sMsNormalize() {
 
   /////  Normalizing azimuthal average  /////
   azimuthalsMs.resize(stagePosInds.size());
-  if (!useBootstrapSEM) {
-    runsMsMeans.resize(stagePosInds.size());
-    runsMsSEM.resize(stagePosInds.size());
-  }
-  if (computeBootstrapSEM) {
-    runsMsBstMeans.resize(stagePosInds.size());
-    runsMsBstSEM.resize(stagePosInds.size());
-  }
+  runsMsMeans.resize(stagePosInds.size());
+  runsMsSEM.resize(stagePosInds.size());
   for (uint tm=0; tm<stagePosInds.size(); tm++) {
     azimuthalsMs[tm].resize(NradAzmBins, 0);
-    if (!useBootstrapSEM) {
-      runsMsMeans[tm].resize(NradAzmBins, 0);
-      runsMsSEM[tm].resize(NradAzmBins, 0);
-    }
-    if (computeBootstrapSEM) {
-      runsMsBstMeans[tm].resize(NradAzmBins, 0);
-      runsMsBstSEM[tm].resize(NradAzmBins, 0);
-    }
+    runsMsMeans[tm].resize(NradAzmBins, 0);
+    runsMsSEM[tm].resize(NradAzmBins, 0);
   }
-  if (!useBootstrapSEM) {
-    runsMsRefMean.resize(NradAzmBins, 0);
-    runsMsRefSEM.resize(NradAzmBins, 0);
-  }
-  if (computeBootstrapSEM) {
-    runsMsRefBstMean.resize(NradAzmBins, 0);
-    runsMsRefBstSEM.resize(NradAzmBins, 0);
-  }
+  runsMsRefMean.resize(NradAzmBins, 0);
+  runsMsRefSEM.resize(NradAzmBins, 0);
 
 
   for (int ir=0; ir<NradAzmBins; ir++) {
     for (uint tm=0; tm<stagePosInds.size(); tm++) {
       if (azimuthalAvg[tm][ir] != NANVAL) {
         azimuthalsMs[tm][ir]    = azimuthalAvg[tm][ir]*sMsAzmNorm[ir];
-        if (!useBootstrapSEM) {
-          runsMsMeans[tm][ir]     = runAzmMeans[tm][ir]*sMsAzmNorm[ir];
-          runsMsSEM[tm][ir]       = runAzmSEM[tm][ir]*sMsAzmNorm[ir];
-        }
-        if (computeBootstrapSEM) {
-          runsMsBstMeans[tm][ir]  = runAzmBstMeans[tm][ir]*sMsAzmNorm[ir];
-          runsMsBstSEM[tm][ir]    = runAzmBstSEM[tm][ir]*sMsAzmNorm[ir];
-        }
+        runsMsMeans[tm][ir]     = runAzmMeans[tm][ir]*sMsAzmNorm[ir];
+        runsMsSEM[tm][ir]       = runAzmSEM[tm][ir]*sMsAzmNorm[ir];
       }
       else {
         azimuthalsMs[tm][ir]    = NANVAL;
-        if (!useBootstrapSEM) {
-          runsMsMeans[tm][ir]     = NANVAL;
-          runsMsSEM[tm][ir]       = NANVAL;
-        }
-        if (computeBootstrapSEM) {
-          runsMsBstMeans[tm][ir]  = NANVAL;
-          runsMsBstSEM[tm][ir]    = NANVAL;
-        }
+        runsMsMeans[tm][ir]     = NANVAL;
+        runsMsSEM[tm][ir]       = NANVAL;
       }
     }
     if (runAzmRefMean[ir] != NANVAL) {
-      if (!useBootstrapSEM) {
-        runsMsRefMean[ir]     = runAzmRefMean[ir]*sMsAzmNorm[ir];
-        runsMsRefSEM[ir]      = runAzmRefSEM[ir]*sMsAzmNorm[ir];
-      }
-      if (computeBootstrapSEM) {
-        runsMsRefBstMean[ir]  = runAzmRefBstMean[ir]*sMsAzmNorm[ir];
-        runsMsRefBstSEM[ir]   = runAzmRefBstSEM[ir]*sMsAzmNorm[ir];
-      }
+      runsMsRefMean[ir]     = runAzmRefMean[ir]*sMsAzmNorm[ir];
+      runsMsRefSEM[ir]      = runAzmRefSEM[ir]*sMsAzmNorm[ir];
     }
     else {
-      if (!useBootstrapSEM) {
-        runsMsRefMean[ir]     = NANVAL;
-        runsMsRefSEM[ir]      = NANVAL;
-      }
-      if (computeBootstrapSEM) {
-        runsMsRefBstMean[ir]  = NANVAL;
-        runsMsRefBstSEM[ir]   = NANVAL;
-      }
+      runsMsRefMean[ir]     = NANVAL;
+      runsMsRefSEM[ir]      = NANVAL;
     }
   }
 

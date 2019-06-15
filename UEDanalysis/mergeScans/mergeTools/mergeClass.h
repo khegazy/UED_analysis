@@ -81,24 +81,19 @@ class mergeClass : public parameterClass {
     string fileName = "mergedScans.txt";
 
     // Statistics
+    bool SEMisBootstrap;
     double scanImgAzmRefMean, scanImgAzmRefSTD;
     double scanImgNormAzmRefMean, scanImgNormAzmRefSTD;
     std::vector<double> runLegRefMean, runAzmRefMean, runsMsRefMean;
-    std::vector<double> runLegRefBstMean, runAzmRefBstMean, runsMsRefBstMean;
     std::vector<double> runLegRefSTD, runAzmRefSTD, runsMsRefSTD;
     std::vector<double> runLegRefSEM, runAzmRefSEM, runsMsRefSEM;
-    std::vector<double> runLegRefBstSEM, runAzmRefBstSEM, runsMsRefBstSEM;
     std::vector<double> scanImgAzmMeans, scanImgAzmSTDs;
     std::vector<double> scanImgNormAzmMeans, scanImgNormAzmSTDs;
     std::vector< std::vector<double> >  imgAzmRefMeans, imgAzmMeans;
     std::vector< std::vector<double> >  runLegMeans, runAzmMeans, 
                                         runsMsMeans, runPCorrMeans;
-    std::vector< std::vector<double> >  runLegBstMeans, runAzmBstMeans, 
-                                        runsMsBstMeans;
     std::vector< std::vector<double> >  runLegSEM, runAzmSEM, 
                                         runsMsSEM, runPCorrSEM;
-    std::vector< std::vector<double> >  runLegBstSEM, runAzmBstSEM, 
-                                        runsMsBstSEM;
     std::vector< std::vector<double> >  runLegSTD, runAzmSTD, 
                                         runsMsSTD, runPCorrSTD;
 
@@ -158,6 +153,7 @@ class mergeClass : public parameterClass {
     void scaleByFit();
     void getRunMeanSTDSEM();
     void bootstrapSEM();
+    void testSEMbootstrap();
     void getImageMeanSTD();
     void getImgNormMeanSTD();
     void mergeScans(bool refOnly=false, bool tdOnly=false);
