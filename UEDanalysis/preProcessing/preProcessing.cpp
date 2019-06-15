@@ -216,7 +216,7 @@ int main(int argc, char* argv[]) {
   }
 
   TH1F** radPixelHistos = NULL;
-  if (params.radPixDist) {
+  if (params.plotRadPixDist) {
     radPixelHistos = new TH1F*[params.NradAzmBins];
     for (int i=0; i<params.NradAzmBins; i++) {
       radPixelHistos[i] = new TH1F(
@@ -313,6 +313,7 @@ int main(int argc, char* argv[]) {
   Nrows = imgMat.rows;
   Ncols = imgMat.cols;
   std::vector<double> imgRadSTD(params.meanInds.size());
+  //std::vector<double> radPixMeans(params.NradAzmBins);
   std::vector< std::vector<double> > imgRadSTDs(imgINFO.size());
   std::vector< std::vector<double> > imgOrig(Nrows);
   std::vector< std::vector<double> > imgSubBkg(Nrows);
@@ -320,6 +321,8 @@ int main(int argc, char* argv[]) {
   std::vector< std::vector<double> > imgLaserBkg(Nrows);
   std::vector< std::vector<double> > imgBkg(Nrows);
   std::vector< std::vector<double> > imgCent;
+  //std::vector< std::vector<double> > radPixDist(params.NradAzmBins);
+
 
   float imgNorm;
   for (int ir=0; ir<Nrows; ir++) {
@@ -1126,6 +1129,8 @@ int main(int argc, char* argv[]) {
   tree->Branch("legCoeffs",       &legCoeffs);
   tree->Branch("rawAzmAvg",       &rawAzmAvg);
   tree->Branch("azmAvg",          &azmAvg);
+  //tree->Branch("radPixDist",      &radPixDist);
+  //tree->Branch("radPixMeans",     &radPixMeans);
   tree->Branch("imgRadSTD",       &imgRadSTD);
 
   for (auto const & pv : params.pvMap) {
@@ -1614,6 +1619,9 @@ int main(int argc, char* argv[]) {
 
     std::fill(rawAzmAvg.begin(), rawAzmAvg.end(), 0);
     std::fill(azmCounts.begin(), azmCounts.end(), 0);
+    //for (int k=0; k<params.NradAzmBins; k++) {
+    //  radPixDist[radInd].clear();
+    //}
     for (int ir=0; ir<(int)imgSubBkg.size(); ir++) {
       if (ir < params.imgEdgeBuffer 
           || imgSubBkg.size() - ir < params.imgEdgeBuffer) continue;
@@ -1633,11 +1641,18 @@ int main(int argc, char* argv[]) {
           if (radInd < params.NradAzmBins) {
             rawAzmAvg[radInd] += imgSubBkg[ir][ic];
             azmCounts[radInd] += 1;
+            //radPixDist[radInd].push_back(imgSubBkg[ir][ic]); 
           }
         }
       }
     }
-
+    /*
+    for (int k=0; k<params.NradAzmBins; k++) {
+      radPixMeans[k] = std::accumulate(radPixDist[k].begin(), 
+                                radPixDist[k].end(), 0)
+                                /((float)radPixDist[k].size());
+    }
+    */
     for (uint ir=0; ir<rawAzmAvg.size(); ir++) {
       if (azmCounts[ir] != 0) {
         rawAzmAvg[ir] /= azmCounts[ir];
@@ -1774,8 +1789,6 @@ int main(int argc, char* argv[]) {
           + "_stagePos-" + to_string(stagePos)
           + "_bins[" + to_string(imgI0.size())
           + "," + to_string(imgI0[0].size()) + "].dat");
-
-      plt.printRC(imgI0, "testingI0refSub_" + to_string(imgINFO[ifl].stagePos));
     }
 
     /////  Low Pass Filtering  /////
@@ -1879,6 +1892,19 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    ///  Updating and applying image norm  ///
+    imgNorm *= filtImgNorm;
+    /*
+    for (uint i=0; i<radPixMeans.size(); i++) {
+      radPixMeans[i] /= imgNorm;
+    }
+    for (uint i=0; i<radPixDist.size(); i++) {
+      for (uint j=0; j<radPixDist[i].size(); j++) {
+        radPixDist[i][j] /= imgNorm;
+      }
+    }
+    */
+
     ///  Plotting Filter Results  ///
     if (params.pltFilterVerbose) {
       std::vector<double> tst1(params.NradAzmBins, 0);
@@ -1953,7 +1979,7 @@ int main(int argc, char* argv[]) {
     delete[] xRayHitHistos;
   }
 
-  if (params.radPixDist) {
+  if (params.plotRadPixDist) {
     std::vector<PLOToptions> xOpts(3);
     std::vector<std::string> xVals(3);
     xOpts[0] = logy;    xVals[0] = "true";

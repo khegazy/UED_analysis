@@ -107,11 +107,7 @@ void save::importDat(std::vector<type> &import, std::string fileName) {
     exit(0);
   }
 
-  auto result = fread(&import[0], sizeof(type), import.size(), input);
-  //if (result != ftell(input)) {
-  //  std::cerr << "ERROR: Did not successfully import file " + fileName <<endl;
-    //exit(0);
-  //}
+  fread(&import[0], sizeof(type), import.size(), input);
 
   fclose(input);
 }
@@ -134,11 +130,7 @@ void save::importDat(std::vector< std::vector<type> > &import, std::string fileN
   int Nrows = import.size();
   int Ncols = import[0].size();
   std::vector<type> inpVec(Nrows*Ncols);
-  auto result = fread(&inpVec[0], sizeof(type), inpVec.size(), input);
-  //if (result != ftell(input)) {
-  //  std::cerr << "ERROR: Did not successfully import file " + fileName <<endl;
-  //  exit(0);
-  //}
+  fread(&inpVec[0], sizeof(type), inpVec.size(), input);
 
   fclose(input);
 
