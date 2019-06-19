@@ -108,6 +108,11 @@ class parameterClass {
     double Iebeam;
     double elEnergy;
     double screenDist;
+
+    bool    simHotFinalState;
+    double  hotFSrefVar;
+    double  hotFStdepVar;
+
     std::string xyzDir;
     std::string simOutputDir;
     std::vector<std::string> finalStates;
