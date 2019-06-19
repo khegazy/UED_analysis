@@ -25,7 +25,6 @@ int main(int argc, char* argv[]) {
   bool givenFileName      = false;
   bool subtractReference  = false;
   bool fitLowQ            = false;
-  bool fillLowQzeros      = params.fillLowQzeros;
   bool removeSkippedBins  = true;
   bool fitPC              = false;
   std::string fileName    = "NULL";
@@ -87,7 +86,7 @@ int main(int argc, char* argv[]) {
       string str(argv[iarg+1]);
       if (str.compare("false") == 0) params.fillLowQtheory = false;
       else if (str.compare("zeros") == 0) {
-        fillLowQzeros = true;
+        params.fillLowQzeros = true;
         params.fillLowQtheory = false;
       }
       else if (str.compare("fit") == 0) {
@@ -120,13 +119,6 @@ int main(int argc, char* argv[]) {
       || (inputDir.find("Sim") != string::npos)) {
     outPrefix = "sim-" + params.molName;
     removeSkippedBins = false;
-  }
-  if (runName.compare("simulateReference") == 0) {
-    removeSkippedBins = false;
-    params.fillLowQtheory    = false;
-    params.fillLowQzeros     = false;
-    params.fillLowQsine      = false;
-    params.fillLowQfitTheory = false;
   }
 
   /////  Plotting variables  /////
@@ -211,8 +203,8 @@ int main(int argc, char* argv[]) {
   ///////////////////////////////////
 
   std::string sMsSimName;
-  std::vector<double> sMsSim(shape[1]), sMsSimDer(shape[1]);
-  if (subtractReference) {
+  std::vector<double> sMsGroundState(shape[1]), sMsSimDer(shape[1]);
+  if (subtractReference || params.simHotFinalState) {
     // Importing Simulation
     sMsSimName = 
         params.simOutputDir + "nitrobenzene_sMsPatternLineOut_Qmax-"
@@ -222,11 +214,12 @@ int main(int argc, char* argv[]) {
         + to_string(params.elEnergy) + "_Bins["
         + to_string(shape[1]) + "].dat";
     
-    save::importDat<double>(sMsSim, sMsSimName);
-
+    save::importDat<double>(sMsGroundState, sMsSimName);
+  }
+  if (subtractReference) {
     for (int itm=0; itm<shape[0]; itm++) {
       for (int iq=0; iq<(int)tmdDiff[itm].size(); iq++) {
-        tmdDiff[itm][iq] -= sMsSim[iq];
+        tmdDiff[itm][iq] -= sMsGroundState[iq];
       }
     }
   }
@@ -234,6 +227,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> lowQsim(shape[1]);
   if (params.fillLowQtheory) { 
     save::importDat<double>(lowQsim, params.fillLowQfile);
+    cout<<"shouldn't be here"<<endl;
     if (params.verbose)
       std::cout << "Importing simulation from " << params.fillLowQfile << endl;
   }
@@ -539,7 +533,7 @@ int main(int argc, char* argv[]) {
               //*(tmdDiff[0][params.NbinsSkip]/lowQsim[params.NbinsSkip]);
         }
       }
-      else if (fillLowQzeros) {
+      else if (params.fillLowQzeros) {
         if (iq < params.NbinsSkip) {
           tmdDiff[itm][iq] = 0;
         }
@@ -571,14 +565,28 @@ int main(int argc, char* argv[]) {
 
       //  Apply Filter
       if (params.pCorrGaussFilter) {
-        filterScale = exp(-1*std::pow(iq, 2)
+        filter[iq] = exp(-1*std::pow(iq, 2)
                             /(2*params.filterVar));
-        smoothed[iq] = tmdDiff[itm][iq]*filterScale;
-        filter[iq] = filterScale;
       }
       else if (params.pCorrButterFilter) {
-        smoothed[iq] = tmdDiff[itm][iq]*lowPassFilter[iq];
         filter[iq] = lowPassFilter[iq];
+      }
+
+      if (!params.simHotFinalState 
+          || (runName.compare("simulateReference") != 0)) {
+        smoothed[iq] = tmdDiff[itm][iq]*filter[iq];
+      }
+      else if (!params.fillLowQzeros 
+          || (params.fillLowQzeros && (iq > params.NbinsSkip))) {
+        smoothed[iq] = (tmdDiff[itm][iq] + sMsGroundState[iq])
+                        *exp(-1*std::pow(iq, 2)
+                            /(2*params.hotFStdepVar));
+        smoothed[iq] -= sMsGroundState[iq] 
+                        *exp(-1*std::pow(iq, 2)
+                            /(2*params.hotFSrefVar));
+      }
+      else {
+        smoothed[iq] = 0;
       }
     }
 
