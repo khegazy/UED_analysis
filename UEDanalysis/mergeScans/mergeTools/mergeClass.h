@@ -128,6 +128,7 @@ class mergeClass : public parameterClass {
     std::vector<double> smoothImgNorm, smoothImgNormSTD;
 
     void compareSimulations(std::vector<std::string> radicals);
+    void removeBadRegions(std::vector<double>* azmAvg, int64_t stagePos);
     void addEntry(int scan, int64_t stagePos, int timeStamp,
                   std::vector<double>* azmAvg, 
                   std::vector<double>* legCoeffs,

@@ -1813,11 +1813,11 @@ void mergeClass::scaleByFit() {
     std::cout << "INFO: scaling by fitting patterns to mean\n";
   }
 
-  Eigen::Matrix<double, Eigen::Dynamic, 2> X_full;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> X_full;
   Eigen::Matrix<double, Eigen::Dynamic, 1> Y_full;
-  X_full.resize(NradAzmBins, 2);
+  X_full.resize(NradAzmBins, 1);
   Y_full.resize(NradAzmBins, 1);
-  Eigen::Matrix<double, Eigen::Dynamic, 2> X;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> X;
   Eigen::Matrix<double, Eigen::Dynamic, 1> Y;
   Eigen::VectorXd w;
 
@@ -1831,17 +1831,15 @@ void mergeClass::scaleByFit() {
         for (int ir=100; ir<450; ir++) {
           if (pItr.second.azmRef[ir] != NANVAL) {
             X_full(count, 0) = pItr.second.azmRef[ir];
-            X_full(count, 1) = 1;
             Y_full(count, 0) = azmReference[ir];
             count++;
           }
         }
 
-        X.resize(count, 2);
+        X.resize(count, 1);
         Y.resize(count, 1);
         for (int i=0; i<count; i++) {
           X(i, 0) = X_full(i, 0);
-          X(i, 1) = 1;
           Y(i, 0) = Y_full(i, 0);
         }
 
@@ -1850,7 +1848,7 @@ void mergeClass::scaleByFit() {
         // Scale lineout
         for (int ir=0; ir<NradAzmBins; ir++) {
           if (pItr.second.azmRef[ir] != NANVAL) {
-            pItr.second.azmRef[ir] = w(0)*pItr.second.azmRef[ir] + w(1);
+            pItr.second.azmRef[ir] = w(0)*pItr.second.azmRef[ir];
           }
         }
       }
@@ -1873,17 +1871,15 @@ void mergeClass::scaleByFit() {
         for (int iazm=100; iazm<450; iazm++) {
           if (sAzml.second[it][iazm] != NANVAL)  {
             X_full(count, 0) = sAzml.second[it][iazm];
-            X_full(count, 1) = 1;
             Y_full(count, 0) = azimuthalAvg[it][iazm];
             count++;
           }
         }
 
-        X.resize(count, 2);
+        X.resize(count, 1);
         Y.resize(count, 1);
         for (int i=0; i<count; i++) {
           X(i, 0) = X_full(i, 0);
-          X(i, 1) = 1;
           Y(i, 0) = Y_full(i, 0);
         }
 
@@ -1901,15 +1897,7 @@ void mergeClass::scaleByFit() {
         // Scale lineout
         for (int iazm=0; iazm<NradAzmBins; iazm++) {
           if (sAzml.second[it][iazm] != NANVAL) {
-            if (sAzml.first == 56 && iazm == 19 && it==2) {
-              cout<<"CHECKING SCAN 56"<<endl;
-              cout<<"orig: "<<sAzml.second[it][iazm]<<endl;
-              cout<<"fits: "<<w(1)<<"  "<<w(0)<<endl;
-            }
-            sAzml.second[it][iazm] = w(0)*sAzml.second[it][iazm] + w(1);
-            if (sAzml.first == 56 && iazm == 19 && it==2) {
-              cout<<"after: "<<sAzml.second[it][iazm]<<endl;
-            }
+            sAzml.second[it][iazm] = w(0)*sAzml.second[it][iazm];
           }
         }
       }
@@ -2046,6 +2034,27 @@ void mergeClass::mergeScans(bool refOnly, bool tdOnly) {
         }
       }
     }
+
+    // Gaussian smoothing 
+    if (mergeGaussSmoothRef) {
+      for (int iq=0; iq<NradAzmBins; iq++) {
+        if (azmReference[iq] != NANVAL) {
+          azmReference[iq] *= sMsAzmNorm[iq];
+        }
+      }
+
+      azmReference = imgProc::gaussianSmooth1d(
+          azmReference, 
+          mergeGSmoothSTD, 
+          7*mergeGSmoothSTD);
+      
+      for (int iq=0; iq<NradAzmBins; iq++) {
+        if (azmReference[iq] != NANVAL) {
+          azmReference[iq] /= sMsAzmNorm[iq];
+        }
+      }
+    }
+
     for (int ir=50; ir<NradAzmBins; ir++) {
         if (azmRefSplitCount[0][ir] && azmRefSplitCount[1][ir]) {
           azmRefSplitDiff[ir] = azmRefSplit[0][ir]/azmRefSplitCount[0][ir] - azmRefSplit[1][ir]/azmRefSplitCount[1][ir];
