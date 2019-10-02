@@ -93,6 +93,7 @@ int main(int argc, char* argv[]) {
 
   std::map< string, std::vector<double> > refAutCor, refLineOut;
 
+
   ///////////////////////////
   /////  Merging Scans  /////
   ///////////////////////////
@@ -197,6 +198,18 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    if (merge.saveMergeIntermediates) {
+      save::saveDat<double>(
+          (*imgOrig),
+          merge.saveMergeInterFolder 
+            + "/imgOrig-" + runName + "_scan-" + to_string(scan)
+            + "_stagePos-" + to_string(stagePos) + ".dat");
+      save::saveDat<double>(
+          (*imgSubBkg),
+          merge.saveMergeInterFolder 
+            + "/imgSubBkg-" + runName + "_scan-" + to_string(scan)
+            + "_stagePos-" + to_string(stagePos) + ".dat");
+    }
 
   }
 
@@ -336,6 +349,21 @@ int main(int argc, char* argv[]) {
   if (merge.verbose) std::cout << "INFO: sMs Normalization.\n";
   merge.sMsNormalize();
 
+  std::vector<double> smooth, smoothSMS;
+  for (int it=0; it<(int)merge.azimuthalAvg.size(); it++) {
+    smooth    = imgProc::gaussianSmooth1d(
+                  merge.azimuthalAvg[it], 
+                  merge.mergeGSmoothSTD, 
+                  7*merge.mergeGSmoothSTD);
+    smoothSMS = imgProc::gaussianSmooth1d(
+                  merge.azimuthalsMs[it],
+                  merge.mergeGSmoothSTD, 
+                  7*merge.mergeGSmoothSTD);
+    for (int iq=0; iq<merge.NradAzmBins; iq++) {
+      merge.azimuthalAvg[it][iq] = smooth[iq];
+      merge.azimuthalsMs[it][iq] = smoothSMS[iq];
+    }
+  }
 
 
   // Clean up NANVAL for saving and plotting
@@ -356,9 +384,8 @@ int main(int argc, char* argv[]) {
 
   if (!(merge.computeBootstrapSEM && merge.SEMisBootstrap) 
       && !(!merge.useBootstrapSEM && !merge.SEMisBootstrap)) {
-    std::cerr << "ERROR: Cannot save SEM because method and "
+    std::cerr << "WARNING: Cannot save SEM because method and "
       << "SEMisBootstrap do not align!!!\n";
-    std::exit(1);
   }
 
   if (merge.pltVerbose) {
@@ -463,6 +490,31 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  if (merge.saveMergeIntermediates) {
+    for (auto & sRitr : merge.scanReferences) {
+      for (auto & pItr : sRitr.second) {
+        if (pItr.second.scale) {
+          save::saveDat<double>(
+              pItr.second.azmRef, 
+              merge.saveMergeInterFolder 
+                + "/azmAvgRef-" + runName + "_scan-" + to_string(sRitr.first)
+                + "_stagePos-" + to_string(pItr.first) + ".dat");
+        }
+      }
+    }
+
+    for (auto & sAzml : merge.scanAzmAvg) {
+      for (auto & pItr : merge.stagePosInds) {
+        if (merge.scanScale[sAzml.first][pItr.second] != 0) {
+          save::saveDat<double>(
+              sAzml.second[pItr.second],
+              merge.saveMergeInterFolder 
+                + "/azmAvg-" + runName + "_scan-" + to_string(sAzml.first)
+                + "_stagePos-" + to_string(pItr.first) + ".dat");
+        }
+      }
+    }
+  }
 
 
   if (scanSearch) {
