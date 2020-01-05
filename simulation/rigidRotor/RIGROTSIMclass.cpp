@@ -16,6 +16,9 @@ RIGROTSIMclass::RIGROTSIMclass() {
 
   cosOrder = 1;
   cosSqEVals.resize(1);
+  NYlmEVs = 0;
+
+  baseCodeDir = "/reg/neh/home/khegazy/baseTools/simulation/rigidRotor/";
 }
 
 
@@ -28,7 +31,7 @@ void RIGROTSIMclass::checkAmps() {
     for (int im=0; im<=mSize; im++) {
       cout<<"\nnorm m="<<im<<":  ";
       for (int j=0; j<=mSize-im; j++) {
-        cout<<"j="<<j<<": "<<eigenAmps[iv][j][im].dot(eigenAmps[iv][j][im])<<"   ";
+        cout<<"j="<<j<<": "<<eigenAmps[iv][j][im].squaredNorm()<<"   ";
       }
     }
   }
@@ -180,16 +183,13 @@ vector< complex<double> > RIGROTSIMclass::EVsinCos() {
             //cout<<"vec: "<<eigenAmps[iv][j][im].rows()<<"  "<<eigenAmps[iv][j][im].cols()<<endl;
             if (im==1) {
             cout<<"vec: "<<eigenAmps[iv][j][im]<<endl;
-            cout<<"P: "<<0.5*rotThermalDist[iv][j+im]
+            cout<<"P: "<<rotThermalDist[iv][j+im]
                         *eigenAmps[iv][j][im].dot(sinCosMatP*eigenAmps[iv][j][im])<<endl;
-            cout<<"M: "<<0.5*rotThermalDist[iv][j+im]
+            cout<<"M: "<<rotThermalDist[iv][j+im]
                         *eigenAmps[iv][j][im].dot(sinCosMatM*eigenAmps[iv][j][im])<<endl;
             }
-            ExpVals[ip] += 0.5*rotThermalDist[iv][j+im]
+            ExpVals[ip] += 2*rotThermalDist[iv][j+im]
                         *eigenAmps[iv][j][im].dot(sinCosMatP*eigenAmps[iv][j][im]);
-
-            ExpVals[ip] += 0.5*rotThermalDist[iv][j+im]
-                        *eigenAmps[iv][j][im].dot(sinCosMatM*eigenAmps[iv][j][im]);
           }
           else {
             ExpVals[ip] += rotThermalDist[iv][j+im]
@@ -203,6 +203,38 @@ vector< complex<double> > RIGROTSIMclass::EVsinCos() {
   cout<<"end EVsinCos\n";
   return ExpVals;
 }
+
+
+vector< complex<double> > RIGROTSIMclass::EVYlm() {
+
+  int mSize = cosSq.size();
+  std::vector< complex<double> > ExpVals(NYlmEVs+1);
+
+  for (int J_=0; J_<=NYlmEVs; J_++) {
+    ExpVals[J_] = std::complex<double>(0,0);
+    // Looping over vibrational states
+    for (int iv=0; iv<NvibStates; iv++) {
+      // Looping over m
+      for (int m=0; m<=MAXj; m++) {
+        // Looping over J for each m in cosSq
+        for (int j=0; j<mSize-m; j++) {
+          // if/else accounts for 2j+1 multiplicity (only one m=0 state)
+          if (m) {
+            ExpVals[J_] += 2*rotThermalDist[iv][j+m]
+                        *eigenAmps[iv][j][m].dot(Ylm[J_][m]*eigenAmps[iv][j][m]);
+          }
+          else {
+            ExpVals[J_] += rotThermalDist[iv][j+m]
+                        *eigenAmps[iv][j][m].dot(Ylm[J_][m]*eigenAmps[iv][j][m]);
+          }
+        }
+      }
+    }
+  }
+
+  return ExpVals;
+}
+
 
 
 std::vector< std::vector<double> > RIGROTSIMclass::anglePDFCalc() {
@@ -329,12 +361,12 @@ int ij, im;
             //cout<<YlmVec[JinnerItr.index()][ampMItr.first][itheta][iphi]<<endl;
                 wavefxnM += JinnerItr.value()*YlmVec[JinnerItr.index()][ampMItr.first][itheta][iphi];
                 //cout<<"wm: "<<wavefxnM<<endl;
-                wavefxnNM += JinnerItr.value()*conj(YlmVec[JinnerItr.index()][ampMItr.first][itheta][iphi]);
+                wavefxnNM += conj(JinnerItr.value()*YlmVec[JinnerItr.index()][ampMItr.first][itheta][iphi]);
                 //cout<<"wmn: "<<wavefxnM<<endl;
               }
 
-              //prob += thermalDist[ampJItr.first]*(norm(wavefxnM) + norm(wavefxnNM))*sin(theta);  //For pdf to be norm
-              prob += rotThermalDist[ampVItr.first][ampJItr.first]*(norm(wavefxnM) + norm(wavefxnNM));
+              //prob += thermalDist[ampJItr.first]*(std::norm(wavefxnM) + std::norm(wavefxnNM))*sin(theta);  //For pdf to be norm
+              prob += rotThermalDist[ampVItr.first][ampJItr.first]*(std::norm(wavefxnM) + std::norm(wavefxnNM));
             }
             // For m==0
             else {
@@ -349,8 +381,8 @@ int ij, im;
                 wavefxn0 += JinnerItr.value()*YlmVec[JinnerItr.index()][0][itheta][iphi];
               }
 
-              //prob += thermalDist[ampJItr.first]*norm(wavefxn0)*sin(theta);     //For pdf to be norm
-              prob += rotThermalDist[ampVItr.first][ampJItr.first]*norm(wavefxn0);
+              //prob += thermalDist[ampJItr.first]*std::norm(wavefxn0)*sin(theta);     //For pdf to be norm
+              prob += rotThermalDist[ampVItr.first][ampJItr.first]*std::norm(wavefxn0);
             }
 
 
@@ -392,7 +424,7 @@ double RIGROTSIMclass::timeInt(double fTime, double iTime) {
 }
 
 
-void RIGROTSIMclass::sampleSim(string fileName) {
+void RIGROTSIMclass::sampleSim(string fileName, double time_fs) {
 
       // Save PDF of the angular distribution
       if (ist == pdfSampleInds[ipi]) {
@@ -443,6 +475,138 @@ void RIGROTSIMclass::sampleSim(string fileName) {
         }
       }
 
+      // Calculate wavefunction coefficients
+      if (NYlmEVs) {
+        std::vector< std::complex<double> > expVals = EVYlm();
+        for (int J_=0; J_<=NYlmEVs; J_++) {
+          YlmEVals[J_][ist] = expVals[J_].real();
+        }
+
+        /*
+        complex<double> init(0,0);
+        complex<double> curCoeffs;
+        int m, mm, mMax, J;
+        for (int J_=0; J_<=NYlmEVs; J_++) {
+          if (evenOnlyAxisDist) {
+            J = 2*J_;
+          }
+          else {
+            J = J_;
+          }
+          if (J > MAXj) {
+            break;
+          }
+  
+          mMax = 0;
+          axisDistWFcoeffs[J_][ist].resize(mMax + 1);
+          for (int M=0; M<=mMax; M++) {
+            cout<<"J / M: "<<J<<" / "<<M<<endl;
+            std::complex<double> norm(0,0);
+            std::complex<double> tnorm(0,0);
+            int c1 = 0;
+            int c2 = 0; 
+            int c3 = 0;
+            int c4 = 0;
+            std::string strInd;
+            std::map<std::string, int> testMap;
+            for (int j=0; j<=MAXj; j++) {
+              for (int m_=-1*j; m_<=j; m_++) {
+                m = -1*m_;
+                mm = -1*(m + M);
+                if (max(abs(mm), abs(j-J)) > min(MAXj, j+J)) continue;
+
+                c1 += 1;
+                for (int jj=max(abs(mm), abs(j-J)); jj<=min(MAXj, j+J); jj++) {
+                  curCoeffs = init;
+                  c2 += 1;
+                  if (max(abs(m_), abs(mm)) > jj) {
+                    cout<<"M > J: "<<j<<"  "<<m_<<"  "<<jj<<"  "<<mm<<endl;
+                  }
+                  for (int iv=0; iv<NvibStates; iv++) {
+                    for (int js=max(abs(m_), abs(mm)); js<=MAXj; js++) {
+                      for (int ms=0; ms<=min(min(j, jj), js); ms++) {
+                        // Not looping over ms because cos2 does not mix m
+                        //cout<<js<<" "<<j<<" "<<m_<<" "<<jj<<" "<<mm<<" ";
+                        //cout<<conj(eigenAmps[iv][js][abs(m_)].coeffRef(j-abs(m_)))<<" ";
+                        //cout<<eigenAmps[iv][js][abs(mm)].coeffRef(jj-abs(mm))<<endl;
+                        if (ms) {
+                          curCoeffs += 2*rotThermalDist[iv][js]
+                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-ms))
+                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-ms);
+                          //curCoeffs += rotThermalDist[iv][js]
+                          //    *conj(eigenAmps[iv][js-abs(m_)][abs(m_)].coeffRef(j-abs(m_)))
+                          //    *eigenAmps[iv][js-abs(mm)][abs(mm)].coeffRef(jj-abs(mm));
+                        }
+                        else {
+                          curCoeffs += rotThermalDist[iv][js]
+                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-abs(m_)))
+                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-abs(mm));
+                        }
+
+                        c3 += 1;
+                        if (j == jj) {
+                          c4 += 1;
+                          //cout<<j<<" "<<m_<<" "<<jj<<" "<<mm<<endl;
+
+                          if (ms) {
+                            norm += 2*rotThermalDist[iv][js]
+                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-ms))
+                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-ms);
+                          }
+                          else {
+                            norm += rotThermalDist[iv][js]
+                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-ms))
+                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-ms);
+                          }
+                        }
+                      }
+                    }
+                  }
+                  strInd = to_string(j) + "/" + to_string(abs(m)) + "/" + to_string(jj) + "/" + to_string(abs(mm));
+                  //testMap[strInd] ++;
+                  axisDistWFcoeffs[J_][ist][M].push_back(curCoeffs);
+                }
+              }
+            }
+            cout<<"NORM CHECK: "<<norm<<"  "<<c1<<"  "<<c2<<"  "<<c3<<"  "<<c4<<endl;
+            //for (auto & itr : testMap) {
+            //  cout<<itr.first<<"\t"<<itr.second<<endl;
+            //}
+          }
+        }
+
+        */
+
+        /*
+        bool test;
+        for (int i=0; i<(int)axisDistWFcoeffs[0][ist][0].size()*0.5; i++) {
+          if (i%10000 == 0) {
+            cout<<"testing "<<i<<endl;
+          }
+          test = true;
+          for (uint j=0; j<axisDistWFcoeffs.size()-1; j++) {
+            test = (test && (axisDistWFcoeffs[j][ist][0][i] == axisDistWFcoeffs[j+1][ist][0][i]));
+          }
+          if (!test) {
+            cout<<"TEST FAILED!!!!!! "<<i<<endl;
+          }
+        }
+        exit(0);
+        */
+
+        /*
+        for (int j=0; j<=jSize; j++) {
+          save::saveDat< complex<double> >(waveFxn[j],
+              "./output/waveFxn/" + waveFxnPrefix
+              + "YlmCoeff_t-" + to_string(time_fs) 
+              + "_j-" + to_string(j) 
+              + "_mSize[" + to_string(waveFxn[j].size()) + "].dat");
+        }
+        */
+      }
+
+
+
       // Increment to the next sample time
       ist++;
 	
@@ -450,141 +614,95 @@ void RIGROTSIMclass::sampleSim(string fileName) {
 }
 
 
-void RIGROTSIMclass::runSimulation() {
+std::map<int, std::vector< complex<double> > > RIGROTSIMclass::projectDensitySH() {
 
-// Each |jm> eigenstate is propogated independently, when 
-//      expectation values or norms are calculated each 
-//      state is weighted by the amplitude of that state at 
-//      the t=0 given by the thermal distribution
+  std::map<int, std::vector< complex<double> > > coeffs;
+  std::map<int, std::vector< complex<double> > > waveFxn;
+  int jSize = rotThermalDist[0].size();
+  complex<double> init(0,0);
 
-  if (MAXj > MAXj) {
-    cerr << "ERROR: Qunatum number m cannot be larger than j (MAXj > MAXj)!!!\n\n\n";
-    exit(0);
-  }
-  if (MAXj < MAXj) {
-    cerr << "WARNING: Qunatum number m does not reach the rull range for all j states (MAXj < MAXj)!!!\n\n\n";
-  }
-  if (temperature == 0) temperature = 1e-20;
-  if (vibKey != "NULL") {
-    doVib = true;
-    if (vibEns.find(vibKey) == vibEns.end()) {
-      cerr << "ERROR: Cannot find distrubution " << vibKey << "!!!\n\n";
-      exit(0);
+
+  for (int m=0; m<=jSize; m++) {
+    for (int j=m; j<=jSize; j++) {
+      if (waveFxn[j].size() == 0) {
+        waveFxn[j].resize(j+1, init);
+      }
+      //waveFxn[j][m] = init;
+      for (int jj=m; jj<=jSize; jj++) {
+        for (int iv=0; iv<NvibStates; iv++) {
+          waveFxn[j][m] += rotThermalDist[iv][jj]*eigenAmps[iv][jj][m].coeffRef(j);
+        }
+      }
     }
   }
 
+  /*
+  for (int J=0; J<=jSize; J++) {
+    coeffs[J].resize(2*J+1, init);
+    for (int M=-1*J; M<=J; M++) {
 
-  // Printing values for simulation
-  cout << "Start Time:\t\t"       <<  startTime       <<  endl;
-  cout << "End Time:  \t\t"       <<  endTime         <<  endl;
-  cout << "Temperature:\t\t"      <<  temperature     <<  endl;
-  cout << "Laser Power:\t\t"      <<  laserIntensity  <<  endl;
-  cout << "Rot Const B:\t\t"      <<  rotConstB       <<  endl;
-  cout << "Rot Const D:\t\t"      <<  rotConstD       <<  endl;
-  cout << "Rot Const H:\t\t"      <<  rotConstH       <<  endl;
-  cout << "deltaAlpha:\t\t"       <<  deltaAlpha      <<  endl;
-  cout << "Sample Start Time:\t"  <<  startSampleTime <<  endl;
-  cout << "Sample End Time:\t"    <<  endSampleTime   <<  endl;
-  cout << "Sample Step:\t\t"      <<  sampleStep      <<  endl;
-  cout << "Do PDFs:\t\t"          <<  makePDFs        <<  endl;
-  cout << "PDF Start Time:\t\t"   <<  startPDFTime    <<  endl;
-  cout << "PDF End Time:\t\t"     <<  endPDFTime      <<  endl;
-  cout << "dTime Evol:\t\t"       <<  dTimeEvolStep   <<  endl;
-  cout << "Pulse Length:\t\t"     <<  pulseTlength    <<  endl;
-  cout << "Npulses:   \t\t"       <<  Npulses         <<  endl;
-  cout << "Max J:    \t\t"        <<  MAXj            <<  endl;
-  cout << "Vibration Dist:\t"     <<  vibKey          <<  endl;
+      for (int j1=0; j1<=jSize; j1++) {
+        for (int m1_=-1*j1; m1_<=j1; m1_++) {
+          m1 = -1*m1_;
+          m2 = m1 + M;
+          j2Max = jSize < j1 + J ? jSize : j1 + J;
+          for (int j2=abs(m2); j2<=j2Max; j2++) {
 
-
-  // Filling time vectors here to avoid double precision errors
-  ist = ipt = ipi = 0;
-  sampleTimes.clear();
-  pulseTimes.clear();
-  pdfSampleInds.clear();
-
-  uint k = 0;
-  pulseTimes.resize(Npulses);
-  for (k=0; k<Npulses; k++) {
-    pulseTimes[k] = k*pulseTspacing*1e3*fs_to_au;
-  }
-  k = 0;
-  while (k*sampleStep + startSampleTime <= endSampleTime) {
-    sampleTimes.push_back((k*sampleStep + startSampleTime)*1e3*fs_to_au);
-    if (makePDFs 
-	&& (k*sampleStep + startSampleTime >= startPDFTime) 
-	&& (k*sampleStep + startSampleTime <= endPDFTime)) {
-      pdfSampleInds.push_back(k);
+            coeffs[J][M] += conj(waveFxn[j1][m1])*waveFxn[j2][m2]
+                *sqrt((2*j1 + 1)*(2*J + 1)*(2*j2 + 1)/(4*PI))
+                *ROOT::Math::wigner_3j(1,2,4,5,6,7);
+          }
+        }
+      }
     }
-    k++;
   }
-  if (!pdfSampleInds.size()) {
-    pdfSampleInds.push_back(-1);
+  */
+
+  return coeffs;
+}
+
+
+
+std::vector<double> RIGROTSIMclass::getPopulationDistribution() {
+
+  int J;
+  std::vector<double> population(MAXj, 0);
+  for (int im=0; im<=MAXj; im++) {
+    for (int j=0; j<=MAXj-im; j++) {
+      for (int iv=0; iv<NvibStates; iv++) {
+        for (int jj=0; jj<MAXj-im; jj++) {
+          J = im + jj;
+          if (im) {
+            population[J] += std::real(rotThermalDist[iv][j+im]
+                *eigenAmps[iv][j][im].coeffRef(jj)*std::conj(eigenAmps[iv][j][im].coeffRef(jj)));
+            population[J] += std::real(rotThermalDist[iv][j+im]
+                *eigenAmps[iv][j][im].coeffRef(jj)*std::conj(eigenAmps[iv][j][im].coeffRef(jj)));
+          }
+          else {
+            population[J] += std::real(rotThermalDist[iv][j+im]
+                *eigenAmps[iv][j][im].coeffRef(jj)*std::conj(eigenAmps[iv][j][im].coeffRef(jj)));
+          }
+        }
+      }
+    }
   }
 
-cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
+  return population;
+}
 
 
-  // Converting to AU
-  startTimeAU = startTime*1e3*fs_to_au;
-  endTimeAU = endTime*1e3*fs_to_au;
-  pulseTlengthAU = pulseTlength*1e3*fs_to_au;
-  pulseTspacingAU = pulseTspacing*1e3*fs_to_au;
-  startSampleTimeAU = startSampleTime*1e3*fs_to_au;
-  endSampleTimeAU = endSampleTime*1e3*fs_to_au;
-  dTimeEvolStepAU = dTimeEvolStep*1e3*fs_to_au;
-  rotConstB_AU = rotConstB*icm_to_au;
-  rotConstD_AU = rotConstD*icm_to_au;
-  rotConstH_AU = rotConstH*icm_to_au;
-  deltaAlphaAU = deltaAlpha*pow(m_to_au,3);
+void RIGROTSIMclass::calculateThermalDistribution() {
 
-  
-  /////  Declaring Variables  /////
-
-  clock_t clockBegin, clockEnd;
-  clockBegin=clock();
-
-  int j, jr, jc, im, iv;
-  complex<double> complexNumber;
-  vector<double> population(MAXj);
-
-  std::vector< std::vector<double> > rotEnergyJ; //(MAXj+1);
-  
-
-  eigenAmps.clear();
-  cosSq.clear();
-  cosSqExpDiag.clear();
-  cosSqTran.clear();
-  map<int, vector<double> > cosSqEigVal;
-  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > pulsedTgenL;
-  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > pulsedTgenR;
-  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > pulseEvolMat;
-  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > H0dTevol;
-  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > H0dTgen;
-  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > H0Tevol;
-
-  prunefnctr prunefx;
-  prunefx.cutoff = 1e-4;
-
-
-
-  ////////////////////////////////////////////
-  /////  Defining simulation parameters  /////
-  ////////////////////////////////////////////
-
-  // Electric field
-  double E0 = sqrt(2*laserIntensity*1.0e4/(C_SI*indexRefr*EPS0_SI))*Vpm_to_au;
-
-  /////  Making thermal distributions  /////
   double Zvib = 0;
   if (doVib) {
 
     // Only considering most important vibrational states
     double bwVal;
     vibThermalDist.clear();
-    for (iv=0; iv<(int)(*vibEns[vibKey]).size(); iv++) {
+    for (int iv=0; iv<(int)(*vibEns[vibKey]).size(); iv++) {
       Zvib += exp(-(*vibEns[vibKey])[iv]*icm_to_au/(KBOLTZ_AU*temperature));
     }
-    for (iv=0; iv<(int)(*vibEns[vibKey]).size(); iv++) {
+    for (int iv=0; iv<(int)(*vibEns[vibKey]).size(); iv++) {
       bwVal = exp(-(*vibEns[vibKey])[iv]*icm_to_au/(KBOLTZ_AU*temperature))/Zvib;
       if (bwVal > vibPopThresh) {
         vibThermalDist.push_back(bwVal);
@@ -597,7 +715,7 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
 
     // Rotational energies 
     rotEnergyJ.resize(NvibStates);
-    for (iv=0; iv<NvibStates; iv++) {
+    for (int iv=0; iv<NvibStates; iv++) {
       rotEnergyJ[iv].resize(MAXj+1);
       for (int j=0; j<=MAXj; j++) {
         rotEnergyJ[iv][j] = (*rotVibBconst[vibKey])[iv]*j*(j + 1)*icm_to_au
@@ -618,18 +736,14 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
   }
   cout<<"NvibStates: "<<NvibStates<<endl;
 
-  bool firstPulse = (Npulses > 1);
+  complex<double> complexNumber;
   complexNumber.imag(0);
   complexNumber.real(1);
-  for (iv=0; iv<NvibStates; iv++) {
-    for (im=0; im<=MAXj; im++) {
-      pulsedTgenR[iv][im].resize(MAXj+1-im, MAXj+1-im);
-      pulsedTgenL[iv][im].resize(MAXj+1-im, MAXj+1-im);
-      pulseEvolMat[iv][im].resize(MAXj+1-im, MAXj+1-im);
-      for (j=0; j<=MAXj-im; j++) {
+  for (int iv=0; iv<NvibStates; iv++) {
+    for (int im=0; im<=MAXj; im++) {
+      for (int j=0; j<=MAXj-im; j++) {
         eigenAmps[iv][j][im].resize(MAXj+1-im);
         eigenAmps[iv][j][im].insert(j) = complexNumber;
-        pulseEvolMat[iv][im].insert(j, j) = complexNumber;
         //if (im <= j) eigenAmps[j][im].insert(j) = complexNumber;
       }
     }
@@ -641,9 +755,9 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
   double qrtrRv = 1;
   rotThermalDist.resize(NvibStates);
   if (doVib) {
-    for (iv=0; iv<NvibStates; iv++) {
+    for (int iv=0; iv<NvibStates; iv++) {
       rotThermalDist[iv].resize(MAXj+1, 0);
-      for (j=0; j<=MAXj; j++) {
+      for (int j=0; j<=MAXj; j++) {
         if (hasQuarterRev) {
           qrtrRv = ((j + 1)%2) + 1;
         }
@@ -652,8 +766,8 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
               /(KBOLTZ_AU*temperature));
       }
     }
-    for (iv=0; iv<NvibStates; iv++) {
-      for (j=0; j<=MAXj; j++) {
+    for (int iv=0; iv<NvibStates; iv++) {
+      for (int j=0; j<=MAXj; j++) {
         if (hasQuarterRev) {
           qrtrRv = ((j + 1)%2) + 1;
         }
@@ -665,14 +779,14 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
   }
   else {
     rotThermalDist[0].resize(MAXj+1, 0);
-    for (j=0; j<=MAXj; j++) {
+    for (int j=0; j<=MAXj; j++) {
       if (hasQuarterRev) {
         qrtrRv = ((j + 1)%2) + 1;
       }
       Zrot += qrtrRv*(2*j + 1)
         *exp(-rotEnergyJ[0][j]/(KBOLTZ_AU*temperature));
     }
-    for (j=0; j<=MAXj; j++) {
+    for (int j=0; j<=MAXj; j++) {
       if (hasQuarterRev) {
         qrtrRv = ((j + 1)%2) + 1;
       }
@@ -680,25 +794,11 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
         *exp(-rotEnergyJ[0][j]/(KBOLTZ_AU*temperature))/Zrot;
     }
   }
+}
 
 
-cout<<"setup mats"<<endl;
-  // Setup H0 dTimeEvolStep evolution first, for timeEvolStep
-  for (iv=0; iv<NvibStates; iv++) {
-    for (im=0; im<=MAXj; im++) {
-      H0dTevol[iv][im].resize(MAXj+1-im, MAXj+1-im);
-      H0dTgen[iv][im].resize(MAXj+1-im, MAXj+1-im);
-      H0Tevol[iv][im].resize(MAXj+1-im, MAXj+1-im);
-      for (int j=0; j<=MAXj-im; j++) {
-        complexNumber.real(0);
-        complexNumber.imag(-rotEnergyJ[iv][j+im]*dTimeEvolStepAU/2.0);
-        H0dTevol[iv][im].insert(j, j) = exp(complexNumber);
-        H0dTgen[iv][im].insert(j, j) = exp(complexNumber);
-      }
-    }
-  }
 
-  cout<<"setup cosSq"<<endl;
+void RIGROTSIMclass::calculateCosSqMatrices() {
   // Setup CosSq matrix and tranform matrix for time evolution in pulse
   for (int im=0; im<=MAXj; im++) {
     cosSq[im].resize(MAXj+1-im, MAXj+1-im);
@@ -707,8 +807,9 @@ cout<<"setup mats"<<endl;
     cosSqEigVal[im].resize(MAXj+1-im, MAXj+1-im);
 
     double jj;
+    complex<double> complexNumber;
     complexNumber.imag(0);
-    for (j=0; j<=MAXj-im; j++) {
+    for (int j=0; j<=MAXj-im; j++) {
       complexNumber.real(0);
       cosSqExpDiag[im].insert(j, j) = complexNumber;
 
@@ -741,32 +842,24 @@ cout<<"setup mats"<<endl;
     Eigen::MatrixXcd cosSqDense = Eigen::MatrixXcd(cosSq[im]);
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> eigSolver(cosSqDense);
 
-    for (jr=0; jr<=MAXj-im; jr++) {
+    for (int jr=0; jr<=MAXj-im; jr++) {
       cosSqEigVal[im][jr] = eigSolver.eigenvalues()[jr];
       //coeffCSD[jr] = T(jr, jr, exp(eigSolver.eigenvalues()[jr]));
-      for (jc=0; jc<=MAXj-im; jc++) {
+      for (int jc=0; jc<=MAXj-im; jc++) {
         cosSqTran[im].insert(jr, jc) = eigSolver.eigenvectors()(jr,jc);
       }
     }
 
-    // Defining commonly used variables
-    for (iv=0; iv<NvibStates; iv++) {
-      pulsedTgenL[iv][im] = H0dTgen[iv][im]*cosSqTran[im];
-      pulsedTgenR[iv][im] = cosSqTran[im].adjoint()*H0dTgen[iv][im];
-    }
-
-    // Pruning small values from sparse matrices
-    for (iv=0; iv<NvibStates; iv++) {
-      pulsedTgenL[iv][im].prune(prunefx);
-      pulsedTgenR[iv][im].prune(prunefx);
-    }
     cosSqTran[im].prune(prunefx);
     cosSq[im].prune(prunefx);
   }
+}
 
 
+void RIGROTSIMclass::calculateSinCosMatrices() {
   // Creating sin*cos matrix
   if (doSinCosEV) {
+    int im = 0;
     for (int im=0; im<=MAXj; im++) {
       sinCos[im].resize(MAXj+1-im, MAXj+1-im);
       sinCos[im].setZero();
@@ -824,6 +917,8 @@ cout<<"setup mats"<<endl;
     int mRange;
     double lgInt1, lgInt2, lgInt3, lgInt4;
     double cJpM, cJmM, cJpMp, cJmMp;
+    complex<double> complexNumber;
+    complexNumber.real(0);
     complexNumber.imag(0);
     for (int ij=0; ij<=MAXj; ij++) {
       for (int ijj=0; ijj<=MAXj; ijj++) {
@@ -992,7 +1087,239 @@ cout<<"J: "<<ij<<" / "<<ijj<<endl;
     prunefx.cutoff = prevPruneVal;
     cout<<"sinCos Mat\n"<<sinCos[-1]<<endl;
   }
+}
 
+
+void RIGROTSIMclass::calculateYlmMatrices() {
+
+  int J;
+  Ylm.resize(NYlmEVs+1);
+  for (int J_=0; J_<=NYlmEVs; J_++) {
+    if (evenOnlyAxisDist) {
+      J = 2*J_;
+    }
+    else {
+      J = J_;
+    }
+    if (J > MAXj) {
+      break;
+    }
+
+    std::string wigner3J_fileName = baseCodeDir 
+        + "YlmME/YlmME_L-" + to_string(J)
+        + "_M-" + to_string(0)
+        + "_maxJ-" + to_string(MAXj) + ".dat"; 
+    if (!tools::fileExists(wigner3J_fileName)) {
+      std::cerr << "Cannot find file " + wigner3J_fileName
+          + " now exiting!!!\n";
+    }
+
+    
+    std::string wigner3J_inds_fileName =  
+        + "YlmME_indices_L-" + to_string(J)
+        + "_M-" + to_string(0)
+        + "_maxJ-" + to_string(MAXj); 
+    std::vector<int> shape = save::getShape(
+        baseCodeDir + "YlmME",
+        wigner3J_inds_fileName);
+    wigner3J_inds_fileName +=
+        "_bins[" + to_string(shape[0]) + "," + to_string(shape[1]) + "].dat";
+    wigner3J_inds_fileName = baseCodeDir + "YlmME/" + wigner3J_inds_fileName;
+
+    std::vector<double> wgn3j(shape[0]);
+    std::vector< std::vector<int> > indices(shape[0]);
+    for (int i=0; i<shape[0]; i++) {
+      indices[i].resize(shape[1], 0);
+    }
+
+    save::importDat<int32_t>(indices, wigner3J_inds_fileName);
+    save::importDat<double>(wgn3j, wigner3J_fileName);
+
+
+    for (int im=0; im<=MAXj; im++) {
+      Ylm[J_][im].resize(MAXj+1-im, MAXj+1-im);
+    }
+
+    int l1, l2, m1, m2;
+    for (int i=0; i<shape[0]; i++) {
+      l1 = indices[i][0];  m1 = abs(indices[i][1]);
+      l2 = indices[i][2];  m2 = abs(indices[i][3]);
+      Ylm[J_][m1].coeffRef(l1-m1, l2-m1) = wgn3j[i];
+    }
+
+  }
+}
+      
+      
+
+void RIGROTSIMclass::runSimulation() {
+
+// Each |jm> eigenstate is propogated independently, when 
+//      expectation values or norms are calculated each 
+//      state is weighted by the amplitude of that state at 
+//      the t=0 given by the thermal distribution
+
+  if (MAXj > MAXj) {
+    cerr << "ERROR: Quantum number m cannot be larger than j (MAXj > MAXj)!!!\n\n\n";
+    exit(0);
+  }
+  if (MAXj < MAXj) {
+    cerr << "WARNING: Quantum number m does not reach the rull range for all j states (MAXj < MAXj)!!!\n\n\n";
+  }
+  if (temperature == 0) temperature = 1e-20;
+  if (vibKey != "NULL") {
+    doVib = true;
+    if (vibEns.find(vibKey) == vibEns.end()) {
+      cerr << "ERROR: Cannot find distrubution " << vibKey << "!!!\n\n";
+      exit(0);
+    }
+  }
+
+
+  // Printing values for simulation
+  cout << "Start Time:\t\t"       <<  startTime       <<  endl;
+  cout << "End Time:  \t\t"       <<  endTime         <<  endl;
+  cout << "Temperature:\t\t"      <<  temperature     <<  endl;
+  cout << "Laser Power:\t\t"      <<  laserIntensity  <<  endl;
+  cout << "Rot Const B:\t\t"      <<  rotConstB       <<  endl;
+  cout << "Rot Const D:\t\t"      <<  rotConstD       <<  endl;
+  cout << "Rot Const H:\t\t"      <<  rotConstH       <<  endl;
+  cout << "deltaAlpha:\t\t"       <<  deltaAlpha      <<  endl;
+  cout << "Sample Start Time:\t"  <<  startSampleTime <<  endl;
+  cout << "Sample End Time:\t"    <<  endSampleTime   <<  endl;
+  cout << "Sample Step:\t\t"      <<  sampleStep      <<  endl;
+  cout << "Do PDFs:\t\t"          <<  makePDFs        <<  endl;
+  cout << "PDF Start Time:\t\t"   <<  startPDFTime    <<  endl;
+  cout << "PDF End Time:\t\t"     <<  endPDFTime      <<  endl;
+  cout << "Number Axis Dist:\t\t" <<  NYlmEVs  <<  endl;
+  cout << "dTime Evol:\t\t"       <<  dTimeEvolStep   <<  endl;
+  cout << "Pulse Length:\t\t"     <<  pulseTlength    <<  endl;
+  cout << "Npulses:   \t\t"       <<  Npulses         <<  endl;
+  cout << "Max J:    \t\t"        <<  MAXj            <<  endl;
+  cout << "Vibration Dist:\t"     <<  vibKey          <<  endl;
+
+
+  // Filling time vectors here to avoid double precision errors
+  ist = ipt = ipi = 0;
+  sampleTimes.clear();
+  pulseTimes.clear();
+  pdfSampleInds.clear();
+
+  uint k = 0;
+  pulseTimes.resize(Npulses);
+  for (k=0; k<Npulses; k++) {
+    pulseTimes[k] = k*pulseTspacing*1e3*fs_to_au;
+  }
+  k = 0;
+  while (k*sampleStep + startSampleTime <= endSampleTime) {
+    sampleTimes.push_back((k*sampleStep + startSampleTime)*1e3*fs_to_au);
+    if (makePDFs 
+	&& (k*sampleStep + startSampleTime >= startPDFTime) 
+	&& (k*sampleStep + startSampleTime <= endPDFTime)) {
+      pdfSampleInds.push_back(k);
+    }
+    k++;
+  }
+  if (!pdfSampleInds.size()) {
+    pdfSampleInds.push_back(-1);
+  }
+
+cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
+
+
+  // Converting to AU
+  startTimeAU = startTime*1e3*fs_to_au;
+  endTimeAU = endTime*1e3*fs_to_au;
+  pulseTlengthAU = pulseTlength*1e3*fs_to_au;
+  pulseTspacingAU = pulseTspacing*1e3*fs_to_au;
+  startSampleTimeAU = startSampleTime*1e3*fs_to_au;
+  endSampleTimeAU = endSampleTime*1e3*fs_to_au;
+  dTimeEvolStepAU = dTimeEvolStep*1e3*fs_to_au;
+  rotConstB_AU = rotConstB*icm_to_au;
+  rotConstD_AU = rotConstD*icm_to_au;
+  rotConstH_AU = rotConstH*icm_to_au;
+  deltaAlphaAU = deltaAlpha*pow(m_to_au,3);
+
+  
+  /////  Declaring Variables  /////
+
+  clock_t clockBegin, clockEnd;
+  clockBegin=clock();
+
+  int j, jr, jc, im, iv;
+  complex<double> complexNumber;
+  vector<double> population(MAXj);
+
+  eigenAmps.clear();
+  cosSq.clear();
+  cosSqExpDiag.clear();
+  cosSqTran.clear();
+  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > pulsedTgenL;
+  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > pulsedTgenR;
+  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > pulseEvolMat;
+  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > H0dTevol;
+  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > H0dTgen;
+  map<int, map<int, Eigen::SparseMatrix< complex<double> > > > H0Tevol;
+
+  prunefx.cutoff = 1e-4;
+
+
+
+  ////////////////////////////////////////////
+  /////  Defining simulation parameters  /////
+  ////////////////////////////////////////////
+
+  // Electric field
+  bool firstPulse = (Npulses > 1);
+  double E0 = sqrt(2*laserIntensity*1.0e4/(C_SI*indexRefr*EPS0_SI))*Vpm_to_au;
+
+  /////  Making thermal distributions  /////
+  calculateThermalDistribution();
+
+  /////  Calculate CosSq, Ylm, ... Matrices  /////
+  calculateCosSqMatrices();
+  calculateSinCosMatrices();
+  calculateYlmMatrices();
+
+  // Setup H0 dTimeEvolStep evolution first, for timeEvolStep
+  for (iv=0; iv<NvibStates; iv++) {
+    for (im=0; im<=MAXj; im++) {
+      H0dTevol[iv][im].resize(MAXj+1-im, MAXj+1-im);
+      H0dTgen[iv][im].resize(MAXj+1-im, MAXj+1-im);
+      H0Tevol[iv][im].resize(MAXj+1-im, MAXj+1-im);
+      for (int j=0; j<=MAXj-im; j++) {
+        complexNumber.real(0);
+        complexNumber.imag(-rotEnergyJ[iv][j+im]*dTimeEvolStepAU/2.0);
+        H0dTevol[iv][im].insert(j, j) = exp(complexNumber);
+        H0dTgen[iv][im].insert(j, j) = exp(complexNumber);
+      }
+    }
+  }
+
+  // Defining commonly used variables
+  complexNumber.real(1);
+  complexNumber.imag(0);
+  for (int iv=0; iv<NvibStates; iv++) {
+    for (int im=0; im<=MAXj; im++) {
+      pulsedTgenR[iv][im].resize(MAXj+1-im, MAXj+1-im);
+      pulsedTgenL[iv][im].resize(MAXj+1-im, MAXj+1-im);
+      pulseEvolMat[iv][im].resize(MAXj+1-im, MAXj+1-im);
+      for (int j=0; j<=MAXj-im; j++) {
+        pulseEvolMat[iv][im].insert(j, j) = complexNumber;
+        //if (im <= j) eigenAmps[j][im].insert(j) = complexNumber;
+      }
+    }
+  }
+
+
+  for (int im=0; im<=MAXj; im++) {
+    for (iv=0; iv<NvibStates; iv++) {
+      pulsedTgenL[iv][im] = H0dTgen[iv][im]*cosSqTran[im];
+      pulsedTgenR[iv][im] = cosSqTran[im].adjoint()*H0dTgen[iv][im];
+      pulsedTgenL[iv][im].prune(prunefx);
+      pulsedTgenR[iv][im].prune(prunefx);
+    }
+  }
 
   cout<<"start sim"<<endl;
   ////////////////////////////////////
@@ -1020,7 +1347,16 @@ cout<<"J: "<<ij<<" / "<<ijj<<endl;
       sinCosEVals[i].resize(NsampleSteps, 0);
     }
   }
+  if (NYlmEVs) {
+    NYlmEVs = min(NYlmEVs, MAXj);
+    YlmEVals.resize(NYlmEVs + 1);
+    for (uint j=0; j<YlmEVals.size(); j++) {
+      YlmEVals[j].resize(NsampleSteps);
+    }
+  }
 
+  // Get initial distribution
+  population0 = getPopulationDistribution();
 
   while ((curTime <= endTimeAU) && (ist != NsampleSteps)) {
 
@@ -1066,7 +1402,7 @@ cout<<"J: "<<ij<<" / "<<ijj<<endl;
 
     // Sampling  
     if (doSampling) {
-      sampleSim(outputDir+"/"+fileName); //+to_string(curTime/fs_to_au));
+      sampleSim(outputDir+"/"+fileName, curTime/fs_to_au);
     }
 
     ///// Time Evolution Through Pulse  /////
@@ -1151,7 +1487,7 @@ cout<<"J: "<<ij<<" / "<<ijj<<endl;
       }
 
       if (doSampling) {
-        sampleSim(outputDir+"/"+fileName); //+to_string(curTime/fs_to_au));
+        sampleSim(outputDir+"/"+fileName, curTime/fs_to_au);
       }
       else {
         curTime = pulseTimes[ipt] + pulseTlengthAU;
