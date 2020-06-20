@@ -9,6 +9,7 @@
 #include <iostream>
 #include <vector>
 #include <ctime>
+#include <dirent.h>
 #include <Math/SpecFuncMathMore.h>
 #include <boost/math/special_functions/spherical_harmonic.hpp>
 #include <boost/math/special_functions/factorials.hpp>
@@ -65,6 +66,8 @@ class RIGROTSIMclass {
 
         std::string fileName;
         std::string outputDir;
+        std::string PDFfileName;
+        std::string PDFoutputDir;
 
         std::vector<double> population0;
         std::vector<double> jPopulation;
@@ -127,7 +130,7 @@ class RIGROTSIMclass {
         std::vector< std::vector<double> > anglePDFCalc();
 	double laserPotential(double time);
 	double timeInt(double fTime, double iTime);
-	void sampleSim(std::string fileName, double time_fs);
+	void sampleSim(double time_fs);
 
         void calculateThermalDistribution();
         void calculateCosSqMatrices();
@@ -135,6 +138,7 @@ class RIGROTSIMclass {
         void calculateYlmMatrices();
 
         std::vector<uint> pdfSampleInds;
+        std::vector<float> pdfSampleTimes;
         std::vector<double> pulseTimes;
 
   	uint ist = 0;         // index of sampleTimes

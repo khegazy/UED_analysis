@@ -267,7 +267,9 @@ std::vector< std::vector<double> > RIGROTSIMclass::anglePDFCalc() {
   std::vector< std::vector< std::vector< std::vector< complex<double> > > > > YlmVec(MAXj+1);
   for (ij=0; ij<=MAXj; ij++) {
     int index = 0;
-    string fName = "/reg/d/psdm/amo/amoi0314/scratch/YlmRef/YlmRef_J-" 
+    //string fName = "/reg/d/psdm/amo/amoi0314/scratch/YlmRef/YlmRef_J-" 
+    //string fName = "/reg/ued/ana/scratch/n2o/YlmRef/YlmRef_J-" 
+    string fName = "/reg/neh/home/khegazy/baseTools/simulation/rigidRotor/YlmRef/YlmRef_J-" 
       + to_string(ij) + "_Nitr-" + to_string(Nitr) + ".dat";
 
     // Create file of Ylm if it doesn't exist
@@ -293,7 +295,6 @@ std::vector< std::vector<double> > RIGROTSIMclass::anglePDFCalc() {
       nwritten += fwrite(&YlmJM[0], sizeof(complex<double>), YlmJM.size(), file);
       fclose(file);
     }
-
 
     // Load Ylm reference
     complex<double>* YlmArr = new complex<double>[(ij+1)*Nitr*Nitr];
@@ -348,7 +349,6 @@ int ij, im;
   
             // For m!=0
             if (ampMItr.first) {
-              //continue; //DELETE ME
               for (Eigen::SparseVector< complex<double> >::InnerIterator JinnerItr(ampMItr.second); JinnerItr; ++JinnerItr) {
                 if (ampMItr.first > JinnerItr.index()) {
                   continue;
@@ -424,14 +424,23 @@ double RIGROTSIMclass::timeInt(double fTime, double iTime) {
 }
 
 
-void RIGROTSIMclass::sampleSim(string fileName, double time_fs) {
+void RIGROTSIMclass::sampleSim(double time_fs) {
 
       // Save PDF of the angular distribution
       if (ist == pdfSampleInds[ipi]) {
+        std::string filePrefix = PDFoutputDir + PDFfileName;
+        cout<<"FNAME: " << filePrefix 
+                    + "_Time-" + to_string(pdfSampleTimes[ipi]).substr(0,7)<<endl;
         std::vector< std::vector<double> > pdf = anglePDFCalc();
         if (savePDFformat == "ROOT") {
+          std::string fileName = filePrefix 
+                    + "_Time-" + to_string(pdfSampleTimes[ipi]).substr(0,7)
+                    + "_ThetaBins-" + to_string(pdf.size()) 
+                    + "_PhiBins-" + to_string(pdf[0].size()) 
+                    + ".root";
+          cout<<"FILENAME: "<<fileName<<endl;
           TFile* pdfFile;
-          pdfFile = TFile::Open((fileName + ".root").c_str(), "RECREATE");
+          pdfFile = TFile::Open(fileName.c_str(), "RECREATE");
           TH2D* pdfHist = new TH2D("thetaPhiPDF", "thetaPhiPDF", 
                     pdf.size(), 0, PI, pdf[0].size(), 0, 2*PI);
           for (uint itheta=0; itheta<pdf.size(); itheta++) {
@@ -442,21 +451,21 @@ void RIGROTSIMclass::sampleSim(string fileName, double time_fs) {
           pdfHist->Write();
           pdfFile->Close();
 	  cout << "INFO: Angular distribution saved in " << 
-		fileName + ".root!!!" << endl;
+		filePrefix + ".root!!!" << endl;
         }
-        else if (savePDFformat == "binary") {
-          cout << "saving binary"<<endl;
-          FILE* binFile = fopen((fileName 
-                    + "_ThetaBins-" + to_string(pdf.size()) 
-                    + "_PhiBins-" + to_string(pdf[0].size()) 
-                    + ".dat").c_str(), "wb");
-          for (uint itheta=0; itheta<pdf.size(); itheta++) {
-            fwrite(&pdf[itheta][0], sizeof(double), pdf[itheta].size(), binFile);
-          }
-          fclose(binFile);
-	  cout << "INFO: Angular distribution saved in " << 
-		fileName + ".dat!!!" << endl;
+        //else if (savePDFformat == "binary") {
+        FILE* binFile = fopen((filePrefix 
+                  + "_Time-" + to_string(pdfSampleTimes[ipi]).substr(0,7)
+                  + "_ThetaBins-" + to_string(pdf.size()) 
+                  + "_PhiBins-" + to_string(pdf[0].size()) 
+                  + ".dat").c_str(), "wb");
+        for (uint itheta=0; itheta<pdf.size(); itheta++) {
+          fwrite(&pdf[itheta][0], sizeof(double), pdf[itheta].size(), binFile);
         }
+        fclose(binFile);
+	cout << "INFO: Angular distribution saved in " << 
+	    filePrefix + ".dat!!!" << endl;
+        //}
 
 	ipi++;
       }
@@ -481,131 +490,7 @@ void RIGROTSIMclass::sampleSim(string fileName, double time_fs) {
         for (int J_=0; J_<=NYlmEVs; J_++) {
           YlmEVals[J_][ist] = expVals[J_].real();
         }
-
-        /*
-        complex<double> init(0,0);
-        complex<double> curCoeffs;
-        int m, mm, mMax, J;
-        for (int J_=0; J_<=NYlmEVs; J_++) {
-          if (evenOnlyAxisDist) {
-            J = 2*J_;
-          }
-          else {
-            J = J_;
-          }
-          if (J > MAXj) {
-            break;
-          }
-  
-          mMax = 0;
-          axisDistWFcoeffs[J_][ist].resize(mMax + 1);
-          for (int M=0; M<=mMax; M++) {
-            cout<<"J / M: "<<J<<" / "<<M<<endl;
-            std::complex<double> norm(0,0);
-            std::complex<double> tnorm(0,0);
-            int c1 = 0;
-            int c2 = 0; 
-            int c3 = 0;
-            int c4 = 0;
-            std::string strInd;
-            std::map<std::string, int> testMap;
-            for (int j=0; j<=MAXj; j++) {
-              for (int m_=-1*j; m_<=j; m_++) {
-                m = -1*m_;
-                mm = -1*(m + M);
-                if (max(abs(mm), abs(j-J)) > min(MAXj, j+J)) continue;
-
-                c1 += 1;
-                for (int jj=max(abs(mm), abs(j-J)); jj<=min(MAXj, j+J); jj++) {
-                  curCoeffs = init;
-                  c2 += 1;
-                  if (max(abs(m_), abs(mm)) > jj) {
-                    cout<<"M > J: "<<j<<"  "<<m_<<"  "<<jj<<"  "<<mm<<endl;
-                  }
-                  for (int iv=0; iv<NvibStates; iv++) {
-                    for (int js=max(abs(m_), abs(mm)); js<=MAXj; js++) {
-                      for (int ms=0; ms<=min(min(j, jj), js); ms++) {
-                        // Not looping over ms because cos2 does not mix m
-                        //cout<<js<<" "<<j<<" "<<m_<<" "<<jj<<" "<<mm<<" ";
-                        //cout<<conj(eigenAmps[iv][js][abs(m_)].coeffRef(j-abs(m_)))<<" ";
-                        //cout<<eigenAmps[iv][js][abs(mm)].coeffRef(jj-abs(mm))<<endl;
-                        if (ms) {
-                          curCoeffs += 2*rotThermalDist[iv][js]
-                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-ms))
-                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-ms);
-                          //curCoeffs += rotThermalDist[iv][js]
-                          //    *conj(eigenAmps[iv][js-abs(m_)][abs(m_)].coeffRef(j-abs(m_)))
-                          //    *eigenAmps[iv][js-abs(mm)][abs(mm)].coeffRef(jj-abs(mm));
-                        }
-                        else {
-                          curCoeffs += rotThermalDist[iv][js]
-                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-abs(m_)))
-                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-abs(mm));
-                        }
-
-                        c3 += 1;
-                        if (j == jj) {
-                          c4 += 1;
-                          //cout<<j<<" "<<m_<<" "<<jj<<" "<<mm<<endl;
-
-                          if (ms) {
-                            norm += 2*rotThermalDist[iv][js]
-                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-ms))
-                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-ms);
-                          }
-                          else {
-                            norm += rotThermalDist[iv][js]
-                              *conj(eigenAmps[iv][js-ms][ms].coeffRef(j-ms))
-                              *eigenAmps[iv][js-ms][ms].coeffRef(jj-ms);
-                          }
-                        }
-                      }
-                    }
-                  }
-                  strInd = to_string(j) + "/" + to_string(abs(m)) + "/" + to_string(jj) + "/" + to_string(abs(mm));
-                  //testMap[strInd] ++;
-                  axisDistWFcoeffs[J_][ist][M].push_back(curCoeffs);
-                }
-              }
-            }
-            cout<<"NORM CHECK: "<<norm<<"  "<<c1<<"  "<<c2<<"  "<<c3<<"  "<<c4<<endl;
-            //for (auto & itr : testMap) {
-            //  cout<<itr.first<<"\t"<<itr.second<<endl;
-            //}
-          }
-        }
-
-        */
-
-        /*
-        bool test;
-        for (int i=0; i<(int)axisDistWFcoeffs[0][ist][0].size()*0.5; i++) {
-          if (i%10000 == 0) {
-            cout<<"testing "<<i<<endl;
-          }
-          test = true;
-          for (uint j=0; j<axisDistWFcoeffs.size()-1; j++) {
-            test = (test && (axisDistWFcoeffs[j][ist][0][i] == axisDistWFcoeffs[j+1][ist][0][i]));
-          }
-          if (!test) {
-            cout<<"TEST FAILED!!!!!! "<<i<<endl;
-          }
-        }
-        exit(0);
-        */
-
-        /*
-        for (int j=0; j<=jSize; j++) {
-          save::saveDat< complex<double> >(waveFxn[j],
-              "./output/waveFxn/" + waveFxnPrefix
-              + "YlmCoeff_t-" + to_string(time_fs) 
-              + "_j-" + to_string(j) 
-              + "_mSize[" + to_string(waveFxn[j].size()) + "].dat");
-        }
-        */
       }
-
-
 
       // Increment to the next sample time
       ist++;
@@ -1198,6 +1083,10 @@ void RIGROTSIMclass::runSimulation() {
   cout << "Max J:    \t\t"        <<  MAXj            <<  endl;
   cout << "Vibration Dist:\t"     <<  vibKey          <<  endl;
 
+  if (!opendir(PDFoutputDir.c_str())) {
+    mkdir(PDFoutputDir.c_str(), 0777);
+  }
+
 
   // Filling time vectors here to avoid double precision errors
   ist = ipt = ipi = 0;
@@ -1214,9 +1103,20 @@ void RIGROTSIMclass::runSimulation() {
   while (k*sampleStep + startSampleTime <= endSampleTime) {
     sampleTimes.push_back((k*sampleStep + startSampleTime)*1e3*fs_to_au);
     if (makePDFs 
-	&& (k*sampleStep + startSampleTime >= startPDFTime) 
-	&& (k*sampleStep + startSampleTime <= endPDFTime)) {
+	&& (k*sampleStep + startSampleTime >= startPDFTime*0.99999) 
+	&& (k*sampleStep + startSampleTime <= endPDFTime*1.00001)) {
       pdfSampleInds.push_back(k);
+      int tm = (int)((k*sampleStep + startSampleTime)*1000) % 10;
+      if (tm == 9) {
+        pdfSampleTimes.push_back(k*sampleStep + startSampleTime + 1);
+      }
+      else if (tm == 1) {
+        pdfSampleTimes.push_back(k*sampleStep + startSampleTime - 1);
+      }
+      else {
+        pdfSampleTimes.push_back(k*sampleStep + startSampleTime);
+      }
+
     }
     k++;
   }
@@ -1402,7 +1302,7 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
 
     // Sampling  
     if (doSampling) {
-      sampleSim(outputDir+"/"+fileName, curTime/fs_to_au);
+      sampleSim(curTime/fs_to_au);
     }
 
     ///// Time Evolution Through Pulse  /////
@@ -1487,7 +1387,7 @@ cout<<"Num sample Points: "<<sampleTimes.size()<<endl;
       }
 
       if (doSampling) {
-        sampleSim(outputDir+"/"+fileName, curTime/fs_to_au);
+        sampleSim(curTime/fs_to_au);
       }
       else {
         curTime = pulseTimes[ipt] + pulseTlengthAU;
