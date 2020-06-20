@@ -33,6 +33,7 @@ int main(int argc, char* argv[]) {
   std::string outSuffix   = "";
   std::string lowQtheory  = "NULL";
   std::string saveLowQtheory  = "NULL";
+  std::string outputDir   = "./results/";
   int fitTstep = -1;
 
   /////  Importing variables from command line  /////
@@ -63,6 +64,11 @@ int main(int argc, char* argv[]) {
     else if (strcmp(argv[iarg], "-Osuf") == 0) {
       string str(argv[iarg+1]);
       outSuffix = str;
+    }
+    else if (strcmp(argv[iarg], "-OutDir") == 0) {
+      cout<<"HCASDFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"<<endl;
+      string str(argv[iarg+1]);
+      outputDir = str;
     }
     else if (strcmp(argv[iarg], "-lowQtheory") == 0) {
       string str(argv[iarg+1]);
@@ -154,15 +160,21 @@ int main(int argc, char* argv[]) {
 
     assert(shape[1] == params.NradAzmBins);
 
+    std::string fileType = "sMsAzmAvgDiff";
+    if (params.useFilledHole) {
+      fileType += "_filledHole";
+    }
     fileName = params.mergeScansOutputDir 
-        + "data-" + runName + "-sMsAzmAvgDiff[" 
+        + "data-" + runName + "-" + fileType +"[" 
         + to_string(shape[0])
         + "," + to_string(shape[1]) + "].dat";
+    cout<<"FILENAME "<<fileName<<endl;
   }
   else {
     assert(strcmp(inputDir.c_str(), "NULL") != 0);
 
     shape = save::getShape(inputDir, fileName);
+    cout<<"got shape "<<shape[0]<<endl;
     if (shape.size() == 1) {
       shape.insert(shape.begin(), 1);
     }
@@ -181,6 +193,7 @@ int main(int argc, char* argv[]) {
   if (params.verbose)
     std::cout << "Retriving data from " << fileName << endl; 
 
+  std::cout << "Retriving data from " << fileName << endl; 
   save::importDat<double>(tmdDiff, fileName);
    
   double pCorrQcut = 8;
@@ -235,7 +248,7 @@ int main(int argc, char* argv[]) {
 
   // Saving lowQ theory
   if (saveLowQtheory.compare("NULL") != 0) {
-    std::string fName = "./results/theoryLowQ_" 
+    std::string fName = outputDir + "/theoryLowQ_" 
                           + params.molName
                           + outSuffix;
     if (tmdDiff.size() == 1) {
@@ -254,10 +267,10 @@ int main(int argc, char* argv[]) {
   if (params.verbose)
     std::cout << "Importing low Q coefficients\n";
 
-  std::string lowQcoeffName = "./results/lowQcoefficients_"
+  std::string lowQcoeffName = outputDir + "/lowQcoefficients_"
       + runName + "["
       + to_string(shape[0]) + ",4].dat";
-  std::string lowQwName = "./results/lowQfrequencies_"
+  std::string lowQwName = outputDir + "/lowQfrequencies_"
       + runName + "["
       + to_string(shape[0]) + ",4].dat";
   bool lowQcoeffExists = tools::fileExists(lowQcoeffName);
@@ -282,8 +295,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Combine results of fitting individual images to single file
-    std::string coeffFileName = "./results/lowQfitCoeff_" + runName + "_time-";
-    std::string wFileName = "./results/lowQfitW_" + runName + "_time-";
+    std::string coeffFileName = outputDir + "/lowQfitCoeff_" + runName + "_time-";
+    std::string wFileName = outputDir + "/lowQfitW_" + runName + "_time-";
     if (tools::fileExists(coeffFileName + "0.dat") && (fitTstep == -1)) {
       lowQw.resize(shape[0]);
       std::vector<double> coeffs(4), ws(4);
@@ -341,7 +354,7 @@ int main(int argc, char* argv[]) {
       }
 
       std::string fitCoeffFileName = 
-        "./results/sim-" + runName + "-" + params.finalStates[ifs]
+        outputDir + "/sim-" + runName + "-" + params.finalStates[ifs]
         + "_sMsFitCoeffsLinComb_Bins["
         + to_string(tmdDiff.size()) + "].dat";
 
@@ -438,7 +451,7 @@ int main(int argc, char* argv[]) {
     }
 
     int iq = 0;
-    if (removeSkippedBins) {
+    if (removeSkippedBins && !params.useFilledHole) {
       for ( ; iq<params.NbinsSkip; iq++) 
         tmdDiff[itm][iq] = 0;
     }
@@ -516,9 +529,9 @@ int main(int argc, char* argv[]) {
       }
 
       if (fitTstep != -1) {
-        save::saveDat<double>(lowQw[0], "./results/lowQfitW_" 
+        save::saveDat<double>(lowQw[0], outputDir + "/lowQfitW_" 
             + runName + "_time-" + to_string(itm) + ".dat");
-        save::saveDat<double>(lowQcoeff[itm], "./results/lowQfitCoeff_" 
+        save::saveDat<double>(lowQcoeff[itm], outputDir + "/lowQfitCoeff_" 
             + runName + "_time-" + to_string(itm) + ".dat");
         exit(1);
       }
@@ -527,38 +540,40 @@ int main(int argc, char* argv[]) {
 
     /////  Filling FFT Input  /////
     for (iq=0; iq<NqBins; iq++) {
-      if (params.fillLowQtheory) {
-        if (iq < params.NbinsSkip) {
-          tmdDiff[itm][iq] = lowQsim[iq];
-              //*(tmdDiff[0][params.NbinsSkip]/lowQsim[params.NbinsSkip]);
-        }
-      }
-      else if (params.fillLowQzeros) {
-        if (iq < params.NbinsSkip) {
-          tmdDiff[itm][iq] = 0;
-        }
-      }
-      else if (fitLowQ) {
-        if (iq < params.NbinsSkip) {
-          for (uint i=0; i<lowQw[itm].size(); i++) {
-            if (i == 0) {
-              tmdDiff[itm][iq] = lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
-              continue;
-            }
-            tmdDiff[itm][iq] += lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+      if (!params.useFilledHole) {
+        if (params.fillLowQtheory) {
+          if (iq < params.NbinsSkip) {
+            tmdDiff[itm][iq] = lowQsim[iq];
+                //*(tmdDiff[0][params.NbinsSkip]/lowQsim[params.NbinsSkip]);
           }
         }
-      }
-      else if (params.fillLowQsine) {
-        if (iq < params.NbinsSkip) {
-          tmdDiff[itm][iq] = std::sin(iq*PI/(2*50))
-                              *tmdDiff[itm][params.NbinsSkip]
-                              /std::sin(params.NbinsSkip*PI/(2*50));
+        else if (params.fillLowQzeros) {
+          if (iq < params.NbinsSkip) {
+            tmdDiff[itm][iq] = 0;
+          }
         }
-      }
-      else if (params.fillLowQfitTheory) {
-        if (iq < params.NbinsSkip) {
-          tmdDiff[itm][iq] = fitTmdDiff[itm][iq];
+        else if (fitLowQ) {
+          if (iq < params.NbinsSkip) {
+            for (uint i=0; i<lowQw[itm].size(); i++) {
+              if (i == 0) {
+                tmdDiff[itm][iq] = lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+                continue;
+              }
+              tmdDiff[itm][iq] += lowQcoeff[itm][i]*sin(lowQw[itm][i]*iq); 
+            }
+          }
+        }
+        else if (params.fillLowQsine) {
+          if (iq < params.NbinsSkip) {
+            tmdDiff[itm][iq] = std::sin(iq*PI/(2*50))
+                                *tmdDiff[itm][params.NbinsSkip]
+                                /std::sin(params.NbinsSkip*PI/(2*50));
+          }
+        }
+        else if (params.fillLowQfitTheory) {
+          if (iq < params.NbinsSkip) {
+            tmdDiff[itm][iq] = fitTmdDiff[itm][iq];
+          }
         }
       }
 
@@ -576,8 +591,8 @@ int main(int argc, char* argv[]) {
           || (runName.compare("simulateReference") != 0)) {
         smoothed[iq] = tmdDiff[itm][iq]*filter[iq];
       }
-      else if (!params.fillLowQzeros 
-          || (params.fillLowQzeros && (iq > params.NbinsSkip))) {
+      else if (!params.useFilledHole && (!params.fillLowQzeros 
+          || (params.fillLowQzeros && (iq > params.NbinsSkip)))) {
         smoothed[iq] = (tmdDiff[itm][iq] + sMsGroundState[iq])
                         *exp(-1*std::pow(iq, 2)
                             /(2*params.hotFStdepVar));
@@ -652,28 +667,29 @@ int main(int argc, char* argv[]) {
 
   if (shape[0] != 1) {
     save::saveDat<double>(pairCorrEven, 
-        "./results/" + outPrefix 
+        outputDir + "/" + outPrefix 
         + outSuffix + "_pairCorrEven["
         + to_string(pairCorrEven.size()) + ","
         + to_string(pairCorrEven[0].size()) + "].dat");
     save::saveDat<double>(pairCorrOdd, 
-        "./results/" + outPrefix   
+        outputDir + "/" + outPrefix   
         + outSuffix + "_pairCorrOdd["
         + to_string(pairCorrOdd.size()) + ","
         + to_string(pairCorrOdd[0].size()) + "].dat");
   }
   else {
+    cout<<"HERE SAVING " << outputDir + "/" + outPrefix+ outSuffix + "_pairCorrEven["+ to_string(pairCorrEven.size()) + ","+ to_string(pairCorrEven[0].size()) + "].dat"<<endl;
     save::saveDat<double>(pairCorrEven[0], 
-        "./results/" + outPrefix 
+        outputDir + "/" + outPrefix 
         + outSuffix + "_pairCorrEven["
         + to_string(pairCorrEven[0].size()) + "].dat");
     save::saveDat<double>(pairCorrOdd[0], 
-        "./results/" + outPrefix 
+        outputDir + "/" + outPrefix 
         + outSuffix + "_pairCorrOdd["
         + to_string(pairCorrOdd[0].size()) + "].dat");
     if (fitPC) {
       save::saveDat<double>(pairCorrOdd, 
-          "./results/fitPairCorr"    
+          outputDir + "/fitPairCorr"    
           + outSuffix + "_maxR-"
           + to_string(params.maxR) + "["
           + to_string(pairCorrOdd[0].size()) + "].dat");

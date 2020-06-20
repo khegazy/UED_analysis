@@ -220,7 +220,10 @@ int main(int argc, char* argv[]) {
   }
 
 
-  /////  Subtracting final state from time dependence  /////
+  //////////////////////////////////////
+  /////  Time Dependend Residuals  /////
+  //////////////////////////////////////
+  // Fit the data final state to each time point and get residual
 
   ///  Diffraction  ///
   if (params.verbose) std::cout << "INFO: Subtracting diffraction final state.\n";
@@ -449,10 +452,6 @@ int main(int argc, char* argv[]) {
   std::vector<double> sMsReference(shape[1]);
   save::importDat<double>(reference, simRefName);
   save::importDat<double>(sMsReference, simSMSrefName);
-  plt.print1d(sMsReference, "ref");
-
-  plt.print1d(reference, "refTest");
-  plt.print1d(sMsReference, "refsMsTest");
 
 
   // Simulated final states
@@ -499,8 +498,6 @@ int main(int argc, char* argv[]) {
       simFinalState[iq] = simFinalDiffractions[ifs][iq] - reference[iq];
       simSMSfinalState[iq] = simFinalSMSs[ifs][iq] - sMsReference[iq];
     }
-    plt.print1d(simFinalState, fsName+"_simFinTest");
-    plt.print1d(simSMSfinalState, fsName+"_simsMsFinTest");
 
     std::string finalStateSimFileName = fsName 
         + "_diffFinalState["
@@ -514,6 +511,8 @@ int main(int argc, char* argv[]) {
     save::saveDat<double>(
         simSMSfinalState, 
         params.simOutputDir + finalStateSimSMSfileName); 
+    cout<<"FINAL STATE: "<<fsName<<endl;
+    cout<<finalStateSimFileName<<endl;
           
 
     /////  Fitting Data  /////
@@ -541,7 +540,12 @@ int main(int argc, char* argv[]) {
           Yfit(mInd, 0) = sMsFinalState[iq];
           W(mInd, 0)    = 1./sMsFinalStateVar[iq];
         }
+
+        //W(mInd,0) *= 2*exp(-1*std::pow(iq-(555*4/12.3),2)/(2*2*555/12.3));
+        //W(mInd,0) *= iq*iq;
+        //W(mInd,0) = sqrt(W(mInd,0));
       }
+
 
 
       XqsFitFxns[ifs+offShift][iq] = simSMSfinalState[iq];
@@ -578,7 +582,7 @@ int main(int argc, char* argv[]) {
 
     save::saveDat<double>(simSMSfinalStateScaled, 
         "./results/sim-" + fsName 
-          + "_sMsFinalState_scaled[" 
+          + "_sMsFinalState_scaled-" + runName + "[" 
           + to_string(shape[1]) + "].dat");
 
     //for (auto & a:YfitOut) {
@@ -614,14 +618,19 @@ int main(int argc, char* argv[]) {
         "./results/sim-" + fsName 
           + "_diffFinalState_scaled[" 
           + to_string(shape[1]) + "].dat");
-          */
+    */
+  }
 
 
-    ///////////////////////////////
-    /////  Pair Correlations  /////
-    ///////////////////////////////
+  /*
+  ///////////////////////////////
+  /////  Pair Correlations  /////
+  ///////////////////////////////
+
+  for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
 
     // Final State
+    cout<<"STARTING PAIR CORR"<<endl;
     if (params.fillLowQtheory) {
       system(("./pairCorr.exe simulateReference -Idir "
           + params.simOutputDir + " -Fname "
@@ -644,11 +653,13 @@ int main(int argc, char* argv[]) {
       //    + finalStateDataSMSfileName 
       //    + " -Osuf _finalState").c_str());
     }
+    cout<<"ENDING PAIR CORR"<<endl;
 
     std::string simPairCorrName = 
         "./results/sim-" + fsName 
         + "_pairCorrOdd[" + to_string(params.maxRbins)
         + "].dat";
+    cout<<"finished: "<<simPairCorrName<<endl;
     //std::string pairCorrName = 
     //    "./results/data-" + runName 
     //    + "_finalState_pairCorrOdd[" 
@@ -693,45 +704,10 @@ int main(int argc, char* argv[]) {
           += simPairCorrFinalStates[ifs][ir]*fit(offShift);
     }
 
-    /*
-    for (int ir=fillRbegin; ir<fillRend; ir++) {
-      mInd = ir - fillRbegin;
-      t1[mInd] = pairCorrFinalState[ir];
-      t2[mInd] = simPairCorrFinalStateScaled[ir];
-      t3[mInd] = 5*10e-10/pairCorrFinalStateVar[ir] - 0.05;
-    }
-    */
     save::saveDat<double>(simPairCorrFinalStateScaled, 
         "./results/sim-" + fsName 
-          + "_pairCorrFinalState_scaled[" 
+          + "_pairCorrFinalState_scaled-" + runName + "[" 
           + to_string(params.maxRbins) + "].dat");
-
-    /*
-    plt.print1d(t3, "weights");
-    std::vector<TH1*> h(3);
-    h[0] = plt.plot1d(t1, "h1");
-    h[1] = plt.plot1d(t2, "h2");
-    h[2] = plt.plot1d(t3, "h3");
-    //h[0] = plt.plot1d(pairCorrFinalState, "h1");
-    //h[1] = plt.plot1d(simPairCorrFinalStates[ifs], "h2");
-    //h[1] = plt.print1d(simPairCorrFinalStateScaled, "h2");
-    plt.print1d(h, "fitting_" + to_string(ifs));
-   
-    t1.resize(pairCorrFinalState.size());
-    t2.resize(pairCorrFinalState.size());
-    t3.resize(pairCorrFinalState.size());
-    for (int ir=0; ir<t1.size(); ir++) {
-      t1[ir] = pairCorrFinalState[ir];
-      t2[ir] = simPairCorrFinalStates[ifs][ir]/3.;
-      t3[ir] = 5*10e-10/pairCorrFinalStateVar[ir] - 0.05;
-    }
-    h[0] = plt.plot1d(t1, "h1");
-    h[1] = plt.plot1d(t2, "h2");
-    h[2] = plt.plot1d(t3, "h3");
-    plt.print1d(h, "comparing_" + to_string(ifs));
-
-    exit(0);
-    */
 
 
     /////  Searching for best low Q fill  /////
@@ -788,7 +764,200 @@ int main(int argc, char* argv[]) {
           + to_string(params.NradAzmBins) + "].dat");
     }
   }
-  //exit(0);
+  */
+
+
+  ////////////////////////////////////////////////////
+  /////  Fit All Combinations for Global Minima  /////
+  ////////////////////////////////////////////////////
+
+  // Scale range of simulation
+  std::vector<double> allScales(100);
+  for (int i=0; i<100; i++) {
+    allScales[i] = 0.001*i;
+  }
+
+  cout<<"start sorting"<<endl;
+  // Sort the data and simulations
+  Eigen::Matrix<double, Eigen::Dynamic, 1> Xq;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> Wq;
+  Eigen::Matrix<double, Eigen::Dynamic, 1> Yq;
+  Xq.resize(fillQend-fillQbegin);
+  Wq.resize(fillQend-fillQbegin);
+  Yq.resize(fillQend-fillQbegin);
+  W.resize(fillQend-fillQbegin, 1);
+  std::vector< std::vector<double> > allXqs(params.finalStates.size());
+  std::vector< std::vector<double> > allXqsFull(params.finalStates.size());
+  std::vector<double> YfitOut(params.NradAzmBins, 0);
+  std::vector<double> YfitSEMout(params.NradAzmBins, 0);
+  for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
+    allXqs[ifs].resize(params.NradAzmBins, 0);
+    allXqsFull[ifs].resize(params.NradAzmBins, 0);
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      if ((iq >= fillQbegin) && (iq < fillQend)) {
+        mInd = iq - fillQbegin;
+        allXqs[ifs][mInd] = simFinalSMSs[ifs][iq] - sMsReference[iq];
+        if (params.fsFilterSMS) {
+          allXqs[ifs][mInd] *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+        }
+      }
+
+      allXqsFull[ifs][iq] = simFinalSMSs[ifs][iq] - sMsReference[iq]; 
+
+      if (params.fsFilterSMS) {
+        allXqsFull[ifs][iq] 
+            *= exp(-1*std::pow(iq, 2)/(2*params.fsFilterVar));
+      }
+    }
+  }
+  for (int iq=0; iq<params.NradAzmBins; iq++) {
+    if ((iq >= fillQbegin) && (iq < fillQend)) {
+      mInd = iq - fillQbegin;
+      if (params.fsFilterSMS) {
+        Yq(mInd) = sMsFinalStateScaled[iq];
+        Wq(mInd)  = 1./sMsFinalStateVarScaled[iq];
+      }
+      else {
+        Yq(mInd)     = sMsFinalState[iq];
+        Wq(mInd) = 1./sMsFinalStateVar[iq];
+      }
+    }
+    if (params.fsFilterSMS) {
+      YfitOut[iq]     = sMsFinalStateScaled[iq];
+      YfitSEMout[iq]  = sMsFinalStateSEMScaled[iq];
+    }      
+    else {
+      YfitOut[iq]     = sMsFinalState[iq];
+      YfitSEMout[iq]  = sMsFinalStateSEM[iq];
+    }
+  }
+
+
+
+  // Single Final State
+  int best_sc1=0;
+  int best_fs1=0;
+  double best_chi_sq = 1e30;
+  std::vector< std::vector<double> > chiSq1(params.finalStates.size());
+  for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
+    chiSq1[ifs].resize(allScales.size());
+    for (int isc=0; isc<(int)allScales.size(); isc++) {
+      for (int iq=0; iq<fillQend-fillQbegin; iq++) {
+        Xq(iq) = allScales[isc]*allXqs[ifs][iq];
+      }
+
+      chiSq1[ifs][isc] = ((Xq - Yq).cwiseProduct(W)).norm();
+      if (chiSq1[ifs][isc] < best_chi_sq) {
+        best_chi_sq = chiSq1[ifs][isc];
+        best_sc1 = isc;
+        best_fs1 = ifs;
+      }
+    }
+  }
+
+  cout
+    <<"/////////////////////////////////////\n"
+    <<"/////  Best Single Fit Results  /////\n"
+    <<"/////////////////////////////////////\n\n"
+    <<"Sim: "<<params.finalStates[best_fs1]<<endl
+    <<"Chi Sq: "<<best_chi_sq<<endl
+    <<"Coeff: "<<allScales[best_sc1]<<endl<<endl;
+
+
+  // Two Final States
+  int best_sc2=0;
+  int best_fs2=0;
+  best_chi_sq = 1e30;
+  std::vector< std::vector< std::vector< std::vector<double> > > > 
+      chiSq2(params.finalStates.size());
+  for (int ifs1=0; ifs1<(int)params.finalStates.size(); ifs1++) {
+    chiSq2[ifs1].resize(params.finalStates.size());
+    for (int ifs2=ifs1+1; ifs2<(int)params.finalStates.size(); ifs2++) {
+      chiSq2[ifs1][ifs2].resize(allScales.size());
+      for (int isc1=0; isc1<(int)allScales.size(); isc1++) {
+        chiSq2[ifs1][ifs2][isc1].resize(allScales.size(), std::nan(""));
+        for (int isc2=0; isc2<(int)allScales.size(); isc2++) {
+          for (int iq=0; iq<fillQend-fillQbegin; iq++) {
+            Xq(iq) = allScales[isc1]*allXqs[ifs1][iq];
+            Xq(iq) += allScales[isc2]*allXqs[ifs2][iq];
+          }
+
+          chiSq2[ifs1][ifs2][isc1][isc2] = ((Xq - Yq).cwiseProduct(W)).norm();
+          chiSq2[ifs1][ifs2][isc1][2*isc1 - isc2] = chiSq2[ifs1][ifs2][isc1][isc2];
+          if (chiSq2[ifs1][ifs2][isc1][isc2] < best_chi_sq) {
+            best_chi_sq = chiSq2[ifs1][ifs2][isc1][isc2];
+            best_sc1 = isc1;
+            best_fs1 = ifs1;
+            best_sc2 = isc2;
+            best_fs2 = ifs2;
+          }
+        }
+      }
+    }
+  }
+
+  cout
+    <<"////////////////////////////////////////\n"
+    <<"/////  Best Two State Fit Results  /////\n"
+    <<"////////////////////////////////////////\n\n"
+    <<"Sim: "<<params.finalStates[best_fs1]<<" + "
+    <<params.finalStates[best_fs2]<<endl
+    <<"Coeff: "<<allScales[best_sc1]<<" / "
+    <<allScales[best_sc2]<<endl
+    <<"Chi Sq: "<<best_chi_sq<<endl<<endl;
+
+
+  // Three Final States
+  int best_sc3=0;
+  int best_fs3=0;
+  best_chi_sq = 1e30;
+  std::vector< std::vector< std::vector< std::vector< std::vector< std::vector<double> > > > > >
+      chiSq3(params.finalStates.size());
+  for (int ifs1=0; ifs1<(int)params.finalStates.size(); ifs1++) {
+    chiSq3[ifs1].resize(params.finalStates.size());
+    for (int ifs2=ifs1+1; ifs2<(int)params.finalStates.size(); ifs2++) {
+      chiSq3[ifs1][ifs2].resize(params.finalStates.size());
+      for (int ifs3=ifs2+1; ifs3<(int)params.finalStates.size(); ifs3++) {
+        chiSq3[ifs1][ifs2][ifs3].resize(allScales.size());
+        for (int isc1=0; isc1<(int)allScales.size(); isc1++) {
+          chiSq3[ifs1][ifs2][ifs3][isc1].resize(allScales.size());
+          for (int isc2=0; isc2<(int)allScales.size(); isc2++) {
+            chiSq3[ifs1][ifs2][ifs3][isc1][isc2].resize(allScales.size(), std::nan(""));
+            for (int isc3=0; isc3<(int)allScales.size(); isc3++) {
+              for (int iq=0; iq<fillQend-fillQbegin; iq++) {
+                Xq(iq) = allScales[isc1]*allXqs[ifs1][iq];
+                Xq(iq) += allScales[isc2]*allXqs[ifs2][iq];
+                Xq(iq) += allScales[isc3]*allXqs[ifs3][iq];
+              }
+
+              chiSq3[ifs1][ifs2][ifs3][isc1][isc2][isc3] = ((Xq - Yq).cwiseProduct(W)).norm();
+              chiSq3[ifs1][ifs2][ifs3][isc1][2*isc1-isc2][2*isc2-isc3] = chiSq3[ifs1][ifs2][ifs3][isc1][isc2][isc3];
+              if (chiSq3[ifs1][ifs2][ifs3][isc1][isc2][isc3] < best_chi_sq) {
+                best_chi_sq = chiSq3[ifs1][ifs2][ifs3][isc1][isc2][isc3];
+                best_sc1 = isc1;
+                best_fs1 = ifs1;
+                best_sc2 = isc2;
+                best_fs2 = ifs2;
+                best_sc3 = isc3;
+                best_fs3 = ifs3;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  cout
+    <<"//////////////////////////////////////////\n"
+    <<"/////  Best Three State Fit Results  /////\n"
+    <<"//////////////////////////////////////////\n\n"
+    <<"Sim: "<<params.finalStates[best_fs1]<<" + "
+    <<params.finalStates[best_fs2]<<" + "
+    <<params.finalStates[best_fs3]<<endl
+    <<"Coeff: "<<allScales[best_sc1]<<" / "
+    <<allScales[best_sc2]<<" / "<<allScales[best_sc3]<<endl
+    <<"Chi Sq: "<<best_chi_sq<<endl<<endl;
 
 
 
@@ -843,19 +1012,32 @@ int main(int argc, char* argv[]) {
   save::saveDat<double>(Wout, WqFileName);
   save::saveDat<double>(Yout, YqFileName);
 
+  cout<<"START first one "<<endl;
   std::system(("python " + codeDir 
       + "fitLinCurveFit.py --X " + XqsFileName
       + " --Y " + YqFileName
       + " --W " + WqFileName).c_str());
+  cout<<"END first one "<<endl;
 
   save::importDat<double>(fitCoeffs, coeffsFileName);
   save::importDat<double>(fitCoeffErrs, coeffErrsFileName);
 
+  std::system(("rm ./results/sim-" + runName
+      + "_sMsFinalState_scaledLinComb_contribution*").c_str());
   std::vector<double> combinedQ(shape[1]);
-  for (int iq=0; iq<shape[1]; iq++) {
-    for (int i=0; i<NfitParams; i++) {
-      combinedQ[iq] += XqsOut[i][iq]*fitCoeffs[i];
+  std::vector<double> contributionLinQ(shape[1]);
+  for (int i=0; i<NfitParams; i++) {
+    for (int iq=0; iq<shape[1]; iq++) {
+      combinedQ[iq] += XqsFitFxns[i][iq]*fitCoeffs[i];
+      contributionLinQ[iq] = XqsFitFxns[i][iq]*fitCoeffs[i];
     }
+    cout<<"CEOFFFFFFFFFFFFFFFFFFFFFF: "<<params.finalStates[i]<<"  "<<fitCoeffs[i]<<endl;
+    cout<<"SAVING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<endl;
+    save::saveDat<double>(contributionLinQ,
+      "./results/sim-" + runName
+      + "_sMsFinalState_scaledLinComb_contribution-"
+      + params.finalStates[i] + "_Bins["
+      + to_string(combinedQ.size()) + "].dat");
   }
 
   save::saveDat<double>(combinedQ, 
@@ -950,9 +1132,12 @@ int main(int argc, char* argv[]) {
         combinedQs[it][iq] += XqsFitFxns[i][iq]*fitCoeffs[i];
       }
     }
+
+    // Fitting individual final states to time dependent signal
   }
 
   if (params.fsFitOffset) {
+
     save::saveDat<double>(tmDpQfits[0], 
         "./results/sim-" + runName
           + "-offset_sMsFitCoeffsLinComb_Bins[" 

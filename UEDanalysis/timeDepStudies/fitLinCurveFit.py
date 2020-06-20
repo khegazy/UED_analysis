@@ -33,6 +33,8 @@ if __name__ == '__main__':
   Y, ySize = plc.importImage(args.Y)
   W, wSize = plc.importImage(args.W)
 
+  print("XSIZE", xSize)
+
   coeffs, errs = None, None
   if (xSize[0] == 1) or (len(xSize) == 1):
     def func(x, a):
@@ -104,7 +106,7 @@ if __name__ == '__main__':
             + "\t" + str(bestStartVals[0]) 
             + "\t" + str(bestStartVals[1]) + "\n") 
     else:
-      coeffs, errs = curve_fit(func, X, Y, sigma=W, bounds=(0,100))
+      coeffs, errs = curve_fit(func, X, Y, sigma=W, bounds=(0,10), p0=np.ones(2)*0.5)
       loss = np.sqrt(np.mean((Y 
           - np.sum(np.reshape(coeffs, (-1,1))*X, axis=0))/W)**2)
       with open("./results/bestFitDefaultInitialVals.txt", 'a') as f:
@@ -116,6 +118,22 @@ if __name__ == '__main__':
       return a*x[0,:] + b*x[1,:] + c*x[2,:]
 
     coeffs, errs = curve_fit(func, X, Y, bounds=(0,100))
+
+  elif xSize[0] == 4:
+    def func(x, a, b, c, d):
+      return a*x[0,:] + b*x[1,:] + c*x[2,:] + d*x[3,:]
+
+  elif xSize[0] == 5:
+    def func(x, a, b, c, d, e):
+      return a*x[0,:] + b*x[1,:] + c*x[2,:] + d*x[3,:] + e*x[4,:]
+
+  else:
+    print("Currently do not support fitting N number of sims, please add")
+    sys.exit(0)
+
+
+  coeffs, errs = curve_fit(func, X, Y, bounds=(0,100))
+
 
 
 
