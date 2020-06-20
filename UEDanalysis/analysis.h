@@ -60,9 +60,12 @@ using namespace std;
    Float_t         throttle;
    Int_t           centerC;
    Int_t           centerR;
+   Int_t           I0centerC;
+   Int_t           I0centerR;
    Float_t         centerCstdRatio;
    Float_t         centerRstdRatio;
    Float_t         imgNorm;
+   Float_t         I0norm;
    Float_t         readoutNoise;
    vector<vector<double> > *imgOrig;
    vector<vector<double> > *imgSubBkg;
@@ -91,9 +94,12 @@ using namespace std;
    TBranch        *b_throttle;   //!
    TBranch        *b_centerC;   //!
    TBranch        *b_centerR;   //!
+   TBranch        *b_I0centerC;   //!
+   TBranch        *b_I0centerR;   //!
    TBranch        *b_centerCstdRatio;   //!
    TBranch        *b_centerRstdRatio;   //!
    TBranch        *b_imgNorm;   //!
+   TBranch        *b_I0norm;   //!
    TBranch        *b_readoutNoise;   //!
    TBranch        *b_imgOrig;   //!
    TBranch        *b_imgSubBkg;   //!
@@ -182,9 +188,12 @@ void analysisClass::initialize(string fileList, string treeName) {
    fChain->SetBranchAddress("throttle", &throttle, &b_throttle);
    fChain->SetBranchAddress("centerC", &centerC, &b_centerC);
    fChain->SetBranchAddress("centerR", &centerR, &b_centerR);
+   fChain->SetBranchAddress("I0centerC", &I0centerC, &b_I0centerC);
+   fChain->SetBranchAddress("I0centerR", &I0centerR, &b_I0centerR);
    fChain->SetBranchAddress("centerCstdRatio", &centerCstdRatio, &b_centerCstdRatio);
    fChain->SetBranchAddress("centerRstdRatio", &centerRstdRatio, &b_centerRstdRatio);
    fChain->SetBranchAddress("imgNorm", &imgNorm, &b_imgNorm);
+   fChain->SetBranchAddress("I0norm", &I0norm, &b_I0norm);
    fChain->SetBranchAddress("readoutNoise", &readoutNoise, &b_readoutNoise);
    fChain->SetBranchAddress("imgOrig", &imgOrig, &b_imgOrig);
    fChain->SetBranchAddress("imgSubBkg", &imgSubBkg, &b_imgSubBkg);
