@@ -200,17 +200,25 @@ std::vector<double> imgProc::gaussianSmooth1d(
   int range = totalRange/2 + 1;
 
   for (int i=0; i<(int)inp.size(); i++) {
-    norm = 0;
-    for (int j=-1*range; j<=range; j++) {
-      if ((i + j < 0) || (i + j >= (int)inp.size())) {
-        continue;
+    if (inp[i] != NANVAL) {
+      norm = 0;
+      for (int j=-1*range; j<=range; j++) {
+        if ((i + j < 0) || (i + j >= (int)inp.size())) {
+          continue;
+        }
+
+        if (inp[i+j] != NANVAL) {
+          weight = std::exp(-1*j*j/(2*std::pow(sigma, 2)));
+          norm += weight;
+          out[i] += inp[i+j]*weight;
+        }
       }
 
-      weight = std::exp(-1*j*j/(2*std::pow(sigma, 2)));
-      norm += weight;
-      out[i] += inp[i+j]*weight;
+      out[i] /= norm;
     }
-    out[i] /= norm;
+    else {
+      out[i] = NANVAL;
+    }
   }
 
   return out;

@@ -31,10 +31,19 @@ namespace save {
   /////////////////////////////
 
   template <typename type>
-  void importDat(std::vector<type> &import, std::string fileName);
+  void importDat(
+      std::vector<type> &import,
+      std::string fileName);
 
   template <typename type>
-  void importDat(std::vector< std::vector<type> > &import, std::string fileName);
+  void importDat(
+      std::vector< std::vector<type> > &import,
+      std::string fileName);
+
+  template <typename type>
+  void importDat(
+      std::vector< std::vector< std::vector<type> > > &import,
+      std::string fileName);
 
 
   ////////////////////
@@ -127,8 +136,8 @@ void save::importDat(std::vector< std::vector<type> > &import, std::string fileN
     exit(0);
   }
 
-  int Nrows = import.size();
-  int Ncols = import[0].size();
+  uint Nrows = import.size();
+  uint Ncols = import[0].size();
   std::vector<type> inpVec(Nrows*Ncols);
   fread(&inpVec[0], sizeof(type), inpVec.size(), input);
 
@@ -137,6 +146,41 @@ void save::importDat(std::vector< std::vector<type> > &import, std::string fileN
   for (int ir=0; ir<Nrows; ir++) {
     for (int ic=0; ic<Ncols; ic++) {
       import[ir][ic] = inpVec[ir*Ncols + ic];
+    }
+  }
+}
+
+
+template <typename type>
+void save::importDat(
+    std::vector< std::vector< std::vector<type> > > &import,
+    std::string fileName) {
+
+  // Check that vector is not empty
+  if (!import.size()) {
+    std::cerr << "ERROR: Cannot fill vector of size 0!!!\n";
+    exit(0);
+  }
+
+  FILE* input = fopen(fileName.c_str(), "rb");
+  if (input == NULL) {
+    std::cerr << "ERROR: Cannot open file " + fileName << "!!!\n";
+    exit(0);
+  }
+
+  uint Nrows = import.size();
+  uint Ncols = import[0].size();
+  uint Ntrds = import[0][0].size();
+  std::vector<type> inpVec(Nrows*Ncols*Ntrds);
+  fread(&inpVec[0], sizeof(type), inpVec.size(), input);
+
+  fclose(input);
+
+  for (uint ir=0; ir<Nrows; ir++) {
+    for (uint ic=0; ic<Ncols; ic++) {
+      for (uint it=0; it<Ntrds; it++) {
+        import[ir][ic][it] = inpVec[ir*Ncols*Ntrds + ic*Ntrds + it];
+      }
     }
   }
 }

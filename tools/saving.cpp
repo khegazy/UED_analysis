@@ -26,8 +26,12 @@ std::vector<int> save::getShape(std::string folder, std::string filePrefix) {
     }
   }
 
-  cout<<"5"<<endl;
-  cout << "INFO: Getting shape from " + fileName <<endl;
+  if (fileName.length() == 0) {
+    std::cerr << 
+        "Cannot find file with arguments " + folder + " and " + filePrefix 
+        << std::endl;
+    exit(0);
+  }
 
   std::vector<int> inds;
   int iPos = fileName.find("[") + 1;

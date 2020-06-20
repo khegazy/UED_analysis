@@ -21,7 +21,9 @@ class parameterClass {
         {initialState, 
          finalState1, 
          finalState2, 
-         finalState3};
+         finalState3,
+         finalState4,
+         finalState5};
     radicalEnum molecule;
     std::string molName;
 
@@ -79,6 +81,7 @@ class parameterClass {
     bool fillLowQzeros;
     bool fillLowQsine;
     bool fillLowQfitTheory;
+    bool useFilledHole;
 
     bool pCorrGaussFilter;
     bool pCorrButterFilter;
@@ -175,6 +178,9 @@ class parameterClass {
     std::string indicesPath;
 
     // Center finding
+    bool scanAvgCenter;
+    bool I0centers;
+    bool computeCenters;
     int centerFxnType;
     int centerMinRadBin;
     int centerShellWidth;
@@ -196,6 +202,13 @@ class parameterClass {
     double cntrPowellTol;
     double cntrFracTol1d;
     double centerSTDcut;
+
+    int I0minPixVal;
+    int I0approxR;
+    int I0approxC;
+
+    std::vector<double> I0ellRats;
+    std::string centerDir;
 
     // Laser Background Removal Parameters
     double  decayConst;
@@ -248,6 +261,12 @@ class parameterClass {
     float scanImgAzmRefSTDcut;
     std::string timeFilterType;
 
+    bool  mergeGaussSmoothRef;
+    float mergeGSmoothSTD;
+
+    bool saveMergeIntermediates;
+    std::string saveMergeInterFolder;
+
 
     // PV
     bool  getPVs;
@@ -256,6 +275,8 @@ class parameterClass {
     float throttle;
     std::string pvFolder;
     std::map< std::string, std::string > pvMap;
+
+    double gasShiftCut;
 
     // Power Scans
     double range1Qbegin;
