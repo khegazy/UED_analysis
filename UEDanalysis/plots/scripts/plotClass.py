@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -13,7 +14,7 @@ class plotCLASS:
 
   def __init__(self):
     self.NANVAL = 1.234567e-10
-    self.colors = ['k', 'b', 'r', 'g', 'c', 'y', 'm', 'pink', 'navy']
+    self.colors = ['k', 'b', 'r', 'g', 'c', 'y', 'm', 'pink', 'navy', 'gray', 'crimson', 'coral', 'lavender']
 
   def getShape(self, fileName):
     shape = []
@@ -44,16 +45,15 @@ class plotCLASS:
 
 
   def printHist(self, fileName, Nbins, outputName, 
-      options=None, returnPlt=False):
+      binRange=None, options=None, returnPlt=False):
 
     fig, ax = plt.subplots()
     handles = []
 
     vals,_ = self.importImage(fileName, False)
-    print("size", vals.shape)
     if vals.shape[0] is 0:
       return
-    ax.hist(vals, Nbins, color="k")
+    ax.hist(vals, Nbins, binRange, color="k")
 
     if options is not None:
       fig, ax = self.beautify(fig, ax, options, handles)
@@ -94,7 +94,8 @@ class plotCLASS:
           err, _ = self.importImage(fl, False)
           errors.append(err)
     """
-
+    #if options is not None:
+    #  if "noData" in options:
 
     handles = []
     fig, ax = plt.subplots()
@@ -123,7 +124,6 @@ class plotCLASS:
               if errors[i] is not None:
                 err /= np.amax(image[options["normalize"][0]:options["normalize"][1]])
           else:
-            print("in max", np.amax(image))
             norm = np.amax(image)
             image /= norm
             if errors is not None:
@@ -197,10 +197,10 @@ class plotCLASS:
 
 
   def printLineOut(self, fileName, axis, inds, outputName, 
-      X=None, xRange=None, samePlot=True, options=None):
+      X=None, xRange=None, samePlot=True,
+      addNeighbors=False, options=None):
 
     image,shape = self.importImage(fileName)
-    print(image.shape)
 
     if X is None:
       if axis is 0:
@@ -220,11 +220,20 @@ class plotCLASS:
         plt.close()
         fig, ax = plt.subplots()
 
-      print("ind",ind)
       if axis is 0:
-        inp = np.reshape(image[ind,:], (-1))
+        if addNeighbors:
+          inp = copy.copy(np.reshape(
+              np.mean(image[ind-1:ind+2,:], axis=0),
+              (-1)))
+        else:
+          inp = copy.copy(np.reshape(image[ind,:], (-1)))
       elif axis is 1:
-        inp = np.reshape(image[:,ind], (-1))
+        if addNeighbors:
+          inp = copy.copy(np.reshape(
+              np.mean(image[:,ind-1:ind+2], axis=1),
+              (-1)))
+        else:
+          inp = copy.copy(np.reshape(image[:,ind], (-1)))
       else:
         print("ERROR: Does not support axis = {}".format(axis))
         sys.exit(0)
@@ -357,8 +366,7 @@ class plotCLASS:
       vMax = np.amax(pltImg)
       cMap = 'jet'
 
-    print(len(np.where(pltImg > 0)[0]))
-    plot = ax.pcolor(pltX, pltY, pltImg.transpose(), 
+    plot = ax.pcolormesh(pltX, pltY, pltImg.transpose(), 
               norm=cNorm,
               cmap=cMap, 
               vmin=vMin, vmax=vMax)
