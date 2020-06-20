@@ -73,6 +73,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  std::map< string, std::vector<double> > refAutCor, refLineOut;
+  std::vector<long int> labTimeStamps;
+
   /////  Plotting variables  /////
   std::vector<PLOToptions> opts(5);
   std::vector<std::string> vals(5);
@@ -90,8 +93,6 @@ int main(int argc, char* argv[]) {
   std::map<string, double > cbar;
   cbar["20161102_LongScan1_Leg0"] = 0.2;
   cbar["20161102_LongScan1_Leg2"] = 0.2;
-
-  std::map< string, std::vector<double> > refAutCor, refLineOut;
 
 
   ///////////////////////////
@@ -161,40 +162,47 @@ int main(int argc, char* argv[]) {
       */
       fillLabParams = true;
     }
+    
+    //if (stagePos == 1542750) {
+    //  plt.print1d((*azmAvg), "ttestLO_1542750_" + to_string(scan));
+    //}
 
     // Adding image parameters
-    if (fillLabParams) {
-      merge.addLabTimeParameter(timeStamp, "scan", scan);
-      merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
-      merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
-      merge.addLabTimeParameter(timeStamp, "centerRstdRatio", centerRstdRatio);
-      merge.addLabTimeParameter(timeStamp, "centerCstdRatio", centerCstdRatio);
-      for (uint i=0; i<imgRadSTD->size(); i++) {
-        merge.addLabTimeParameter(
-            timeStamp, 
-            "imgRadSTD" + to_string(i), 
-            (*imgRadSTD)[i]);
+    merge.addLabTimeParameter(timeStamp, "scan", scan);
+    merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
+    merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
+    merge.addLabTimeParameter(timeStamp, "I0norm", I0norm);
+    merge.addLabTimeParameter(timeStamp, "centerR", centerR);
+    merge.addLabTimeParameter(timeStamp, "centerC", centerC);
+    merge.addLabTimeParameter(timeStamp, "I0centerR", I0centerR);
+    merge.addLabTimeParameter(timeStamp, "I0centerC", I0centerC);
+    merge.addLabTimeParameter(timeStamp, "centerRstdRatio", centerRstdRatio);
+    merge.addLabTimeParameter(timeStamp, "centerCstdRatio", centerCstdRatio);
+    for (uint i=0; i<imgRadSTD->size(); i++) {
+      merge.addLabTimeParameter(
+          timeStamp, 
+          "imgRadSTD" + to_string(i), 
+          (*imgRadSTD)[i]);
 
+    }
+    // Adding lab/setup parameters
+    for (auto const & pvInd : merge.pvMap) {
+      if (pvInd.first.compare("pressure") == 0) {
+        merge.addLabTimeParameter(timeStamp, "pressure", pressure);
       }
-      // Adding lab/setup parameters
-      for (auto const & pvInd : merge.pvMap) {
-        if (pvInd.first.compare("pressure") == 0) {
-          merge.addLabTimeParameter(timeStamp, "pressure", pressure);
-        }
-        else if (pvInd.first.compare("UVcounts") == 0) {
-          merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
-        }
-        else if (pvInd.first.compare("bunkerTemp") == 0) {
-          merge.addLabTimeParameter(timeStamp, "bunkerTemp", bunkerTemp);
-        }
-        else if (pvInd.first.compare("highBayTemp") == 0) {
-          merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
-        }
-        else {
-          std::cerr << "ERROR: Do not know how to add PV " 
-            << pvInd.first << "!!!\n";
-          exit(1);
-        }
+      else if (pvInd.first.compare("UVcounts") == 0) {
+        merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
+      }
+      else if (pvInd.first.compare("bunkerTemp") == 0) {
+        merge.addLabTimeParameter(timeStamp, "bunkerTemp", bunkerTemp);
+      }
+      else if (pvInd.first.compare("highBayTemp") == 0) {
+        merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
+      }
+      else {
+        std::cerr << "ERROR: Do not know how to add PV " 
+          << pvInd.first << "!!!\n";
+        exit(1);
       }
     }
 
@@ -213,6 +221,72 @@ int main(int argc, char* argv[]) {
 
   }
 
+  cout<<"computing if I0 moved"<<endl;
+  ///  Check if I0 moved within this time frame  ///
+  for (auto& itr : merge.labTimeParams) {
+    labTimeStamps.push_back(itr.first);
+    cout<<"time: "<<itr.first<<endl;
+  }
+
+  long int tm, tm1;
+  double centShift, intsChange;
+  std::vector<double> tempGasShift(labTimeStamps.size());
+  std::vector< std::vector<double> > plotI0Shift(2);
+  plotI0Shift[0].resize(labTimeStamps.size());
+  plotI0Shift[1].resize(labTimeStamps.size());
+  std::vector< std::vector<double> > plotShift(2);
+  plotShift[0].resize(labTimeStamps.size());
+  plotShift[1].resize(labTimeStamps.size());
+  for (int itm=0; itm<(int)labTimeStamps.size() - 1; itm++) {
+    tm  = labTimeStamps[itm];
+    tm1 = labTimeStamps[itm+1];
+    centShift = sqrt(
+        std::pow(
+            merge.labTimeParams[tm]["I0centerR"]
+            - merge.labTimeParams[tm1]["I0centerR"],
+        2)
+        + std::pow(
+            merge.labTimeParams[tm]["I0centerC"]
+            - merge.labTimeParams[tm1]["I0centerC"],
+        2));
+
+    plotI0Shift[0][itm] = merge.labTimeParams[tm]["I0centerR"];
+    plotI0Shift[0][itm+1] = merge.labTimeParams[tm1]["I0centerR"];
+    plotI0Shift[1][itm] = merge.labTimeParams[tm]["I0centerC"];
+    plotI0Shift[1][itm+1] = merge.labTimeParams[tm1]["I0centerC"];
+    plotShift[0][itm] = merge.labTimeParams[tm]["centerR"];
+    plotShift[0][itm+1] = merge.labTimeParams[tm1]["centerR"];
+    plotShift[1][itm] = merge.labTimeParams[tm]["centerC"];
+    plotShift[1][itm+1] = merge.labTimeParams[tm1]["centerC"];
+    intsChange = std::abs(
+        merge.labTimeParams[tm]["imgNorm"]
+        - merge.labTimeParams[tm1]["imgNorm"])
+        /merge.labTimeParams[tm]["imgNorm"];
+    
+    tempGasShift[itm] = intsChange*centShift;
+  }
+  tempGasShift[labTimeStamps.size()-1] = 1;
+  std::vector<TH1*> hists(2);
+  hists[0] = plt.print1d(plotI0Shift[0], "plots/data-" + runName + "_I0centerR");
+  hists[1] = plt.print1d(plotI0Shift[1], "plots/data-" + runName + "_I0centerC");
+  hists[0] = plt.print1d(plotShift[0], "plots/data-" + runName + "_centerR");
+  hists[1] = plt.print1d(plotShift[1], "plots/data-" + runName + "_centerC");
+
+  cout<<"adding gasShift"<<endl;
+  // Want to remove both images before and after nozzle changed
+  /*
+  for (int itm=0; itm<(int)labTimeStamps.size() - 1; itm++) {
+    tm  = labTimeStamps[itm];
+    merge.labTimeParams[tm]["gasShift"] = std::max(
+        tempGasShift[itm],
+        tempGasShift[itm+1]);
+  }
+  save::saveDat<double>(tempGasShift,
+      merge.saveMergeInterFolder
+      + "/gasShift_run-" + runName + "_distribution["
+      + to_string(tempGasShift.size()) + "].dat");
+  */
+
   ///  Cut on lab time parameters  ///
   
   if (merge.verbose) {
@@ -221,9 +295,16 @@ int main(int argc, char* argv[]) {
 
   merge.basicGreaterThanCut("centerRstdRatio", 3);
   merge.basicGreaterThanCut("centerCstdRatio", 3);
+  //merge.basicGreaterThanCut("gasShift", merge.gasShiftCut);
+  merge.stdParamCut("imgNorm", 3);
+  //merge.stdParamCut("imgNorm", 3);
+  //merge.stdParamCut("imgNorm", 3);
+  merge.stdParamCut("I0norm", 3);
   for (uint i=0; i<imgRadSTD->size(); i++) {
     merge.stdParamCut("imgRadSTD" + to_string(i), 3);
   }
+
+
 
   ///  Subtract low order polynomials  ///
  

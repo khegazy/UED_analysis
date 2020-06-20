@@ -216,7 +216,7 @@ void mergeClass::removeBadRegions(
 
 
 void mergeClass::addLabTimeParameter(
-      int timeStamp,
+      long int timeStamp,
       std::string name, 
       double value) {
 
@@ -1546,7 +1546,6 @@ void mergeClass::removeImgNormOutliers() {
       if (fabs(sImgN.second[pItr.second] - scanImgNormAzmMeans[pItr.second])
           > scanImgAzmSTDcut*scanImgNormAzmSTDs[pItr.second]) {
         scanScale[sImgN.first][pItr.second] = 0;
-        cout<<"removing image norm: "<<sImgN.first<<"  "<<pItr.first<<endl;
       }
     }
   }
@@ -2776,16 +2775,20 @@ void mergeClass::basicGreaterThanCut(std::string paramName, double cut) {
       int scan      = labTimeMap[timeItr.first].first;
       int stagePos  = labTimeMap[timeItr.first].second;
 
+      /*
+      if (stagePos == 1542450) {
+        cout<<"Cut 1542450: "<<scan<<"       "<<labTimeParams[timeItr.first][paramName]<<endl;
+      }
+      if (stagePos == 1542650) {
+        cout<<"Cut 1542650: "<<scan<<"       "<<labTimeParams[timeItr.first][paramName]<<endl;
+      }
+      */
+
       if (scanReferences[scan].find(stagePos) != scanReferences[scan].end()) {
         scanReferences[scan][stagePos].scale = 0;
       }
-      else if (stagePosInds.find(stagePos) != stagePosInds.end()) {
+      if (stagePosInds.find(stagePos) != stagePosInds.end()) {
         scanScale[scan][stagePosInds[stagePos]] = 0;
-      }
-      else {
-        std::cerr << "ERROR: Cannot find image by scan / stagePos: "
-            << scan << " / " << stagePos<<endl;
-        exit(1);
       }
     }
   }
@@ -2859,16 +2862,21 @@ void mergeClass::stdParamCut(std::string paramName, double cut) {
       int scan      = labTimeMap[timeItr.first].first;
       int stagePos  = labTimeMap[timeItr.first].second;
 
+      /*
+      if (stagePos == 1542450) {
+        cout<<"Cut imgNorm 1542450: "<<scan<<"       "<<labTimeParams[timeItr.first][paramName]<<endl;
+      }
+      if (stagePos == 1542650) {
+        cout<<"Cut imgNorm 1542650: "<<scan<<"       "<<labTimeParams[timeItr.first][paramName]<<endl;
+      }
+      */
+
+
       if (scanReferences[scan].find(stagePos) != scanReferences[scan].end()) {
         scanReferences[scan][stagePos].scale = 0;
       }
-      else if (stagePosInds.find(stagePos) != stagePosInds.end()) {
+      if (stagePosInds.find(stagePos) != stagePosInds.end()) {
         scanScale[scan][stagePosInds[stagePos]] = 0;
-      }
-      else {
-        std::cerr << "ERROR: Cannot find image by scan / stagePos: "
-            << scan << " / " << stagePos<<endl;
-        exit(1);
       }
     }
   }

@@ -112,8 +112,8 @@ class mergeClass : public parameterClass {
     std::map< int, std::vector<double> > scanScale, scanScale_init, scanImgNorms;
     std::map< int, std::vector< std::vector<double> > > scanLgndrs, scanLgndrs_init;
     std::map< int, std::vector< std::vector<double> > > scanAzmAvg, scanAzmAvg_init, scanAzmPCorr;
-    std::map< int, std::map<std::string, double> > labTimeParams;
-    std::map< int, std::pair<int, int> > labTimeMap;
+    std::map< long int, std::map<std::string, double> > labTimeParams;
+    std::map< long int, std::pair<int, int> > labTimeMap;
     std::map< int, std::map< int, referenceStruct > > scanReferences, scanReferences_init;
     std::map< int, std::vector<double> > azmIndReference;
 
@@ -133,7 +133,7 @@ class mergeClass : public parameterClass {
                   std::vector<double>* azmAvg, 
                   std::vector<double>* legCoeffs,
                   double imgNorm);
-    void addLabTimeParameter(int timeStamp,
+    void addLabTimeParameter(long int timeStamp,
                   std::string name, double value);
     void addReference(int scan, int64_t stagePos, int timeStamp,
                   std::vector<double>* azmAvg,
