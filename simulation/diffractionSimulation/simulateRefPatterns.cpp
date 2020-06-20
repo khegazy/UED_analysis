@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
   PLOTclass plt;
   parameterClass params("simulateReference");
   uint Nbins = 2*params.NradSimBins - 1;
-  int Nmols = 1;
+  int NmolSamples = 1;
   int index = 0;
   bool gotInpPrefix = false;
   double maxQ = params.NradSimBins*params.QperPix;
@@ -27,8 +27,8 @@ int main(int argc, char* argv[]) {
     std::cout << "INFO: Parsing command line input\n";
   if (argc > 1) {
     for (int iarg=1; iarg<argc; iarg+=2) {
-      if (strcmp(argv[iarg], "-Nmols") == 0) 
-          {Nmols = atoi(argv[iarg+1]);}
+      if (strcmp(argv[iarg], "-NmolSamples") == 0) 
+          {NmolSamples = atoi(argv[iarg+1]);}
       else if (strcmp(argv[iarg], "-Nbins") == 0) 
           {params.NradSimBins = atoi(argv[iarg+1]);
            Nbins = 2*params.NradSimBins - 1;}
@@ -76,12 +76,12 @@ int main(int argc, char* argv[]) {
     std::cout << "INFO: Building molecular ensembles\n";
   std::vector<MOLENSEMBLEMCclass*> molMCs;
   for (auto& xyzFileName : params.xyzFiles) {
-    if (params.verbose)
+    if (true || params.verbose)
       std::cout << "looking at fileName: "
           << params.xyzDir << "  " << xyzFileName << std::endl;
     MOLENSEMBLEMCclass* molMC = new MOLENSEMBLEMCclass(seed, 
         params.xyzDir + "/" + xyzFileName);
-    molMC->Nmols = Nmols;
+    molMC->NmolSamples = NmolSamples;
     molMC->useOrientationMC = false;
     molMC->makeMolEnsemble();
     molMCs.push_back(molMC);
@@ -96,7 +96,11 @@ int main(int argc, char* argv[]) {
   std::map< std::string, std::vector<double> > lineOuts;
   std::map< std::string, std::vector< std::vector<double> > > diffPatterns;
   std::map< std::string, std::vector<double> > bonds;
+  int count=0;
   for (auto mc : molMCs) {
+
+    cout<<"creating diff class "<<count<<"    "<<mc->Nmols<<endl;
+    count++;
     DIFFRACTIONclass diffP(mc, 
         maxQ, 
         params.Iebeam, 
@@ -104,9 +108,11 @@ int main(int argc, char* argv[]) {
         params.elEnergy, 
         Nbins,
         "/reg/neh/home5/khegazy/baseTools/simulation/scatteringAmplitudes/3.7MeV/");
+    cout<<"end creating diff class"<<endl;
     
     curLineOuts.clear();
     curLineOuts = diffP.azimuthalAvg_uniform();
+    cout<<"made azm avg uniform"<<endl;
     //diffP.diffPatternCalc_uniform();
 
     // fill diffraction patterns

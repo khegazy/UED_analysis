@@ -13,7 +13,9 @@ PDFclass::PDFclass(long int seed, string pdfPath, string pdfList) {
 
   pdfFile = NULL;
   if (pdfPath.length() && (pdfPath != "NULL")) {
+    cout<<"Trying to get PDF"<<endl;
     pdfFile = TFile::Open(pdfPath.c_str());
+    cout<<"Got PDF"<<endl;
     if (!pdfFile->IsOpen()) {
       cerr<<"ERROR: Cannot open PDF file "<<pdfPath<<"!!!"<<endl;
       exit(0);

@@ -1,6 +1,8 @@
 #include "diffractionClass.h"
+#include <chrono>
 
 using namespace std;
+using namespace std::chrono;
 
 
 DIFFRACTIONclass::DIFFRACTIONclass(double Iebeam_in, double elEnergy, string scatAmpPath) {
@@ -242,7 +244,7 @@ double DIFFRACTIONclass::interpScatAmp(ATOMS atmT, double sInp) {
 void DIFFRACTIONclass::diffPatternCalc() {
 
   double scatLength=0;
-  int rflX, rflZ;
+  int rflX, rflZ, imol;
   double dX, dZ;
   double sumAtmDiff, sumMolDiff;
   Eigen::Vector3d s;  
@@ -261,9 +263,10 @@ void DIFFRACTIONclass::diffPatternCalc() {
       for (uint ia=0; ia<atomTypes.size(); ia++) {
         scatAmpInterp[atomTypes[ia]] = interpScatAmp(atomTypes[ia], s.norm());
       }
-
+      
+      cout<<"x/z: "<<ix<<" / "<<iz<<endl;
       sumAtmDiff=sumMolDiff=0;
-      for (int imol=0; imol<Nmols; imol++) {
+      for (imol=0; imol<Nmols; imol++) {
         for (auto& atomI : molecules[imol].atoms) {
 	  sumAtmDiff +=	(Iebeam/pow(scatLength,2))
 			  *pow(scatAmpInterp[atomI->atomType],2);
@@ -379,30 +382,35 @@ std::vector< std::vector<double> > DIFFRACTIONclass::diffPatternCalc_uniform() {
       /////  Building diffraction patterns  /////
       sumAtmDiff = 0;
       sumMolDiff = 0;
-      for (auto& atomI : molecules[0].atoms) {
-        // Atomic Diffraction
-        sumAtmDiff += (Iebeam/pow(scatLength,2))
-      			*pow(scatAmpInterp[atomI->atomType],2);
 
-        // Molecular Diffraction
-        for (auto& atomJ : molecules[0].atoms) {
-          if (atomI->index != atomJ->index) {
- 
-            // Limit sinc(x) as x->0
-	    if (s.norm()) {     
-              arg         = s.norm()*(atomI->location - atomJ->location).norm();
-              sumMolDiff += (Iebeam/pow(scatLength,2))
-      	  		      *scatAmpInterp[atomI->atomType]*scatAmpInterp[atomJ->atomType]
-      			      *sin(arg)/arg;
-	    }
-	    else {
-              sumMolDiff += (Iebeam/pow(scatLength,2))
-      	            	      *scatAmpInterp[atomI->atomType]*scatAmpInterp[atomJ->atomType];
-	    }
+      for (int imol=0; imol<Nmols; imol++) {
+        for (auto& atomI : molecules[imol].atoms) {
+          // Atomic Diffraction
+          sumAtmDiff += (Iebeam/pow(scatLength,2))
+                          *pow(scatAmpInterp[atomI->atomType],2);
+
+          // Molecular Diffraction
+          for (auto& atomJ : molecules[imol].atoms) {
+            if (atomI->index != atomJ->index) {
+   
+              // Limit sinc(x) as x->0
+              if (s.norm()) {     
+                arg         = s.norm()*(atomI->location - atomJ->location).norm();
+                sumMolDiff += (Iebeam/pow(scatLength,2))
+                                *scatAmpInterp[atomI->atomType]*scatAmpInterp[atomJ->atomType]
+                                *sin(arg)/arg;
+              }
+              else {
+                sumMolDiff += (Iebeam/pow(scatLength,2))
+                                *scatAmpInterp[atomI->atomType]*scatAmpInterp[atomJ->atomType];
+              }
+            }
           }
         }
       }
-     
+
+      sumMolDiff /= Nmols;
+      sumAtmDiff /= Nmols;
 
       if (fillLineOut) {
         lineOuts[1][NbinsZ - 1 - iz] = sumMolDiff;

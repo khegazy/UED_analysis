@@ -34,13 +34,16 @@ using namespace std;
 class MOLENSEMBLEMCclass : public PDFclass{
 
    public:
+	MOLENSEMBLEMCclass(long int seed, std::string xyzPath, std::string pdfPath, std::string pdfNames);
 	MOLENSEMBLEMCclass(long int seed, std::string pdfPath, std::string pdfNames);
 	MOLENSEMBLEMCclass(long int seed, std::string xyzPath);
 	MOLENSEMBLEMCclass(long int seed);
 	~MOLENSEMBLEMCclass();
 
-	int Nmols;
+	int NmolSamples;
+	int NdiffMols;
 	int NmolAtoms;
+        int Nmols;
 	MOLECULEclass* molecules;
 	vector<ATOMS> atomTypes;
         bool verbose;
@@ -59,8 +62,10 @@ class MOLENSEMBLEMCclass : public PDFclass{
 	TH2F* orientDist;
 	TGraph2D* orientGraph;
 
-	virtual void buildMolecule(MOLECULEclass &molecule, 
-              std::map<std::string, double> inpVals);
+	virtual void buildMolecule(
+            MOLECULEclass &molecule, 
+            int imol,
+            std::map<std::string, double> inpVals);
 	TGraph2D* testBuildMolecule();
 	TGraph2D* testBuildMolecule(std::map<std::string, double> inpVals);
 
@@ -88,7 +93,7 @@ class MOLENSEMBLEMCclass : public PDFclass{
 
         std::string xyzFile;
         std::map< std::string, int > atomCount;
-        std::map< std::string, Eigen::Vector3d > atomPos;
+        std::vector< std::map< std::string, Eigen::Vector3d > > atomPos;
 
         std::map< ATOMS, int > charges;
 

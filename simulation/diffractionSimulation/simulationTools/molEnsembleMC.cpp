@@ -3,6 +3,13 @@
 using namespace std;
 
 
+MOLENSEMBLEMCclass::MOLENSEMBLEMCclass(long int seed, std::string xyzPath, std::string pdfPath, std::string pdfNames) 
+      : PDFclass(seed, pdfPath, pdfNames) {
+
+  initialize();
+  importXYZfile(xyzPath);
+}
+
 
 MOLENSEMBLEMCclass::MOLENSEMBLEMCclass(long int seed, std::string pdfPath, std::string pdfNames) 
       : PDFclass(seed, pdfPath, pdfNames) {
@@ -31,9 +38,10 @@ void MOLENSEMBLEMCclass::initialize() {
   // Debugging
   verbose = 1;
 
-  molecules = NULL;
-  Nmols = -1;
-  NmolAtoms = -1;
+  molecules   = NULL;
+  NmolSamples = 1;
+  NmolAtoms   = -1;
+  Nmols       = -1;
   Ngr = 0;
   
   usePositionMC = false;
@@ -55,42 +63,73 @@ void MOLENSEMBLEMCclass::initialize() {
 
 void MOLENSEMBLEMCclass::importXYZfile(std::string fileName) {
 
+  NmolAtoms = -1;
   ifstream XYZ(fileName.c_str());
   std::string str;
 
-  // Number of atoms
-  std::getline(XYZ, str);
-  NmolAtoms = stoi(str);
-  cout<<NmolAtoms<<endl;
-
   // Get atom positions
-  std::getline(XYZ, str);
-  int pInd;
+  int pInd, fInd;
   std::string xPos, yPos, zPos, name;
+  std::map< std::string, Eigen::Vector3d > curAtomPos;
   while (std::getline(XYZ, str)) {
-    pInd = 1;
+  
+    atomCount.clear();
+    curAtomPos.clear();
 
-    std::string atm = str.substr(1, str.find(' ', 1) - 1);
-    if (std::find(atomTypes.begin(), atomTypes.end(), getATOMtype(atm.c_str())) 
-        == atomTypes.end()) {
-      atomTypes.push_back(getATOMtype(atm));
+    // Number of atoms
+    int curNmolAtoms = stoi(str);
+    if (NmolAtoms == -1) {
+      NmolAtoms = curNmolAtoms;
+    }
+    else if (NmolAtoms != curNmolAtoms) {
+      std::cerr << "ERROR: Number of atoms in the 'same' molecule are not equal ["
+        + to_string(NmolAtoms) + ", " + to_string(curNmolAtoms) + "!!!\n";
+      exit(0);
     }
 
-    pInd = tools::stringRemove(str, ' ', 3);
-    xPos = str.substr(pInd, str.find(' ', pInd) - pInd);
+    // Skipping extra line
+    std::getline(XYZ, str);
 
-    pInd = tools::stringRemove(str, ' ', str.find(' ', pInd));
-    yPos = str.substr(pInd, str.find(' ', pInd) - pInd);
+    for (int i=0; i<NmolAtoms; i++) {
+      if (std::getline(XYZ, str)) {
+        pInd = tools::stringRemove(str, ' ', 0);
+        fInd = str.find(' ', pInd);
+        std::string atm = str.substr(pInd, fInd - pInd);
+        if (std::find(atomTypes.begin(), atomTypes.end(), getATOMtype(atm.c_str())) 
+            == atomTypes.end()) {
+          atomTypes.push_back(getATOMtype(atm));
+        }
 
-    pInd = tools::stringRemove(str, ' ', str.find(' ', pInd));
-    zPos = str.substr(pInd, str.find(' ', pInd) - pInd);
+        pInd = tools::stringRemove(str, ' ', 3);
+        fInd = str.find(' ', pInd);
+        xPos = str.substr(pInd, fInd - pInd);
+        pInd = fInd;
 
-    name = atm + "_" + to_string(atomCount[atm]);
-    atomCount[atm]++;
+        pInd = tools::stringRemove(str, ' ', str.find(' ', pInd));
+        fInd = str.find(' ', pInd);
+        yPos = str.substr(pInd, str.find(' ', pInd) - pInd);
+        pInd = fInd;
 
-    Eigen::Vector3d pos(stof(xPos), stof(yPos), stof(zPos));
-    atomPos[name] = pos;
+        pInd = tools::stringRemove(str, ' ', str.find(' ', pInd));
+        fInd = str.find(' ', pInd);
+        zPos = str.substr(pInd, str.find(' ', pInd) - pInd);
+        pInd = fInd;
+
+        name = atm + "_" + to_string(atomCount[atm]);
+        atomCount[atm]++;
+
+        Eigen::Vector3d pos(stof(xPos), stof(yPos), stof(zPos));
+        curAtomPos[name] = pos;
+      }
+      else {
+        cerr << "ERROR: Ran out of lines in the XYZ file before filling all atom positions!!!\n\n";
+        exit(0);
+      }
+    }
+
+    atomPos.push_back(curAtomPos);
   }
+
 }
 
 
@@ -104,6 +143,12 @@ MOLENSEMBLEMCclass::~MOLENSEMBLEMCclass() {
   testAzm->Write();
   testPol->Write();
   f->Close();
+
+  TCanvas* MyC = new TCanvas("MyCC", "MyCC", 800, 600);
+  orientDist->Draw();
+  MyC->Print("orientDist_test.png");
+  delete MyC;
+
   delete testAzm;
   delete testPol;
   delete orientDist;
@@ -138,10 +183,12 @@ void MOLENSEMBLEMCclass::makeMolEnsemble() {
 
 void MOLENSEMBLEMCclass::makeMolEnsemble(std::map<string, double> inpVals) {
 
+  /*
   if (Nmols == -1) {
     cerr << "ERROR: Did not set the number of molecules desired (MOLECULEclass::Nmols)!!!\n\n";
     exit(0);
   }
+  */
   if (NmolAtoms == -1) {
     cerr << "ERROR: Did not set the number of atoms per molecule (MOLECULEclass::NmolAtoms)!!!\n\n";
     exit(0);
@@ -181,19 +228,41 @@ void MOLENSEMBLEMCclass::makeMolEnsemble(std::map<string, double> inpVals) {
     }
   }
 
+  NdiffMols = atomPos.size();
+  cout<<"Number of diff mols: "<<NdiffMols<<endl;
+  if (Nmols == -1) {
+    Nmols = NmolSamples*NdiffMols;
+  }
+  else if (Nmols != NmolSamples*NdiffMols) {
+    int NcurMols = (int)atomPos.size();
+    atomPos.resize(Nmols);
+    int ind=0;
+    for (int i=0; i<Nmols; i++) {
+      ind = i%NcurMols;
+      atomPos[i] = atomPos[ind];
+    }
+  }
+  NdiffMols = atomPos.size();
+
 
   molecules = new MOLECULEclass[Nmols];
-  
-  for (int imol=0; imol<Nmols; imol++) {
+ 
 
-    // Build an individual molecule
-    buildMolecule(molecules[imol], inpVals);
+  int cmol = 0;
+  for (int imol=0; imol<NdiffMols; imol++) {
+    for (int ism =0; ism<NmolSamples; ism++) {
 
-    // Orientation MC
-    if (useOrientationMC) orientMolecule(molecules[imol]);
+      // Build an individual molecule
+      buildMolecule(molecules[cmol], imol, inpVals);
 
-    // Set the position of the molecule
-    if (usePositionMC) positionMolecule(molecules[imol]);
+      // Orientation MC
+      if (useOrientationMC) orientMolecule(molecules[cmol]);
+
+      // Set the position of the molecule
+      if (usePositionMC) positionMolecule(molecules[cmol]);
+
+      cmol++;
+    }
   }
 }
 
@@ -223,18 +292,37 @@ cout<<"OLDangs: "<<randAzmAng<<"   "<<randPolAng<<endl<<endl;
 
   testAzm->Fill(randAzmAng);
   testPol->Fill(randPolAng);
-  orientDist->Fill(randAzmAng, randPolAng);
+  orientDist->Fill(randPolAng, randAzmAng);
+  // orig orientDist->Fill(randAzmAng, randPolAng);
   orientGraph->SetPoint(Ngr,
                sin(randPolAng)*cos(randAzmAng),
                sin(randPolAng)*sin(randAzmAng),
                cos(randPolAng));
   Ngr++;
 
-  double rad, azmAng, polAng;
-
+  Eigen::Matrix3d azimRotate;
+  azimRotate  = Eigen::AngleAxisd(randAzmAng, Eigen::Vector3d::UnitY());
+  Eigen::Matrix3d polRotate;
+  polRotate   = Eigen::AngleAxis<double>(randPolAng, Eigen::Vector3d::UnitX());
   for (int iatm=0; iatm<NmolAtoms; iatm++) {
-    cout<<"FIX THIS: switched ot eigen, look into anglaxis or calculate theta and phi"<<endl;
-    exit(0);
+    if ((molecule.atoms[iatm]->location(0) == 0)
+        && (molecule.atoms[iatm]->location(1) == 0) 
+        && (molecule.atoms[iatm]->location(2) == 0)) {
+      continue;
+    }
+
+    // Axis of rotation: Rotate XZ plane projection by 90 degrees and normalize
+    //Eigen::Vector3d polAxis(
+    //    -1*molecule.atoms[iatm]->location(2),
+    //    0,
+    //    molecule.atoms[iatm]->location(0));
+    //polAxis /= polAxis.norm();
+    //polRotate = Eigen::AngleAxis<double>(randPolAng, polAxis);
+    molecule.atoms[iatm]->location = polRotate*molecule.atoms[iatm]->location;
+    
+    molecule.atoms[iatm]->location = azimRotate*molecule.atoms[iatm]->location;
+
+
     /*
     rad = molecule.atoms[iatm]->location.Mag();
     polAng = molecule.atoms[iatm]->location.Theta();
@@ -349,7 +437,7 @@ TGraph2D* MOLENSEMBLEMCclass::testBuildMolecule(std::map<std::string, double> in
   TGraph2D* testMolecule = new TGraph2D();
   //TGraph2D* testMolecule = new TGraph2D("testbuild", "testbuild", 51, -10, 10, 51, -10, 10, 51, -10, 10);
   MOLECULEclass molecule;
-  buildMolecule(molecule, inpVals);
+  buildMolecule(molecule, 0, inpVals);
 cout<<"sizes: "<<NmolAtoms<<"   "<<molecule.atoms.size()<<endl;
   for (int iatm=0; iatm<NmolAtoms; iatm++) {
     testMolecule->SetPoint(
@@ -365,12 +453,14 @@ cout<<"sizes: "<<NmolAtoms<<"   "<<molecule.atoms.size()<<endl;
 }
 
 
-void MOLENSEMBLEMCclass::buildMolecule(MOLECULEclass &molecule,
+void MOLENSEMBLEMCclass::buildMolecule(
+    MOLECULEclass &molecule,
+    int imol,
     std::map<std::string, double> inpVals) {
 
     ATOMS aType;
 
-    for (auto mItr : atomPos) {
+    for (auto mItr : atomPos[imol]) {
       aType = getATOMtype(mItr.first.substr(0, mItr.first.find("_")));
       molecule.addAtom(new ATOMclass(mItr.first, aType, mItr.second));
     }
