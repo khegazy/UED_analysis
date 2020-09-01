@@ -15,6 +15,7 @@
 class parameterClass {
   public:
 
+    std::string experiment;
     std::string run;
 
     enum radicalEnum 
@@ -143,16 +144,20 @@ class parameterClass {
     bool   xRayHitDist;
 
     double hotPixel; 
+
+    int    NshellOutlierLoops;
     int    shellWidth;
     int    Npoly;
     double stdIncludeLeft;
-    double distSTDratioLeft; 
-    double stdCutLeft;       
-    int    meanBinSize;      
     double stdIncludeRight;  
+    double distSTDratioLeft; 
     double distSTDratioRight;
-    double stdChangeRatio;   
+    double stdCutLeft;
     double stdCutRight;      
+    double fracShellSTDcutLeft;
+    double fracShellSTDcutRight;
+    int    meanBinSize;      
+    double stdChangeRatio;   
     bool   plotRadPixDist;
 
     double outlierSTDcut;

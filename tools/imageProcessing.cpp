@@ -3862,7 +3862,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
             }
           });
       save::saveDat<double>(outP,  
-          "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/data/vals_" 
+          "./plots/radialPixelDist/data/vals_" 
           + to_string(stg) + "_" 
           + to_string(rad) + "_"
           + to_string(stdev) + ".dat");
@@ -3914,7 +3914,6 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
   vector<double> pltPixDist;
   int pdInd;
 
-  int Nreps = 3;
   vector<double> vals, angles;
   vector< vector<int> > indices;
   vector< vector<int> >* INDS;
@@ -3927,7 +3926,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
     checkForIndices(shellWidth, rad);
     if (verbose) cout << "found!\n";
 
-    for (int rep=0; rep<Nreps; rep++) { 
+    for (int rep=0; rep<NshellOutlierLoops; rep++) { 
 
       // Filter out bins that are off the image or contain nans
       if (verbose) cout << "\tFilling indices of non-NANVAL bins on image\n";
@@ -4017,11 +4016,11 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
         }
       }
 
-      if (pltVerbose && (rep == Nreps-1)) {
+      if (pltVerbose && (rep == NshellOutlierLoops-1)) {
         pltVerbose->MyC->cd();
         pltVerbose->MyC->SetLogy(1);
         std::string pltName = 
-            "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/plots/vals_" 
+            "./plots/radialPixelDist/vals_" 
             + to_string(stg) + "_" 
             + to_string(rad) + "_"
             + to_string(meanLeft) + "_"
@@ -4064,7 +4063,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
                         << (1 - Noutliers/Nentries) << endl;
       while (((1 - Noutliers/Nentries) < distSTDratioLeft)
               && (orderedInds.size() > 100)) {
-        for (int i=0; i<max((int)(orderedInds.size()*0.0012), 1); i++) {
+        for (int i=0; i<max((int)(orderedInds.size()*fracShellSTDcutLeft), 1); i++) {
           removedInds.push_back(orderedInds[0]);
           removedVals.push_back(vals[orderedInds[0]]);
           vals[orderedInds[0]] = NANVAL;
@@ -4100,13 +4099,14 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
       while (((1 - Noutliers/Nentries) < distSTDratioRight) 
               && (orderedInds.size() > 100)) {
 
-        for (int i=0; i<(int)(orderedInds.size()*0.0012); i++) {
+        for (int i=0; i<(int)(orderedInds.size()*fracShellSTDcutRight); i++) {
           int ind = orderedInds.size() - 1;
           removedVals.push_back(vals[orderedInds[ind]]);
           removedInds.push_back(orderedInds[ind]);
           vals[orderedInds[ind]] = NANVAL;
           image[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = NANVAL;
           orderedInds.erase(orderedInds.begin() + ind);
+          //cout<<"REMOVING!!!!!!!!!!!"<<endl;
         }
 
         // Break out of the the loop if the stdev does not change appreciably
@@ -4114,7 +4114,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
         stdevPrev = stdevRight;
         stdevRight = getSTDev(vals, meanRight);
         if ((stdevPrev-stdevRight)/stdevRight < stdChangeRatio) {
-          if (verbose) cout << "\tbreaking by ratio\n";
+          if (verbose) cout << "\tbreaking by ratio: " + to_string((stdevPrev-stdevRight)/stdevRight) << endl;
           break;
         }
 
@@ -4137,7 +4137,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
       /////  Plotting results  /////
       //////////////////////////////
 
-      if (rep == Nreps-1) {
+      if (rep == NshellOutlierLoops-1) {
         /////  Outlier images  /////
         if (radPixHistos) {
           for (uint i=0; i<vals.size(); i++) {
@@ -4188,7 +4188,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
                 }
               });
           save::saveDat<double>(outP,  
-              "/reg/ued/ana/scratch/nitroBenzene/radialPixelDist/data/vals_" 
+              "./plots/radialPixelDist/data/vals_" 
               + to_string(stg) + "_" 
               + to_string(rad) + "_"
               + to_string(meanLeft) + "_"
