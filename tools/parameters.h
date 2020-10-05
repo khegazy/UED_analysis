@@ -17,6 +17,7 @@ class parameterClass {
 
     std::string experiment;
     std::string run;
+    bool        hasI0;
 
     enum radicalEnum 
         {initialState, 
@@ -148,19 +149,23 @@ class parameterClass {
     int    NshellOutlierLoops;
     int    shellWidth;
     int    Npoly;
-    double stdIncludeLeft;
-    double stdIncludeRight;  
-    double distSTDratioLeft; 
-    double distSTDratioRight;
+    double stdChangeRatioLeft;
+    double stdChangeRatioRight;
+    double stdAccRatioLeft;
+    double stdAccRatioRight;
     double stdCutLeft;
     double stdCutRight;      
     double fracShellSTDcutLeft;
     double fracShellSTDcutRight;
-    int    meanBinSize;      
-    double stdChangeRatio;   
     bool   plotRadPixDist;
 
-    double outlierSTDcut;
+    double stdIncludeLeft;
+    double stdIncludeRight;  
+    double distSTDratioLeft; 
+    double distSTDratioRight;
+
+    double outlierSimpleSTDcut;
+
     bool   outlierVerbose;
     double outlierMapSTDcut;
     double outlierCoreValThresh; //90; //65; //5e5;
@@ -193,9 +198,10 @@ class parameterClass {
     int holeC;
     int holeRad;
 
+    bool doCOM_center;
     double sigma;
-    int blockCentR;
-    int blockCentC;
+    int centR_estimate;
+    int centC_estimate;
     int minRad;
     int maxRad;
     int meanInd;
@@ -226,7 +232,7 @@ class parameterClass {
     double  borderValThresh; //75; //1e5;
     int     borderRad;
     int     padRad;
-    std::vector< std::vector<double> > nanMap;
+    std::vector< std::vector<int> > nanMap;
 
 
     // Image Filtering Values
@@ -294,7 +300,6 @@ class parameterClass {
     std::vector<int> tZeroRatio;
 
     // Misc
-    double scaleStagePos;
     std::vector< std::vector<double> > bkgStudyRanges;
 
     // Debugging

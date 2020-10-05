@@ -45,9 +45,9 @@ namespace imgProc {
   template<typename type>
   std::vector< std::vector<double> > getImgVector(cv::Mat imgMat,
       int roiSize, int centerR, int centerC, bool subMedian = false,
-      std::vector< std::vector<double> > *background = NULL,
-      int rmRad=-1, int rmCenterR=-1, int rmCenterC=-1,
-      std::vector< std::vector<double> >* nanMap=NULL);
+      std::vector< std::vector<double> > *background = NULL);
+      //int rmRad=-1, int rmCenterR=-1, int rmCenterC=-1,
+      //std::vector< std::vector<int> >* nanMap=NULL);
       //bool eadoutSubtraction=false, 
       //int roR=970, int roC=30, int window=30);
 
@@ -58,8 +58,9 @@ namespace imgProc {
   void threshold(cv::Mat &img, int hotpixel);
   template<typename T>
   void thresholdT(cv::Mat &img, int hotpixel);
-  void removeXrayHits(
+  std::vector< std::vector<int> > removeXrayHits(
     std::vector<std::vector<double> >* img,
+    std::vector<std::vector<int> > nanMap,
     double highCut, double lowCut, 
     double stdCut, int window,
     TH1F** plots=NULL);
@@ -84,7 +85,9 @@ namespace imgProc {
 
   void histMeanStd(vector< vector<double> >& hist, double& mean, double& std);
 
-  double imageNorm(std::vector< std::vector<double> > &img, 
+  double imageNorm(
+      std::vector< std::vector<double> > &img, 
+      std::vector< std::vector<int> > nanMap,
       float radMin=0.7, float radMax=0.72);
 
 
@@ -112,17 +115,34 @@ namespace imgProc {
       int    getRightOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
       std::vector< std::vector<double> > removeOutliers(
               vector< vector<double> > &image,
+              vector< vector<int> > &nanMap,
               int centerR, int centerC, int buffer,
-              int maxRad, int shellWidth, int Npoly,
+              int maxRad, int NshellOutlierLoops,
+              int shellWidth, int Npoly,
+              double stdChangeRatioLeft, double stdChangeRatioRight,
+              double stdAccRatioLeft, double stdAccRatioRight,
+              double stdCutLeft, double stdCutRight,
+              double fracShellSTDcutLeft, double fracShellSTDcutRight,
+              int stg, double outlierMapSTDcut,   
+              bool getOutlierImage, bool verbose,
+              PLOTclass* pltVerbose, TH1F** radPixHistos=NULL);
+
+      std::vector< std::vector<double> > removeOutliers_stdInclude(
+              vector< vector<double> > &image,
+              vector< vector<int> > &nanMap,
+              int centerR, int centerC, int buffer,
+              int maxRad, int NshellOutlierLoops,
+              int shellWidth, int Npoly,
               double stdIncludeLeft, double distSTDratioLeft,
-              double stdCutLeft, int meanBinSize,
+              double stdCutLeft, double fracShellSTDcutLeft, 
               double stdIncludeRight, double distSTDratioRight,
-              double stdChangeRatio, double stdCutRight,
-              int stg, double outlierMapSTDcut,
-              bool getOutlierImage, bool verbose, 
+              double stdCutRight, double fracShellSTDcutRight,
+              double stdChangeRatio, int stg, double outlierMapSTDcut,   
+              bool getOutlierImage, bool verbose,
               PLOTclass* pltVerbose, TH1F** radPixHistos=NULL);
       std::vector< std::vector<double> > removeOutliersSimple(
               vector< vector<double> > &image,
+              vector< vector<int> > &nanMap,
               float centerR_f, float centerC_f, int buffer,
               int maxRad, int shellWidth, 
               bool removeLowPoly, int Npoly,
@@ -189,15 +209,17 @@ namespace imgProc {
           PLOTclass* pltVerbose = NULL); 
 
 
-  double removeReadOutNoise(std::vector< std::vector<double> > &img,
+  double removeReadOutNoise(
+          std::vector< std::vector<double> > &img,
+          std::vector< std::vector<int> > &nanMap,
           int roiR=950, int roiC=30, int window=50, int buffer=20);
-
-  double removeAvgReadOutNoise(std::vector< std::vector<double> > &img,
-          int centerR, int centerC, double minRad, double maxRad, int buffer=20, 
-          std::vector< std::vector<double> >* nanMap=NULL);
+  double removeAvgReadOutNoise(
+          std::vector< std::vector<double> > &img,
+          std::vector< std::vector<int> > &nanMap,
+          int centerR, int centerC, double minRad, double maxRad, int buffer=20);
   double removeMedianReadOutNoise(std::vector< std::vector<double> > &img,
           int centerR, int centerC, double minRad, double maxRad, int buffer=20, 
-          std::vector< std::vector<double> >* nanMap=NULL);
+          std::vector< std::vector<int> >* nanMap=NULL);
 
 
   /////// Center Finding ///////
@@ -212,11 +234,12 @@ namespace imgProc {
           std::vector<int>* indsC;
           std::vector<double>* vals;
           std::vector< std::vector<double> >* img;
-
           double operator() (std::vector<double> vect);
   };
 
-  std::vector<int> centerSearchCOM(std::vector<imgInfoStruct> &imgINFO,
+  std::vector<int> centerSearchCOM(
+      std::vector<imgInfoStruct> &imgINFO,
+      std::vector< std::vector<int> > nanMap,
       double hotPixel, double sigmaX,
       int blockCentR, int blockCentC, 
       float minRad, float maxRad,
@@ -332,9 +355,7 @@ namespace imgProc {
 template<typename type>
 std::vector< std::vector<double> > imgProc::getImgVector(cv::Mat imgMat,
     int roiSize, int centerR, int centerC, bool subMedian,
-    std::vector< std::vector<double> > *background,
-    int rmRad, int rmCenterR, int rmCenterC,
-    std::vector< std::vector<double> >* nanMap) {
+    std::vector< std::vector<double> > *background) {
 
 
 
@@ -422,17 +443,6 @@ std::vector< std::vector<double> > imgProc::getImgVector(cv::Mat imgMat,
       img[ir][ic] = ((double)(pv[index])) - median;
       if (background) {
         img[ir][ic] -= (*background)[irow][icol];
-      }
-      if (rmRad != -1) {
-        rad = sqrt(pow(irow-rmCenterR, 2) + pow(icol-rmCenterC, 2));
-        if (rad < rmRad) {
-          img[ir][ic] = NANVAL;
-        }
-      }
-      if (nanMap) {
-        if ((*nanMap)[irow][icol] == NANVAL) {
-          img[ir][ic] = NANVAL;
-        }
       }
     }
   }

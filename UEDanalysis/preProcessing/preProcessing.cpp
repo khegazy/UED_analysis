@@ -65,8 +65,7 @@ int main(int argc, char* argv[]) {
   parameterClass params(runName);
   PLOTclass plt;
   std::string imgCentCodeDir = "/reg/neh/home/khegazy/baseTools/UEDanalysis/preProcessing/";
-  std::string dirName = "/reg/ued/ana/scratch/nitroBenzene/polarLineOutTest/";
-    std::vector<double> pLO;
+  std::vector<double> pLO;
 
   //plt.printRC(params.nanMap, "testingNANmap");
 
@@ -74,8 +73,8 @@ int main(int argc, char* argv[]) {
   const int NradLegBins = 50;
 
   // Indices
-  //const int imgSize = 935;
-  const int imgSize = 895;
+  //const int imgCut = 935;
+  const int imgCut = 895;
 
   if (Nlegendres != params.Nlegendres) {
     std::cerr 
@@ -87,17 +86,17 @@ int main(int argc, char* argv[]) {
       << "ERROR: parameter NradLegBins does not match with parameter class!!!\n";
     exit(1);
   }
-  if (imgSize != params.imgSize) {
+  if (imgCut < params.imgSize) {
     std::cerr 
-      << "ERROR: parameter imgSize does not match with parameter class!!!\n";
+      << "ERROR: parameter imgSize must be >= imgCut!!!\n";
     exit(1);
   }
 
 
    // Make sure the image has odd number of bins
-  if (!(imgSize%2) || !(imgSize%2)) {
+  if (!(imgCut%2) || !(params.imgSize%2)) {
     std::cerr 
-      << "ERROR: imgSize and imgSize must be an odd number!!!\n";
+      << "ERROR: imgCut and params.imgSize must be an odd number!!!\n";
     exit(1);
   }
 
@@ -110,29 +109,31 @@ int main(int argc, char* argv[]) {
 
   std::vector<double> legCoeffs(params.NradLegBins);
   std::vector<double> rawAzmAvg(params.NradAzmBins);
+  std::vector<int> rawAzmAvg_nanMap(params.NradAzmBins);
   std::vector<double> azmAvg(params.NradAzmBins);
+  std::vector<int> azmAvg_nanMap(params.NradAzmBins);
   std::vector<double> azmCounts(params.NradAzmBins);
 
   std::vector< std::vector<double> > oddImgImgn;
-  std::vector< std::vector<double> > symImg(imgSize);
-  std::vector< std::vector<double> > stdRatioImg(imgSize);
+  std::vector< std::vector<double> > symImg(imgCut);
+  std::vector< std::vector<double> > stdRatioImg(imgCut);
   std::vector< std::vector<double> > outlierImage;
   std::vector< std::vector<double> > outlierBkg;
-  for (uint ir=0; ir<imgSize; ir++) { 
-    symImg[ir].resize(imgSize, 0);
-    stdRatioImg[ir].resize(imgSize, 0);
+  for (uint ir=0; ir<imgCut; ir++) { 
+    symImg[ir].resize(imgCut, 0);
+    stdRatioImg[ir].resize(imgCut, 0);
   }
 
   fftw_complex* fftIn = 
-      (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgSize*imgSize);
+      (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgCut*imgCut);
   fftw_complex* fftOut = 
-      (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgSize*imgSize);
+      (fftw_complex*) fftw_malloc(sizeof(fftw_complex)*imgCut*imgCut);
   fftw_plan fftFref = fftw_plan_dft_2d(
-      imgSize, imgSize, 
+      imgCut, imgCut, 
       fftIn, fftOut, 
       FFTW_FORWARD, FFTW_MEASURE);
   fftw_plan fftBref = fftw_plan_dft_2d(
-      imgSize, imgSize, 
+      imgCut, imgCut, 
       fftIn, fftOut, 
       FFTW_BACKWARD, FFTW_MEASURE);
 
@@ -152,7 +153,7 @@ int main(int argc, char* argv[]) {
 
   int imgIsRef;
 
-  std::map< std::string, float > pvVals, pvValsDer;
+  std::map< std::string, std::vector<double> > pvVals, pvValsDer;
   std::map< std::string, long int > pvStartTimes;
   std::map< std::string, std::vector<float> > pvAll, pvAllDer;
   float throttle;
@@ -160,22 +161,19 @@ int main(int argc, char* argv[]) {
   int timeStamp;
 
   int radInd;
-  int imgNum;
   int curScan;
   std::string fileName;
   std::string line;
-  size_t ipos;
-  std::string date, scan, curRun, rFileName;
-  int32_t stagePos;
+  size_t ipos, fpos;
+  std::string date, scan, curRun;
+  std::string results_folder, results_file_prefix, radial_base_folder; 
   float t0SP, t0Time;
   std::vector<imgProc::imgInfoStruct> imgINFO;
+  std::map<int, std::string> I0fileNames;
   float readoutNoise;
 
   int imgNormBinMin = (int)(params.imgNormRadMin*params.NradAzmBins);
   int imgNormBinMax = (int)(params.imgNormRadMax*params.NradAzmBins);
-
-  TFile* file=NULL;
-  TTree* tree=NULL;
 
   // Reference Images
   int Nref = 0;
@@ -203,6 +201,7 @@ int main(int argc, char* argv[]) {
   std::string filterName = 
       "/reg/neh/home/khegazy/analysis/filters/" + params.filterType
       + "Filter_Bins-" + to_string(filtFFToutSize) 
+      + "_order-" + to_string(params.order)
       //+ "_WnLow-" + to_string(params.WnLow) 
       + "_WnHigh-"+ to_string(params.WnHigh) + ".dat";
   if (!tools::fileExists(filterName)) {
@@ -245,12 +244,11 @@ int main(int argc, char* argv[]) {
   std::vector<double> atmDiff(params.NradAzmBins);
   std::vector<double> sMsNorm(params.NradAzmBins);
   if (!doRunLists) {
+    std::string num = to_string(params.maxQazm);
+    num = num.substr(0, 5);
     save::importDat<double>(atmDiff, params.simOutputDir 
       + "/" + params.molName 
-      + "_atmDiffractionPatternLineOut_Qmax-" + to_string(params.maxQazm)
-      + "_Ieb-" + to_string(params.Iebeam)
-      + "_scrnD-" + to_string(params.screenDist)
-      + "_elE-" + to_string(params.elEnergy)
+      + "_sim_atmDiffraction-lineout_align-random_Qmax-" + num
       + "_Bins[" + to_string(params.NradAzmBins) + "].dat");
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
@@ -264,7 +262,13 @@ int main(int argc, char* argv[]) {
   ////  Retrieving File Info  ////
   ////////////////////////////////
 
+  if (params.verbose) cout<<"Retrieving parameters"<<endl;
   ppFunct::getScanRunInfo(imgINFO, runListName, params.verbose);
+  
+  if (params.hasI0) {
+    ppFunct::getI0RunInfo(I0fileNames, runListName, params.verbose);
+  }
+
   curRun  = imgINFO[0].run;
   curScan = imgINFO[0].scan;
 
@@ -278,46 +282,34 @@ int main(int argc, char* argv[]) {
   }
 
 
-  ////////////////////////////////////
-  /////  Get I0 Image Addresses  /////
-  ////////////////////////////////////
-
-  std::map<int, std::string> I0fileNames;
-  std::map<int, std::vector< std::vector<double> > > I0refImgs;
-  std::string lineI0;
-  std::string I0runListName = "./runLists/runList_Run-"
-      + runName + "_I0_Scan-" 
-      + to_string(imgINFO[0].scan) + ".txt"; 
-  ifstream I0runList(I0runListName);
-  if (!I0runList.is_open()) {
-    std::cerr << "ERROR: Cannot open file " + I0runListName + "\n";
-    exit(1);
-  }
-  while (getline(I0runList, lineI0)) {
-    ipos = lineI0.find("delay");
-    ipos += 10;
-    int I0stagePos = stoi(lineI0.substr(ipos, 3) + lineI0.substr(ipos+4, 4));
-    I0fileNames[I0stagePos] = lineI0;
-  }
-  I0runList.close();
-
-
   /////////////////////////////////////
   /////  Setting image variables  /////
   /////////////////////////////////////
 
-  string imgAddr = I0fileNames[imgINFO[0].stagePos];
-  cv::Mat imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-  int Nrows = imgMat.rows;
-  int Ncols = imgMat.cols;
+  if (params.verbose) cout<<"Setting image variables"<<endl;
+  std::string imgAddr;
+  cv::Mat imgMat;
+  int Nrows, Ncols;
   bool normI0ref = false;
-  std::vector< std::vector<double> > imgI0(Nrows);
-  std::vector< std::vector<double> > imgI0ref(Nrows);
-  std::vector< std::vector<double> > imgI0refCount(Nrows);
-  for (int ir=0; ir<Nrows; ir++) {
-    imgI0[ir].resize(Ncols, 0);
-    imgI0ref[ir].resize(Ncols, 0);
-    imgI0refCount[ir].resize(Ncols, 0);
+  int I0refCount;
+  std::vector< std::vector<double> > imgI0;
+  std::vector< std::vector<double> > imgI0ref;
+  //std::vector< std::vector<double> > imgI0refCount;
+  std::map<int, std::vector< std::vector<double> > > I0refImgs;
+
+  if (params.hasI0) {
+    imgAddr = I0fileNames[imgINFO[0].imgNum];
+    imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+    Nrows = imgMat.rows;
+    Ncols = imgMat.cols;
+    imgI0.resize(Nrows);
+    imgI0ref.resize(Nrows);
+    //imgI0refCount.resize(Nrows);
+    for (int ir=0; ir<Nrows; ir++) {
+      imgI0[ir].resize(Ncols, 0);
+      imgI0ref[ir].resize(Ncols, 0);
+      //imgI0refCount[ir].resize(Ncols, 0);
+    }
   }
 
   imgAddr = imgINFO[0].path + imgINFO[0].fileName;
@@ -357,17 +349,24 @@ int main(int argc, char* argv[]) {
     if (params.verbose) std::cout << "\n\nINFO: Making background!!!\n";
 
     std::vector< std::vector<double> > imgVec, bkgCount;
+    std::vector< std::vector<int> > bkg_nanMap;
     for (ifl=0; ifl<imgINFO.size(); ifl++) {
       ///  Get image  ///
       imgAddr   = imgINFO[ifl].path + imgINFO[ifl].fileName;
-      imgMat    = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+      imgMat    = cv::imread(imgAddr.c_str(), CV_LOAD_IMAGE_ANYDEPTH); 
       Nrows = imgMat.rows;
       Ncols = imgMat.cols;
+      std::vector< std::vector<int> > img_nanMap(Nrows);
+      for (uint ir=0; ir<Nrows; ir++) {
+        img_nanMap[ir].resize(Ncols, 0);
+      }
 
       if (ifl == 0) {
         bkgCount.resize(Nrows);
+        bkg_nanMap.resize(Nrows);;
         for (uint ir=0; ir<Nrows; ir++) {
           bkgCount[ir].resize(Ncols, 0);
+          bkg_nanMap[ir].resize(Ncols, 0);
         }
       }
 
@@ -396,8 +395,8 @@ int main(int argc, char* argv[]) {
       }
 
       ///  Remove Xray hits  ///
-      imgProc::removeXrayHits(
-          &imgVec, 
+      img_nanMap = imgProc::removeXrayHits(
+          &imgVec, img_nanMap,
           params.XrayHighCut, params.XrayLowCut, 
           params.XraySTDcut, params.XrayWindow);
 
@@ -411,7 +410,7 @@ int main(int argc, char* argv[]) {
               && ic >= 450 && ic < 600) {
             continue;
           }
-          if (imgVec[ir][ic] == NANVAL) {
+          if (img_nanMap[ir][ic]) {
             continue;
           }
 
@@ -427,7 +426,7 @@ int main(int argc, char* argv[]) {
               && ic >= 450 && ic < 600) {
             continue;
           }
-          if (imgVec[ir][ic] == NANVAL) {
+          if (img_nanMap[ir][ic]) {
             continue;
           }
 
@@ -443,12 +442,12 @@ int main(int argc, char* argv[]) {
               && ic >= 450 && ic < 600) {
             continue;
           }
-          if (imgVec[ir][ic] == NANVAL) {
+          if (img_nanMap[ir][ic]) {
             continue;
           }
 
           if (fabs(imgVec[ir][ic] - rsMean) > params.bkgSTDcut*rsSTD) {
-            imgVec[ir][ic] = NANVAL;
+            img_nanMap[ir][ic] = 1;
           }
         }
       }
@@ -457,7 +456,7 @@ int main(int argc, char* argv[]) {
       if (params.verbose) std::cout << "\tAdding images\n";
       for (int ir=0; ir<Nrows; ir++) {
         for (int ic=0; ic<Ncols; ic++) {
-          if (imgVec[ir][ic] != NANVAL) {
+          if (img_nanMap[ir][ic] == 0) {
             imgBkg[ir][ic] += imgVec[ir][ic];
             bkgCount[ir][ic] += 1;
           }
@@ -466,7 +465,7 @@ int main(int argc, char* argv[]) {
 
       for (int ir=0; ir<Nrows; ir++) {
         for (int ic=0; ic<Ncols; ic++) {
-          if (imgVec[ir][ic] == NANVAL) {
+          if (img_nanMap[ir][ic]) {
             imgVec[ir][ic] = -1;
           }
         }
@@ -484,7 +483,7 @@ int main(int argc, char* argv[]) {
           imgBkg[ir][ic] /= bkgCount[ir][ic];
         }
         else {
-          imgBkg[ir][ic] = NANVAL;
+          bkg_nanMap[ir][ic] = 1;
         }
       }
     }
@@ -492,14 +491,14 @@ int main(int argc, char* argv[]) {
     ///  Fill in pixels with NANVALS by averaging nearest neighbors  ///
     for (int ir=0; ir<Nrows; ir++) {
       for (int ic=0; ic<Ncols; ic++) {
-        if (imgBkg[ir][ic] == NANVAL) {
+        if (bkg_nanMap[ir][ic]) {
           std::vector<double> collection;
           int ind = 1;
           while (collection.size() < 15) {
             if (ic - ind >= 0) {
               for (int irr=-1*ind; irr<=ind; irr++) {
                 if ((ir + irr >= 0) && (ir + irr < (int)imgBkg.size())) {
-                  if (imgBkg[ir+irr][ic-ind] != NANVAL) {
+                  if (bkg_nanMap[ir+irr][ic-ind] == 0) {
                     collection.push_back(imgBkg[ir+irr][ic-ind]);
                   }
                 }
@@ -508,7 +507,7 @@ int main(int argc, char* argv[]) {
             if (ic + ind < (int)imgBkg.size()) {
               for (int irr=-1*ind; irr<=ind; irr++) {
                 if ((ir + irr >= 0) && (ir + irr < (int)imgBkg.size())) {
-                  if (imgBkg[ir+irr][ic+ind] != NANVAL) {
+                  if (bkg_nanMap[ir+irr][ic+ind] == 0) {
                     collection.push_back(imgBkg[ir+irr][ic+ind]);
                   }
                 }
@@ -517,7 +516,7 @@ int main(int argc, char* argv[]) {
             if (ir - ind >= 0) {
               for (int icc=-1*ind+1; icc<=ind-1; icc++) {
                 if ((ic + icc >= 0) && (ic + icc < (int)imgBkg.size())) {
-                  if (imgBkg[ir-ind][ic+icc] != NANVAL) {
+                  if (bkg_nanMap[ir-ind][ic+icc] == 0) {
                     collection.push_back(imgBkg[ir-ind][ic+icc]);
                   }
                 }
@@ -526,7 +525,7 @@ int main(int argc, char* argv[]) {
             if (ir + ind < (int)imgBkg.size()) {
               for (int icc=-1*ind+1; icc<=ind-1; icc++) {
                 if ((ic + icc >= 0) && (ic + icc < (int)imgBkg.size())) {
-                  if (imgBkg[ir+ind][ic+icc] != NANVAL) {
+                  if (bkg_nanMap[ir+ind][ic+icc] == 0) {
                     collection.push_back(imgBkg[ir+ind][ic+icc]);
                   }
                 }
@@ -552,9 +551,7 @@ int main(int argc, char* argv[]) {
     save::saveDat<double>(imgBkg, params.backgroundFolder 
         + "/backgroundImg-" + imgINFO[0].run + ".dat");
 
-    if (params.pltVerbose) {
-      delete plt.printRC(imgBkg, "plots/background-" + imgINFO[0].run);
-    }
+    delete plt.printRC(imgBkg, "plots/background-" + imgINFO[0].run);
 
     exit(0);
   }
@@ -566,6 +563,7 @@ int main(int argc, char* argv[]) {
 
   //cerr << "WARNING!!!!! NOT IMPORTING BKG"<<endl;
   if (params.backgroundImage.compare("NULL") != 0) {
+    if (params.verbose) cout << "INFO: Importing Background\n";
     save::importDat<double>(imgBkg, params.backgroundFolder 
         + "/" + params.backgroundImage);
     if (params.pltVerbose) {
@@ -669,8 +667,7 @@ int main(int argc, char* argv[]) {
 
 
 
-  if ((params.I0centers && (computeCenters || params.computeCenters))
-      || params.scanAvgCenter){
+  if (computeCenters || params.computeCenters || params.scanAvgCenter) {
 
     /////  Find Center  /////
     //imgProc::centerfnctr centfnctr;
@@ -683,6 +680,11 @@ int main(int argc, char* argv[]) {
     std::vector< std::vector< std::vector<int> > > allIndsR(imgINFO.size());
     std::vector< std::vector< std::vector<int> > > allIndsC(imgINFO.size());
     std::vector< std::vector< std::vector<double> > > allCentVals(imgINFO.size());
+    int rad;
+    std::vector< std::vector<int> > centImg_nanMap(Nrows);
+    for (int ir=0; ir<Nrows; ir++) {
+      centImg_nanMap[ir].resize(Ncols, 0);
+    }
     for (ifl=0; ifl<imgINFO.size(); ifl++) {
       imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
       imgMat = cv::imread(imgAddr.c_str(), CV_LOAD_IMAGE_ANYDEPTH); 
@@ -691,21 +693,37 @@ int main(int argc, char* argv[]) {
       Ncols = imgMat.cols;
       if (params.imgMatType.compare("uint16") == 0) {
         imgCent = imgProc::getImgVector<uint16_t>(imgMat, //imgSmooth, 
-                    Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                    params.holeRad, params.holeR, params.holeC,
-                    &params.nanMap);
+                    Nrows, Nrows/2, Ncols/2, true, &imgBkg);
+                    //params.holeRad, params.holeR, params.holeC,
+                    //&params.nanMap);
       }  
       else if (params.imgMatType.compare("uint32") == 0) {
         imgCent = imgProc::getImgVector<uint32_t>(imgMat, //imgSmooth, 
-                    Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-                    params.holeRad, params.holeR, params.holeC,
-                    &params.nanMap);
+                    Nrows, Nrows/2, Ncols/2, true, &imgBkg);
+                    //params.holeRad, params.holeR, params.holeC,
+                    //&params.nanMap);
       }  
       else {
         std::cerr << "ERROR: Do not recognize imgMatType = " 
             + params.imgMatType + "!!!\n";
         exit(1);
       }
+
+      // Create initial nanMap for centering images
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          rad = (int)(sqrt(std::pow(ir-params.holeR, 2)
+              + std::pow(ic-params.holeC, 2)));
+
+          if (params.nanMap[ir][ic] || (rad < params.holeRad)) {
+            centImg_nanMap[ir][ic] = 1;
+          }
+          else {
+            centImg_nanMap[ir][ic] = 1;
+          }
+        }
+      }
+
 
       /*
       pltOpts[0] = minimum; pltOpts[1] = maximum;
@@ -739,15 +757,15 @@ int main(int argc, char* argv[]) {
 
       if (params.imgMatType.compare("uint16") == 0) {
         imgCent = imgProc::getImgVector<uint16_t>(imgSmooth, 
-                    Nrows, Nrows/2, Ncols/2, true, NULL,
-                    params.holeRad+5, params.holeR, params.holeC,
-                    &params.nanMap);
+                    Nrows, Nrows/2, Ncols/2, true, NULL);
+                    //params.holeRad+5, params.holeR, params.holeC,
+                    //&params.nanMap);
       }  
       else if (params.imgMatType.compare("uint32") == 0) {
         imgCent = imgProc::getImgVector<uint32_t>(imgSmooth, 
-                    Nrows, Nrows/2, Ncols/2, true, NULL,
-                    params.holeRad+5, params.holeR, params.holeC,
-                    &params.nanMap);
+                    Nrows, Nrows/2, Ncols/2, true, NULL);
+                    //params.holeRad+5, params.holeR, params.holeC,
+                    //&params.nanMap);
       }  
       else {
         std::cerr << "ERROR: Do not recognize imgMatType = " 
@@ -755,16 +773,43 @@ int main(int argc, char* argv[]) {
         exit(1);
       }
 
-      plt.printRC(imgCent, "testingCenter");
-      std::vector<int> centersCOM = imgProc::centerSearchCOM(imgCent,
-          params.blockCentR, params.blockCentC, params.minRad, params.maxRad,
-          params.meanInd, params.COMstdScale, true, NULL); //&plt);
+      // Create initial nanMap for centering images
+      for (int ir=0; ir<Nrows; ir++) {
+        for (int ic=0; ic<Ncols; ic++) {
+          rad = (int)(sqrt(std::pow(ir-params.holeR, 2)
+              + std::pow(ic-params.holeC, 2)));
+
+          if (params.nanMap[ir][ic] || (rad < params.holeRad+5)) {
+            centImg_nanMap[ir][ic] = 1;
+          }
+          else {
+            centImg_nanMap[ir][ic] = 0;
+          }
+        }
+      }
+
+      if (params.pltVerbose) {
+        plt.printRC(imgCent, "testingCenter");
+      }
+      std::vector<int> centersCOM(2);
+      if (params.doCOM_center) {
+        centersCOM = imgProc::centerSearchCOM(imgCent,
+            params.centR_estimate, params.centC_estimate,
+            params.minRad, params.maxRad,
+            params.meanInd, params.COMstdScale, true, &plt);
+      }
+      else {
+        centersCOM[0] = params.centR_estimate;
+        centersCOM[1] = params.centC_estimate;
+      }
+
 
       cout<<"COM: "<<centersCOM[0]<<"  "<<centersCOM[1]<<endl;
       centerR_float = 0;
       centerC_float = 0;
       Ncents  = 0;
-      double medVal;
+      double meanCentVal;
+      int meanCentCount;
       std::vector<double> Rs, centVals;
       std::vector<double> circVals(4);
       std::vector<double> orderedInds(4);
@@ -774,38 +819,76 @@ int main(int argc, char* argv[]) {
       allCentVals[ifl].resize(params.meanInds.size());
       allMedVals[ifl].resize(params.meanInds.size());
       for (int i=0; i<params.meanInds.size(); i++) {
-        circVals[0] = imgCent[centersCOM[0]+params.meanInds[i]][centersCOM[1]];
-        circVals[1] = imgCent[centersCOM[0]-params.meanInds[i]][centersCOM[1]];
-        circVals[2] = imgCent[centersCOM[0]][centersCOM[1]+params.meanInds[i]];
-        circVals[3] = imgCent[centersCOM[0]][centersCOM[1]-params.meanInds[i]];
-        iota(orderedInds.begin(), orderedInds.end(), 0);
-        sort(orderedInds.begin(), orderedInds.end(),
-            [&circVals](int i1, int i2)
-            {return circVals[i1] < circVals[i2];});
-        medVal = (circVals[orderedInds[1]] + circVals[orderedInds[2]])/2.;
+        meanCentVal = 0;
+        meanCentCount = 0;
+        if (centImg_nanMap[centersCOM[0]+params.meanInds[i]][centersCOM[1]] == 0) {
+          meanCentVal += imgCent[centersCOM[0]+params.meanInds[i]][centersCOM[1]];
+          meanCentCount += 1;
+        }
+        if (centImg_nanMap[centersCOM[0]-params.meanInds[i]][centersCOM[1]] == 0) {
+         meanCentVal += imgCent[centersCOM[0]-params.meanInds[i]][centersCOM[1]];
+         meanCentCount += 1;
+        }
+        if (centImg_nanMap[centersCOM[0]][centersCOM[1]+params.meanInds[i]] == 0) {
+          meanCentVal += imgCent[centersCOM[0]][centersCOM[1]+params.meanInds[i]];
+          meanCentCount += 1;
+        }
+        if (centImg_nanMap[centersCOM[0]][centersCOM[1]-params.meanInds[i]] == 0) {
+          meanCentVal += imgCent[centersCOM[0]][centersCOM[1]-params.meanInds[i]];
+          meanCentCount += 1;
+        }
+        //iota(orderedInds.begin(), orderedInds.end(), 0);
+        //sort(orderedInds.begin(), orderedInds.end(),
+        //    [&circVals](int i1, int i2)
+        //    {return circVals[i1] < circVals[i2];});
+        //meanCentVal = (circVals[orderedInds[1]] + circVals[orderedInds[2]])/2.;
+        meanCentVal /= meanCentCount;
 
-        // Find indices with values close to medVal
+        // Find indices with values close to meanCentVal
         indsR.clear();
         indsC.clear();
         centVals.clear();
         for (int ir=0; ir<Nrows; ir++) {
           for (int ic=0; ic<Ncols; ic++) {
-            if (fabs(imgCent[ir][ic] - medVal) <= 4*centerValSTD) {
-              indsR.push_back(ir);
-              indsC.push_back(ic);
-              centVals.push_back(imgCent[ir][ic]);
+            if (centImg_nanMap[ir][ic] == 0) {
+              if (fabs(imgCent[ir][ic] - meanCentVal) <= 4*centerValSTD) {
+                indsR.push_back(ir);
+                indsC.push_back(ic);
+                centVals.push_back(imgCent[ir][ic]);
+              }
             }
           }
         }
 
         // Remove indices far from cluster
+        center[0] = centersCOM[0];
+        center[1] = centersCOM[1];
         for (int j=0; j<3; j++) {
+          
+          // Find best center for given inds
+          centfnctr.radProc     = &radProc;
+          centfnctr.fxnType     = params.centerFxnType;
+          centfnctr.meanVal     = meanCentVal;
+          centfnctr.valSTD      = centerValSTD;
+          centfnctr.vals        = &centVals;
+          centfnctr.indsR       = &indsR;
+          centfnctr.indsC       = &indsC;
+          //centfnctr.verbose     = params.verbose;
+
+          if (params.verbose) std::cout << "\t\t Searching for center (PowellMin) ... ";
+          tools::powellMin<imgProc::centerfnctr> (centfnctr, center,
+              params.cntrScale, params.cntrMinScale,
+              params.cntrPowellTol, params.cntrFracTol1d);
+          if (params.verbose) std::cout << center[0] << "  " << center[1] << std::endl;
+
+
+          // Prune inds that are far from the center
           meanR = 0;
           Rs.resize(indsR.size());
           for (uint k=0; k<indsR.size(); k++) {
             Rs[k] = std::sqrt(
-                        std::pow(indsR[k] - centerR_float, 2)
-                        + std::pow(indsC[k] - centerC_float, 2));
+                        std::pow(indsR[k] - center[0], 2)
+                        + std::pow(indsC[k] - center[1], 2));
             meanR += Rs[k];
           }
           meanR /= indsR.size();
@@ -840,13 +923,11 @@ int main(int argc, char* argv[]) {
           allIndsC[ifl][i][k] = indsC[k];
           allCentVals[ifl][i][k] = centVals[k];
         }
-        allMedVals[ifl][i] = medVal;
+        allMedVals[ifl][i] = meanCentVal;
 
-        center[0] = centersCOM[0];
-        center[1] = centersCOM[1];
         centfnctr.radProc     = &radProc;
         centfnctr.fxnType     = params.centerFxnType;
-        centfnctr.meanVal     = medVal;
+        centfnctr.meanVal     = meanCentVal;
         centfnctr.valSTD      = centerValSTD;
         centfnctr.vals        = &centVals;
         centfnctr.indsR       = &indsR;
@@ -1037,88 +1118,106 @@ int main(int argc, char* argv[]) {
 
     }
 
-    if (params.I0centers) {
-      cout<<"CENTERS: "<<centers[0][0]<<"  "<<centers[0][1]<<endl;
-      // Save centers
-      save::saveDat<int>(centers, params.centerDir 
-          + "rawImg-centers_run-" + curRun + "_scan-" + to_string(curScan)
-          + "_shape[" + to_string(centers.size()) 
-          + "," + to_string(centers[0].size()) + "].dat");
-     
-      /////   I0 Centers   /////
-      std::vector<int> I0stagePos;
-      for (ifl=0; ifl<imgINFO.size(); ifl++) {
-        imgAddr = I0fileNames[imgINFO[ifl].stagePos];
-        system(("python I0centriod.py --fileName=" + imgAddr
-            + " --minPixVal=" + to_string(params.I0minPixVal)
-            + " --approxR=" + to_string(params.I0approxR)
-            + " --approxC=" + to_string(params.I0approxC)).c_str());
-        I0stagePos.push_back(imgINFO[ifl].stagePos);
-      }
+    std::string I0centers_filename = params.centerDir
+        + "I0-centers_run-" + curRun + "_scan-" + to_string(curScan)
+        + "_shape[" + to_string(I0centers.size())
+        + "," + to_string(I0centers[0].size()) + "].dat";
 
-      // Combine centers
-      std::vector< std::vector<int> > I0centers;
-      std::vector<int> singleI0Cent(2);
-      for (ifl=0; ifl<imgINFO.size(); ifl++) {
-        imgAddr = I0fileNames[imgINFO[ifl].stagePos];
-        auto indI = imgAddr.rfind("/") + 1;
-        std::string centFileName = params.centerDir + "temp/centers_"
-            + imgAddr.substr(indI, imgAddr.size() - (indI + 4)) + "[2].dat";
-        save::importDat<int>(singleI0Cent, centFileName);
-        I0centers.push_back(singleI0Cent);
-      }
-      save::saveDat<int>(I0centers, params.centerDir 
-          + "I0-centers_run-" + curRun + "_scan-" + to_string(curScan)
-          + "_shape[" + to_string(I0centers.size()) 
-          + "," + to_string(I0centers[0].size()) + "].dat");
+    if (params.hasI0) {
+      if (params.I0centers || !tools::fileExists(I0centers_filename)) {
 
-      // Combine results
-      std::vector< std::vector< std::vector<double> > > I0results;
-      std::vector< std::vector<double> > singleI0results(4);
-      for (uint i=0; i<singleI0results.size(); i++) {
-        singleI0results[i].resize(params.I0ellRats.size());
-      }
-      for (ifl=0; ifl<imgINFO.size(); ifl++) {
-        imgAddr = I0fileNames[imgINFO[ifl].stagePos];
-        auto indI = imgAddr.rfind("/") + 1;
-        std::string resultsFileName = params.centerDir + "temp/results_"
-            + imgAddr.substr(indI, imgAddr.size() - (indI + 4)) + "[4,4].dat";
-        save::importDat<double>(singleI0results, resultsFileName);
-        I0results.push_back(singleI0results);
-      }
-      save::saveDat<double>(I0results, params.centerDir 
-          + "I0-results_run-" + curRun + "_scan-" + to_string(curScan)
-          + "_shape[" + to_string(I0results.size()) 
-          + "," + to_string(I0results[0].size())
-          + "," + to_string(I0results[0][0].size()) + "].dat");
+        // Save centers
+        save::saveDat<int>(centers, params.centerDir 
+            + "rawImg-centers_run-" + curRun + "_scan-" + to_string(curScan)
+            + "_shape[" + to_string(centers.size()) 
+            + "," + to_string(centers[0].size()) + "].dat");
+       
+        /////   I0 Centers   /////
+        std::vector<int> I0stagePos;
+        for (ifl=0; ifl<imgINFO.size(); ifl++) {
+          imgAddr = I0fileNames[imgINFO[ifl].imgNum];
+          system(("python I0centriod.py --fileName=" + imgAddr
+              + " --minPixVal=" + to_string(params.I0minPixVal)
+              + " --approxR=" + to_string(params.I0approxR)
+              + " --approxC=" + to_string(params.I0approxC)).c_str());
+          I0stagePos.push_back(imgINFO[ifl].stagePos);
+        }
 
-      // Combine I0 norms
-      std::vector<double> I0norm;
-      std::vector<double> singleI0norm(1);
-      for (ifl=0; ifl<imgINFO.size(); ifl++) {
-        imgAddr = I0fileNames[imgINFO[ifl].stagePos];
-        auto indI = imgAddr.rfind("/") + 1;
-        std::string resultsFileName = params.centerDir + "temp/norm_"
-            + imgAddr.substr(indI, imgAddr.size() - (indI + 4)) + "[1].dat";
-        save::importDat<double>(singleI0norm, resultsFileName);
-        I0norm.push_back(singleI0norm[0]);
+        // Combine centers
+        std::vector< std::vector<int> > I0centers;
+        std::vector<int> singleI0Cent(2);
+        for (ifl=0; ifl<imgINFO.size(); ifl++) {
+          imgAddr = I0fileNames[imgINFO[ifl].imgNum];
+          auto indI = imgAddr.rfind("/") + 1;
+          std::string centFileName = params.centerDir + "temp/centers_"
+              + imgAddr.substr(indI, imgAddr.size() - (indI + 4)) + "[2].dat";
+          save::importDat<int>(singleI0Cent, centFileName);
+          I0centers.push_back(singleI0Cent);
+        }
+        save::saveDat<int>(I0centers, I0centers_filename);
+
+        // Combine results
+        std::vector< std::vector< std::vector<double> > > I0results;
+        std::vector< std::vector<double> > singleI0results(4);
+        for (uint i=0; i<singleI0results.size(); i++) {
+          singleI0results[i].resize(params.I0ellRats.size());
+        }
+        for (ifl=0; ifl<imgINFO.size(); ifl++) {
+          imgAddr = I0fileNames[imgINFO[ifl].imgNum];
+          auto indI = imgAddr.rfind("/") + 1;
+          std::string resultsFileName = params.centerDir + "temp/results_"
+              + imgAddr.substr(indI, imgAddr.size() - (indI + 4)) + "[4,4].dat";
+          save::importDat<double>(singleI0results, resultsFileName);
+          I0results.push_back(singleI0results);
+        }
+        save::saveDat<double>(I0results, params.centerDir 
+            + "I0-results_run-" + curRun + "_scan-" + to_string(curScan)
+            + "_shape[" + to_string(I0results.size()) 
+            + "," + to_string(I0results[0].size())
+            + "," + to_string(I0results[0][0].size()) + "].dat");
+
+        // Combine I0 norms
+        std::vector<double> singleI0norm(1);
+        for (ifl=0; ifl<imgINFO.size(); ifl++) {
+          imgAddr = I0fileNames[imgINFO[ifl].imgNum];
+          auto indI = imgAddr.rfind("/") + 1;
+          std::string resultsFileName = params.centerDir + "temp/norm_"
+              + imgAddr.substr(indI, imgAddr.size() - (indI + 4)) + "[1].dat";
+          save::importDat<double>(singleI0norm, resultsFileName);
+          I0norms[ifl] = singleI0norm[0];
+        }
+        save::saveDat<double>(I0norms, params.centerDir 
+            + "I0-norms_run-" + curRun + "_scan-" + to_string(curScan)
+            + "_shape[" + to_string(I0norms.size()) + "].dat");
+        cout<<"NORM "<<I0norms[0]<<endl;
+
+
+        // Save stage positions
+        std::string fName = params.centerDir
+            + "I0-stagePos_run-" + curRun
+            + "_shape[" + to_string(I0stagePos.size()) + "].dat";
+        if (!tools::fileExists(fName)) {
+          save::saveDat<int>(I0stagePos, fName);
+        }
       }
-      save::saveDat<double>(I0norm, params.centerDir 
-          + "I0-norms_run-" + curRun + "_scan-" + to_string(curScan)
-          + "_shape[" + to_string(I0norm.size()) + "].dat");
-      cout<<"NORM "<<I0norm[0]<<endl;
-
-
-      // Save stage positions
-      std::string fName = params.centerDir
-          + "I0-stagePos_run-" + curRun
-          + "_shape[" + to_string(I0stagePos.size()) + "].dat";
-      if (!tools::fileExists(fName)) {
-        save::saveDat<int>(I0stagePos, fName);
+      else {
+        save::importDat<int>(I0centers, I0centers_filename);
+        I0norms.resize(imgINFO.size());
+        save::importDat<double>(I0norms, params.centerDir
+            + "I0-norms_run-" + curRun + "_scan-" + to_string(curScan)
+            + "_shape[" + to_string(I0norms.size()) + "].dat");
+        /*  
+        std::string fName = params.centerDir
+            + "I0-stagePos_run-" + curRun
+            + "_shape[" + to_string(I0stagePos.size()) + "].dat";
+        save::importDat<int>(I0stagePos, fName);
+        save::importDat<double>(I0results, params.centerDir 
+            + "I0-results_run-" + curRun + "_scan-" + to_string(curScan)
+            + "_shape[" + to_string(I0results.size()) 
+            + "," + to_string(I0results[0].size())
+            + "," + to_string(I0results[0][0].size()) + "].dat");
+        */
       }
-
-      // Exit Code
-      exit(0);
     }
 
   }
@@ -1148,8 +1247,8 @@ int main(int argc, char* argv[]) {
             
             auto badImgItr = params.badImages.find(tmpScan);
             if (badImgItr != params.badImages.end()) {
-              if (std::find(badImgItr->second.begin(), badImgItr->second.end(), stagePos)
-                    != badImgItr->second.end()) {
+              if (std::find(badImgItr->second.begin(), badImgItr->second.end(),
+                    imgINFO[ifl].stagePos) != badImgItr->second.end()) {
                 continue;
               }
             }
@@ -1196,8 +1295,8 @@ int main(int argc, char* argv[]) {
             
             auto badImgItr = params.badImages.find(tmpScan);
             if (badImgItr != params.badImages.end()) {
-              if (std::find(badImgItr->second.begin(), badImgItr->second.end(), stagePos)
-                    != badImgItr->second.end()) {
+              if (std::find(badImgItr->second.begin(), badImgItr->second.end(),
+                  imgINFO[ifl].stagePos) != badImgItr->second.end()) {
                 continue;
               }
             }
@@ -1288,11 +1387,10 @@ int main(int argc, char* argv[]) {
   centerCmean /= Ncents;
   cout<<"centers: "<<centerRmean<<"  "<<centerCmean<<endl;
 
-  //////////////////////////////
-  /////  Making root file  /////
-  //////////////////////////////
+  //////////////////////////////////////
+  /////  Making Variables to Save  /////
+  //////////////////////////////////////
 
-   //rFileName = "/reg/ued/ana/scratch/nitroBenzene/rootFiles/" + dataType 
   std::string subFolder = "";
   if (runListName.find("Power", 0) != std::string::npos) {
     subFolder = "PowerScan";
@@ -1312,59 +1410,51 @@ int main(int argc, char* argv[]) {
   }
   */
 
-  rFileName = params.preProcOutputDir + "/" + subFolder + "/"
-  //rFileName =  "testing/" + subFolder + "/"
-        + "Run-" + curRun + "_"
-        + "Scan-" + to_string(curScan) + ".root";
-  if (localTesting) {
-    rFileName = "localTest.root";
+  results_folder = params.preProcOutputDir + "/" + subFolder
+        + "/Run-" + curRun + "/";
+
+  if (params.verbose) std::cout << "\n\nINFO: Saving to "
+      + results_file_prefix << endl;
+  if (!tools::fileExists(results_folder)) {
+    mkdir(results_folder.c_str(), 0777);
+    mkdir((results_folder + "/radialGrouping").c_str(), 0777);
   }
 
-  if (params.verbose) std::cout << "\n\nINFO: Making file " << rFileName << endl;
+  results_file_prefix = results_folder + "/Scan-" + to_string(curScan);
 
-  file = TFile::Open(rFileName.c_str(), "RECREATE");
-  tree = new TTree("physics","physics");
+  std::vector<int>    res_imgNum;
+  std::vector<int>    res_imgIsRef;
+  std::vector<int>    res_timeStamp;
+  std::vector<int>    res_stagePos;
+  std::vector<float>  res_throttle;
+  std::vector<int>    res_centerC;
+  std::vector<int>    res_centerR;
+  std::vector<float>  res_centerCstdRatio;
+  std::vector<float>  res_centerRstdRatio;
+  std::vector<int>    res_I0centerC;
+  std::vector<int>    res_I0centerR;
+  std::vector<float>  res_I0norm;
+  std::vector<float>  res_imgNorm;
+  std::vector<float>  res_readoutNoise;
+  std::vector<float>  res_zeroHighQ;
 
-  tree->Branch("run", 	          &curRun);
-  tree->Branch("scan", 	          &curScan,         "scan/I");
-  tree->Branch("imgNum", 	  &imgNum, 	    "imgNum/I");
-  tree->Branch("imgIsRef", 	  &imgIsRef, 	    "imgIsRef/I");
-  tree->Branch("timeStamp", 	  &timeStamp, 	    "timeStamp/I");
-  tree->Branch("stagePos", 	  &stagePos, 	    "stagePos/I");
-  tree->Branch("t0StagePos",      &t0SP,	    "t0StagePos/F");
-  tree->Branch("t0Time",	  &t0Time,	    "t0Time/F");
-  tree->Branch("throttle",        &throttle,        "throttle/F");
-  tree->Branch("centerC", 	  &centerC, 	    "centerC/I");
-  tree->Branch("centerR", 	  &centerR, 	    "centerR/I");
-  tree->Branch("I0centerC", 	  &I0centerC, 	    "I0centerC/I");
-  tree->Branch("I0centerR", 	  &I0centerR, 	    "I0centerR/I");
-  tree->Branch("centerCstdRatio", &centerCstdRatio, "centerCstdRatio/F");
-  tree->Branch("centerRstdRatio", &centerRstdRatio, "centerRstdRatio/F");
-  tree->Branch("I0norm", 	  &I0norm, 	    "I0norm/F");
-  tree->Branch("imgNorm", 	  &imgNorm, 	    "imgNorm/F");
-  tree->Branch("readoutNoise", 	  &readoutNoise,    "readoutNoise/F");
-  tree->Branch("imgOrig", 	  &imgOrig);
-  tree->Branch("imgSubBkg",       &imgSubBkg);
-  tree->Branch("legCoeffs",       &legCoeffs);
-  tree->Branch("rawAzmAvg",       &rawAzmAvg);
-  tree->Branch("azmAvg",          &azmAvg);
-  //tree->Branch("radPixDist",      &radPixDist);
-  //tree->Branch("radPixMeans",     &radPixMeans);
-  tree->Branch("imgRadSTD",       &imgRadSTD);
+  std::vector<std::vector<std::vector<double> > > res_imgOrig(imgINFO.size());
+  std::vector<std::vector<std::vector<int> > > res_imgOrig_nanMap(imgINFO.size());
+  std::vector<std::vector<std::vector<double> > > res_imgSubBkg(imgINFO.size());
+  std::vector<std::vector<std::vector<int> > > res_imgSubBkg_nanMap(imgINFO.size());
+  //std::vector<std::vector<float> > res_legCoeffs;
+  std::vector<std::vector<double> > res_rawAzmAvg(imgINFO.size());
+  std::vector<std::vector<int> > res_rawAzmAvg_nanMap(imgINFO.size());
+  std::vector<std::vector<double> > res_azmAvg(imgINFO.size());
+  std::vector<std::vector<int> > res_azmAvg_nanMap(imgINFO.size());
+  std::vector<std::vector<double> > res_imgRadSTD(imgINFO.size());
+
 
   for (auto const & pv : params.pvMap) {
-    pvVals[pv.first] = 0;
-    pvValsDer[pv.first] = 0;
-    tree->Branch(
-        pv.first.c_str(),	  
-        &pvVals[pv.first],	
-        (pv.first+"/F").c_str());
-    tree->Branch(
-        (pv.first+"Der").c_str(),  
-        &pvValsDer[pv.first],	
-        (pv.first+"Der/F").c_str());
+    pvVals[pv.first].resize(imgINFO.size(), 0);
+    pvValsDer[pv.first].resize(imgINFO.size(), 0);
   }
-  if (params.verbose) cout << "INFO: Tree and file are setup!\n";
+
 
 
   ///////////////////////////////////////
@@ -1374,7 +1464,6 @@ int main(int argc, char* argv[]) {
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
     std::cout << "INFO: processing image: " << imgINFO[ifl].fileName << endl;
 
-    //if (imgINFO[ifl].stagePos > 1542900 && imgINFO[ifl].stagePos < 1554000) continue; 
 
     /////  Check we are in the same run/scan  /////
     if ((imgINFO[ifl].run.compare(curRun) != 0) 
@@ -1397,40 +1486,44 @@ int main(int argc, char* argv[]) {
         imgIsRef = 1;
       }
     }
+    res_imgIsRef.push_back(imgIsRef);
 
 
     /////  Image number (ordered)  /////
-    imgNum = imgINFO[ifl].imgNum;
+    res_imgNum.push_back(imgINFO[ifl].imgNum);
 
     /////  Stage position  /////
-    stagePos = imgINFO[ifl].stagePos;
+    res_stagePos.push_back(imgINFO[ifl].stagePos);
 
     /////  Image capture time  /////
-    timeStamp = imgINFO[ifl].time;
+    res_timeStamp.push_back(imgINFO[ifl].time);
 
     /////  Image radial stds  /////
-    for (uint i=0; i<imgRadSTD.size(); i++) {
-      imgRadSTD[i] = imgRadSTDs[ifl][i];
-    }
+    res_imgRadSTD.push_back(imgRadSTDs[ifl]);
 
     /////  I0 image norm  /////
-    I0norm = I0norms[ifl];
+    res_I0norm.push_back(I0norms[ifl]);
 
     /////  Center  /////
     
-    if (params.I0centers) {
-      centerR = centers[ifl][0];
-      centerC = centers[ifl][1];
+    centerR = centers[ifl][0];
+    centerC = centers[ifl][1];
+    centerRstdRatio = std::fabs(centerR - centerRmean)/centerRstd;
+    centerCstdRatio = std::fabs(centerC - centerCmean)/centerCstd;
+    res_centerR.push_back(std::round(centers[ifl][0]));
+    res_centerC.push_back(std::round(centers[ifl][1]));
+    res_centerRstdRatio.push_back(centerRstdRatio);
+    res_centerCstdRatio.push_back(centerCstdRatio);
+
+    centerR = std::round(centers[ifl][0]);
+    centerC = std::round(centers[ifl][1]);
+    if (params.hasI0) {
       I0centerR = I0centers[ifl][0];
       I0centerC = I0centers[ifl][1];
-      centerRstdRatio = std::fabs(centerR - centerRmean)/centerRstd;
-      centerCstdRatio = std::fabs(centerC - centerCmean)/centerCstd;
     }
     else if (params.scanAvgCenter) {
-      centerR = std::round(centers[ifl][0]);
-      centerC = std::round(centers[ifl][1]);
-      centerRstdRatio = std::fabs(centerR - centerRmean)/centerRstd;
-      centerCstdRatio = std::fabs(centerC - centerCmean)/centerCstd;
+      I0centerR = -1;
+      I0centerC = -1;
       centerR = std::round(centerRmean);
       centerC = std::round(centerCmean);
     }
@@ -1442,6 +1535,7 @@ int main(int argc, char* argv[]) {
       std::cerr << "Must specify only one center finding option: scanAvgCenter or I0centers./n";
       exit(0);
     }
+    // TODO: write an averaging option
 
 
     /*
@@ -1452,15 +1546,18 @@ int main(int argc, char* argv[]) {
       centerC = centerCmean;
     }
     */
+    res_I0centerR.push_back(std::round(I0centers[ifl][0]));
+    res_I0centerC.push_back(std::round(I0centers[ifl][1]));
+
 
 
 
     /////  Throttle  /////
     if (imgINFO[ifl].throttle == -1) {
-      throttle = params.throttle;
+      res_throttle.push_back(params.throttle);
     }
     else {
-      throttle = imgINFO[ifl].throttle;
+      res_throttle.push_back(imgINFO[ifl].throttle);
     }
 
 
@@ -1468,41 +1565,41 @@ int main(int argc, char* argv[]) {
     if (params.getPVs) {
       for (auto const & pv : params.pvMap) {
         std::string pvName = pv.first;
-        pvVals[pvName] = 0;
-        pvValsDer[pvName] = 0;
         int pvInd = (imgINFO[ifl].time - pvStartTimes[pvName])/
                       params.pvSampleTimes - 2;
         for (int i=0; i<params.imgShutterTime/params.pvSampleTimes; i++) {
-          pvVals[pvName]    += pvAll[pvName][pvInd-i];
-          pvValsDer[pvName] += pvAllDer[pvName][pvInd-i];
+          pvVals[pvName][ifl]    += pvAll[pvName][pvInd-i];
+          pvValsDer[pvName][ifl] += pvAllDer[pvName][pvInd-i];
         }
-        pvVals[pvName] /= params.imgShutterTime/params.pvSampleTimes;
-        pvValsDer[pvName] /= params.imgShutterTime/params.pvSampleTimes;
+        pvVals[pvName][ifl] /= params.imgShutterTime/params.pvSampleTimes;
+        pvValsDer[pvName][ifl] /= params.imgShutterTime/params.pvSampleTimes;
       }
     }
  
 
 
     ///////  Load image  ///////
-    imgAddr = I0fileNames[imgINFO[ifl].stagePos];
-    if (params.verbose) cout << "INFO: Trying to open " << imgAddr << "\t .....";
-    imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
-    if (params.verbose) cout << "\tpassed!\n\n";
+    if (params.hasI0) {
+      imgAddr = I0fileNames[imgINFO[ifl].imgNum];
+      if (params.verbose) cout << "INFO: Trying to open " << imgAddr << "\t .....";
+      imgMat = cv::imread(imgAddr.c_str() ,CV_LOAD_IMAGE_ANYDEPTH); 
+      if (params.verbose) cout << "\tpassed!\n\n";
 
-    if (params.imgMatType.compare("uint16") == 0) {
-      imgI0 = imgProc::getImgVector<uint16_t>(imgMat, 
-          imgI0.size(), imgI0.size()/2, imgI0.size()/2, true, NULL,
-          -1, params.holeR, params.holeC);
-    }
-    else if (params.imgMatType.compare("uint32") == 0) {
-      imgI0 = imgProc::getImgVector<uint32_t>(imgMat, 
-          imgI0.size(), imgI0.size()/2, imgI0.size()/2, true, NULL,
-          -1, params.holeR, params.holeC);
-    }
-    else {
-      std::cerr << "ERROR: Do not recognize imgMatType = " 
-          + params.imgMatType + "!!!\n";
-      exit(1);
+      if (params.imgMatType.compare("uint16") == 0) {
+        imgI0 = imgProc::getImgVector<uint16_t>(imgMat, 
+            imgI0.size(), imgI0.size()/2, imgI0.size()/2, true, NULL);
+            //-1, params.holeR, params.holeC);
+      }
+      else if (params.imgMatType.compare("uint32") == 0) {
+        imgI0 = imgProc::getImgVector<uint32_t>(imgMat, 
+            imgI0.size(), imgI0.size()/2, imgI0.size()/2, true, NULL);
+            //-1, params.holeR, params.holeC);
+      }
+      else {
+        std::cerr << "ERROR: Do not recognize imgMatType = " 
+            + params.imgMatType + "!!!\n";
+        exit(1);
+      }
     }
  
     imgAddr = imgINFO[ifl].path + imgINFO[ifl].fileName;
@@ -1512,42 +1609,66 @@ int main(int argc, char* argv[]) {
 
     if (params.imgMatType.compare("uint16") == 0) {
       imgOrig = imgProc::getImgVector<uint16_t>(imgMat, 
-          Nrows, Nrows/2, Ncols/2, true, NULL,
-          params.holeRad, params.holeR, params.holeC);
+          Nrows, Nrows/2, Ncols/2, true, NULL);
+          //params.holeRad, params.holeR, params.holeC);
       imgSubBkg = imgProc::getImgVector<uint16_t>(imgMat, 
-          Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-          params.holeRad, params.holeR, params.holeC,
-          &params.nanMap);
+          Nrows, Nrows/2, Ncols/2, true, &imgBkg);
+          //params.holeRad, params.holeR, params.holeC,
+          //&params.nanMap);
     }
     else if (params.imgMatType.compare("uint32") == 0) {
       imgOrig = imgProc::getImgVector<uint32_t>(imgMat, 
-          Nrows, Nrows/2, Ncols/2, true, NULL,
-          params.holeRad, params.holeR, params.holeC);
+          Nrows, Nrows/2, Ncols/2, true, NULL);
+          //params.holeRad, params.holeR, params.holeC);
       imgSubBkg = imgProc::getImgVector<uint32_t>(imgMat, 
-          Nrows, Nrows/2, Ncols/2, true, &imgBkg,
-          params.holeRad, params.holeR, params.holeC,
-          &params.nanMap);
+          Nrows, Nrows/2, Ncols/2, true, &imgBkg);
+          //params.holeRad, params.holeR, params.holeC,
+          //&params.nanMap);
     }
     else {
       std::cerr << "ERROR: Do not recognize imgMatType = " 
           + params.imgMatType + "!!!\n";
       exit(1);
     }
+
+    // Making new nanMaps //
+    cout<<"starting to make the map"<<endl;
+    std::vector< std::vector<int> > imgOrig_nanMap(imgOrig.size());
+    std::vector< std::vector<int> > imgSubBkg_nanMap(imgOrig.size());
+    for (uint ir=0; ir<imgOrig.size(); ir++) {
+      imgOrig_nanMap[ir].resize(imgOrig[ir].size());
+      imgSubBkg_nanMap[ir].resize(imgOrig[ir].size());
+      for (uint ic=0; ic<imgOrig[ir].size(); ic++) {
+        imgOrig_nanMap[ir][ic] = params.nanMap[ir][ic];
+        imgSubBkg_nanMap[ir][ic] = params.nanMap[ir][ic];
+      }
+    }
    
 
     // Remove Xray hits
-    imgProc::removeXrayHits(
-        &imgOrig, 
-        params.XrayHighCut, params.XrayLowCut, 
-        params.XraySTDcut, params.XrayWindow);
-    imgProc::removeXrayHits(
-        &imgSubBkg, 
-        params.XrayHighCut, params.XrayLowCut, 
-        params.XraySTDcut, params.XrayWindow,
-        xRayHitHistos);
+    cout<<"start removing xray"<<endl;
+    imgOrig_nanMap = imgProc::removeXrayHits(
+          &imgOrig, imgOrig_nanMap,
+          params.XrayHighCut, params.XrayLowCut, 
+          params.XraySTDcut, params.XrayWindow);
+    cout<<"start removing xray"<<endl;
+    imgSubBkg_nanMap = imgProc::removeXrayHits(
+          &imgSubBkg, imgSubBkg_nanMap,
+          params.XrayHighCut, params.XrayLowCut, 
+          params.XraySTDcut, params.XrayWindow,
+          xRayHitHistos);
+    cout<<"end removing xray"<<endl;
 
     if (params.pltVerbose) {
       plt.printRC(imgSubBkg, "./plots/imgSubBkg_original");
+      std::vector< std::vector<double> > tst;
+      for (int ir=0; ir<imgSubBkg_nanMap.size(); ir++) {
+        tst[ir].resize(imgSubBkg_nanMap[ir].size());
+        for (int ic=0; ic<imgSubBkg_nanMap[ir].size(); ic++) {
+          tst[ir][ic] = imgSubBkg_nanMap[ir][ic];
+        }
+      }
+      plt.printRC(tst, "./plots/imgSubBkg_nanMap_original");
 
       std::vector< vector<double> > testplot(imgSubBkg.size());
       for (int ir=0; ir<imgSubBkg.size(); ir++) {
@@ -1565,22 +1686,48 @@ int main(int argc, char* argv[]) {
 
 
     /////  Remove pixel outliers  /////
-    outlierImage = radProc.removeOutliers(imgSubBkg,  
+    cout<<"start removing outliers"<<endl;
+    /*
+    outlierImage = radProc.removeOutliers(
+        imgSubBkg, imgSubBkg_nanMap, 
         centerR, centerC, params.imgEdgeBuffer,
-        params.NradAzmBins, params.shellWidth, params.Npoly,
-        params.stdIncludeLeft, params.distSTDratioLeft,
-        params.stdCutLeft, params.meanBinSize,
-        params.stdIncludeRight, params.distSTDratioRight,
-        params.stdChangeRatio, params.stdCutRight,
-        imgINFO[ifl].stagePos, params.outlierMapSTDcut,
-        true, params.outlierVerbose, 
-        NULL, radPixelHistos);
+        params.NradAzmBins, params.NshellOutlierLoops,
+        params.shellWidth, params.Npoly,
+        params.stdChangeRatioLeft, params.stdChangeRatioRight,
+        params.stdAccRatioLeft, params.stdAccRatioRight,
+        params.stdCutLeft, params.stdCutRight, 
+        params.fracShellSTDcutLeft, params.fracShellSTDcutRight,
+        imgINFO[ifl].stagePos, params.outlierMapSTDcut, 
+        true, params.outlierVerbose, NULL, radPixelHistos);
+    */
 
-    outlierImage = radProc.removeOutliersSimple(
-        imgSubBkg, centerR, centerC, params.imgEdgeBuffer,
-        params.NradAzmBins, params.shellWidth, false, params.Npoly,
-        params.outlierSTDcut, imgINFO[ifl].stagePos, params.outlierMapSTDcut,
-        true, (false || params.outlierVerbose), NULL);//, &plt);
+    /*
+    outlierImage = radProc.removeOutliers_stdInclude(
+        imgSubBkg, imgSubBkg_nanMap, 
+        centerR, centerC, params.imgEdgeBuffer,
+        params.NradAzmBins, params.NshellOutlierLoops,
+        params.shellWidth, params.Npoly, 
+        params.stdIncludeLeft, params.distSTDratioLeft,
+        params.stdCutLeft, params.fracShellSTDcutLeft,
+        params.stdIncludeRight, params.distSTDratioRight,
+        params.stdCutRight, params.fracShellSTDcutRight,
+        params.stdChangeRatio, imgINFO[ifl].stagePos, 
+        params.outlierMapSTDcut, true, params.outlierVerbose, 
+        &plt, radPixelHistos);
+    */
+
+
+    cout<<"start removing outliers"<<endl;
+    if (params.outlierSimpleSTDcut > 0) {
+      outlierImage = radProc.removeOutliersSimple(
+          imgSubBkg, imgSubBkg_nanMap,
+          centerR, centerC, params.imgEdgeBuffer,
+          params.NradAzmBins, params.shellWidth,
+          false, params.Npoly, params.outlierSimpleSTDcut, 
+          imgINFO[ifl].stagePos, params.outlierMapSTDcut,
+          true, (false || params.outlierVerbose), NULL);//, &plt);
+    }
+    cout<<"end removing outliers"<<endl;
         
     /*
     radProc.removeOutliers(imgOrig,  
@@ -1651,16 +1798,18 @@ int main(int argc, char* argv[]) {
 
     ///// Remove readout noise  /////
     if (params.verbose) std::cout << "INFO: Readout noise subtraction.\n";
-    readoutNoise = imgProc::removeAvgReadOutNoise(imgSubBkg, centerR, centerC, 
+    readoutNoise = imgProc::removeAvgReadOutNoise(
+        imgSubBkg, imgSubBkg_nanMap, centerR, centerC, 
     //readoutNoise = imgProc::removeMedianReadOutNoise(imgSubBkg, centerR, centerC, 
-                      params.readoutAzmBinStart, params.readoutAzmBinEnd, 
-                      params.imgEdgeBuffer, &params.nanMap);
+        params.readoutAzmBinStart, params.readoutAzmBinEnd, 
+        params.imgEdgeBuffer);
 
     // Only use this when interested in reference images
     //    background fit fails when subtracting readout
     //    noise on the phosphor screen. Comment previous line.
-    //readoutNoise = imgProc::removeReadOutNoise(imgSubBkg);
+    //readoutNoise = imgProc::removeReadOutNoise(imgSubBkg, imgSubBkg_nanMap);
 
+    res_readoutNoise.push_back(readoutNoise);
 
     //////////////////////////////////////////////////////
     /////  Finding and subtracting laser background  /////
@@ -1678,7 +1827,7 @@ int main(int argc, char* argv[]) {
             ic<=centerC+params.holeRad+3; ic++) {
           if (std::pow(ir-centerR,2) + std::pow(ic-centerC,2) 
               < std::pow(params.holeRad, 2)) {
-            imgLaser[ir][ic] = imgLaser[(imgSize-1)-ir][(imgSize-1)-ic];
+            imgLaser[ir][ic] = imgLaser[(imgCut-1)-ir][(imgCut-1)-ic];
           }
         }
       }
@@ -1686,12 +1835,12 @@ int main(int argc, char* argv[]) {
 
       ///  Finding asymmetric parts of the image  ///
       std::vector< std::vector<double> > oddImgReal = imgProc::asymmetrize(imgLaser, 
-          centerR, centerC, imgSize, imgSize, 
+          centerR, centerC, imgCut, imgCut, 
           oddImgImgn, fftFref, fftIn, fftBref, fftOut);
 
       // Building map of ratio of noise/"signal" = asymmetric/symmetric
-      for (int ir=0; ir<imgSize; ir++) { 
-        for (int ic=0; ic<imgSize; ic++) {
+      for (int ir=0; ir<imgCut; ir++) { 
+        for (int ic=0; ic<imgCut; ic++) {
           symImg[ir][ic] = imgLaser[ir][ic] - oddImgReal[ir][ic];
           stdRatioImg[ir][ic] = oddImgReal[ir][ic]/std::max(std::abs(symImg[ir][ic]),0.01)
                                   /sqrt(pow(ir - centerR, 2) + pow(ic - centerC, 2));
@@ -1709,37 +1858,37 @@ int main(int argc, char* argv[]) {
 
       ///  Remove laser background from image by setting pixels = NANVAL  ///
       for (uint ip=0; ip<removePairs.size(); ip++) {
-        imgSubBkg[removePairs[ip].first][removePairs[ip].second] = NANVAL;
+        imgSubBkg_nanMap[removePairs[ip].first][removePairs[ip].second] = 1;
       }
       ///  Remove laser background from image by setting pixels = NANVAL  ///
-      //for (ir=0; ir<imgSize; ir++) {
-      //  for (ic=0; ic<imgSize; ic++) {
+      //for (ir=0; ir<imgCut; ir++) {
+      //  for (ic=0; ic<imgCut; ic++) {
       //    imgSubBkg[ir][ic] = imgOrig[ir][ic];
       //  }
       //}
 
-      //for (ir=imgSize/2-40; ir<imgSize/2+40; ir++) {
-      //  for (ic=imgSize/2-120; ic<imgSize/2; ic++) {
+      //for (ir=imgCut/2-40; ir<imgCut/2+40; ir++) {
+      //  for (ic=imgCut/2-120; ic<imgCut/2; ic++) {
       //    imgSubBkg[ir][ic] = NANVAL;
       //  }
       //}
-      //for (ir=imgSize/2-200; ir<imgSize/2+50; ir++) {
-      //  for (ic=imgSize-225; ic<imgSize-115; ic++) {
+      //for (ir=imgCut/2-200; ir<imgCut/2+50; ir++) {
+      //  for (ic=imgCut-225; ic<imgCut-115; ic++) {
       //    imgSubBkg[ir][ic] = NANVAL;
       //  }
       //}
-      //for (ir=imgSize/2-60; ir<imgSize/2+35; ir++) {
-      //  for (ic=imgSize-75; ic<imgSize; ic++) {
+      //for (ir=imgCut/2-60; ir<imgCut/2+35; ir++) {
+      //  for (ic=imgCut-75; ic<imgCut; ic++) {
       //    imgSubBkg[ir][ic] = NANVAL;
       //  }
       //}
       
       if (params.pltVerbose) {
         
-        std::vector< std::vector<double> > pltStdRat(imgSize);
-        for (int ir=0; ir<imgSize; ir++) {
-          pltStdRat[ir].resize(imgSize);
-          for (int ic=0; ic<imgSize; ic++) {
+        std::vector< std::vector<double> > pltStdRat(imgCut);
+        for (int ir=0; ir<imgCut; ir++) {
+          pltStdRat[ir].resize(imgCut);
+          for (int ic=0; ic<imgCut; ic++) {
             if (std::pow(ir-centerR,2) + std::pow(ic-centerC,2) 
                 < std::pow(params.holeRad, 2)) {
               pltStdRat[ir][ic] = 0;
@@ -1751,39 +1900,40 @@ int main(int argc, char* argv[]) {
         }
  
         delete plt.printRC(oddImgReal, 
-            "plots/oddImgReal_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));//, 
-            //pltOpts, pltVals);
+            "plots/oddImgReal_"+curRun+"_"+to_string(curScan)
+            +"_"+to_string(imgINFO[ifl].stagePos));//, pltOpts, pltVals);
 
         pltOpts[0] = minimum;	pltVals[0] = "0";
         pltOpts[1] = maximum;	pltVals[1] = "5e6";
         delete plt.printRC(imgLaserBkg, 
-            "plots/imgLaserBkg_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
+            "plots/imgLaserBkg_"+curRun+"_"+to_string(curScan)
+            +"_"+to_string(imgINFO[ifl].stagePos));
 
         pltOpts[0] = minimum;	pltVals[0] = "0"; //"1e4";
         pltOpts[1] = maximum;	pltVals[1] = to_string(params.coreValThresh); //"1e6";
         //pltOpts.push_back(logz);  pltVals.push_back("");
         delete plt.printRC(pltStdRat, 
-            "plots/imgStdRat_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos),
-            pltOpts, pltVals);
+            "plots/imgStdRat_"+curRun+"_"+to_string(curScan)
+            +"_"+to_string(imgINFO[ifl].stagePos), pltOpts, pltVals);
 
-        for (int ir=imgSize/2-40; ir<imgSize/2+40; ir++) {
-          for (int ic=imgSize/2-120; ic<imgSize/2; ic++) {
+        for (int ir=imgCut/2-40; ir<imgCut/2+40; ir++) {
+          for (int ic=imgCut/2-120; ic<imgCut/2; ic++) {
             pltStdRat[ir][ic] = 0;
           }
         }
-        for (int ir=imgSize/2-200; ir<imgSize/2+50; ir++) {
-          for (int ic=imgSize-225; ic<imgSize-115; ic++) {
+        for (int ir=imgCut/2-200; ir<imgCut/2+50; ir++) {
+          for (int ic=imgCut-225; ic<imgCut-115; ic++) {
             pltStdRat[ir][ic] = 0;
           }
         }
-        for (int ir=imgSize/2-60; ir<imgSize/2+35; ir++) {
-          for (int ic=imgSize-75; ic<imgSize; ic++) {
+        for (int ir=imgCut/2-60; ir<imgCut/2+35; ir++) {
+          for (int ic=imgCut-75; ic<imgCut; ic++) {
             pltStdRat[ir][ic] = 0;
           }
         }
         delete plt.printRC(pltStdRat, 
-            "plots/imgStdRatRemove_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos),
-            pltOpts, pltVals);
+            "plots/imgStdRatRemove_"+curRun+"_"+to_string(curScan)
+            +"_"+to_string(imgINFO[ifl].stagePos), pltOpts, pltVals);
       }
     }
 
@@ -1803,23 +1953,20 @@ int main(int argc, char* argv[]) {
         }
       }
       delete plt.printRC(pltOrig, 
-          "plots/imgOrig_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
+          "plots/imgOrig_"+curRun+"_"+to_string(curScan)
+          +"_"+to_string(imgINFO[ifl].stagePos));
       delete plt.printRC(pltSubBkg, 
-          "plots/imgSub_"+curRun+"_"+to_string(curScan)+"_"+to_string(stagePos));
+          "plots/imgSub_"+curRun+"_"+to_string(curScan)
+          +"_"+to_string(imgINFO[ifl].stagePos));
     }
-
-
-    //////////////////////////////////////////////////////////
-    /////  Filling image variables and filling the tree  /////
-    //////////////////////////////////////////////////////////
 
 
     //// TODO!!!!!!!!!!!!! MUST CENTER IMAGE BEFORE FITTING
     //////  Legendre Fit  //////
-    assert(imgSize%5 == 0);
-    assert(imgSize%5 == 0);
-    const int lgFit_Rows = imgSize/5;
-    const int lgFit_Cols = imgSize/5;
+    assert(imgCut%5 == 0);
+    assert(imgCut%5 == 0);
+    const int lgFit_Rows = imgCut/5;
+    const int lgFit_Cols = imgCut/5;
     // Check if g matrix already exists, else make new one
     string matrix_folder = "/reg/neh/home/khegazy/analysis/legendreFitMatrices/";
     string matrix_fileName = "gMatrix_row-" + to_string(lgFit_Rows)
@@ -1855,6 +2002,7 @@ int main(int argc, char* argv[]) {
     /////  Azimuthal average  /////
 
     std::fill(rawAzmAvg.begin(), rawAzmAvg.end(), 0);
+    std::fill(rawAzmAvg_nanMap.begin(), rawAzmAvg_nanMap.end(), 0);
     std::fill(azmCounts.begin(), azmCounts.end(), 0);
     //for (int k=0; k<params.NradAzmBins; k++) {
     //  radPixDist[radInd].clear();
@@ -1866,11 +2014,7 @@ int main(int argc, char* argv[]) {
         if (ic < params.imgEdgeBuffer 
             || imgSubBkg[ir].size() - ic < params.imgEdgeBuffer) continue;
 
-        if (imgSubBkg[ir][ic] != NANVAL) {
-          if (params.nanMap[ir][ic] == NANVAL) {
-            continue; 
-          }
-
+        if (imgSubBkg_nanMap[ir][ic] == 0) {
           radInd = std::round(
                       std::sqrt(
                         std::pow(ir-centerR,2) + std::pow(ic-centerC,2)));
@@ -1894,37 +2038,45 @@ int main(int argc, char* argv[]) {
       if (azmCounts[ir] != 0) {
         rawAzmAvg[ir] /= azmCounts[ir];
       }
-      else rawAzmAvg[ir] = NANVAL;
+      else rawAzmAvg_nanMap[ir] = 1;
     }
 
     /////  Image norm  /////
     imgNorm = 0;
     count = 0;
     for (int i=imgNormBinMin; i<imgNormBinMax; i++) {
-      if (rawAzmAvg[i] == NANVAL) continue;
+      if (rawAzmAvg_nanMap[i]) continue;
       imgNorm += rawAzmAvg[i]/atmDiff[i];
       count++;
     }
     imgNorm /= count;
 
-    for (int iq=0; iq<params.NradAzmBins; iq++) {
-      if (rawAzmAvg[iq] != NANVAL) {
-        rawAzmAvg[iq] /= imgNorm;
+    for (uint ir=0; ir<imgSubBkg.size(); ir++) {
+      for (uint ic=0; ic<imgSubBkg[ir].size(); ic++) {
+        imgSubBkg[ir][ic] /= imgNorm;
       }
+    }
+
+    for (int iq=0; iq<params.NradAzmBins; iq++) {
+      rawAzmAvg[iq] /= imgNorm;
       azmAvg[iq] = rawAzmAvg[iq];
+      azmAvg_nanMap[iq] = rawAzmAvg_nanMap[iq];
     }
 
     /////  Plotting azm lines  /////
-    cout<<"NORM: "<<stagePos<<"  "<<imgNorm<<endl;
+    cout<<"NORM: "<<imgINFO[ifl].stagePos<<"  "<<imgNorm<<endl;
+    std::string dirName = "/reg/ued/ana/scratch/"
+        + params.molName + "/" + params.experiment + "/polarLineOutTest/";
     pLO = radProc.getPolarLineOut(&imgSubBkg,
     //pLO = radProc.getPolarLineOut(&imgOrig,
             centerR, centerC, 168, 45, 200);
+    cout<<"made it"<<endl;
     for (int k=0; k<pLO.size(); k++) {
       pLO[k] /= imgNorm;
     }
     save::saveDat<double>(pLO, dirName 
         + "scan-" + to_string(curScan)
-        + "_stagePos-" + to_string(stagePos)
+        + "_stagePos-" + to_string(imgINFO[ifl].stagePos)
         + "_pixRange-168-213_Bins[" + to_string(pLO.size()) + "].dat"); 
 
     pLO = radProc.getPolarLineOut(&imgSubBkg,
@@ -1935,7 +2087,7 @@ int main(int argc, char* argv[]) {
     }
     save::saveDat<double>(pLO, dirName 
         + "scan-" + to_string(curScan)
-        + "_stagePos-" + to_string(stagePos)
+        + "_stagePos-" + to_string(imgINFO[ifl].stagePos)
         + "_pixRange-222-266_Bins[" + to_string(pLO.size()) + "].dat"); 
 
     //pLO = radProc.getPolarLineOut(&imgOrig,
@@ -1946,45 +2098,37 @@ int main(int argc, char* argv[]) {
     }
     save::saveDat<double>(pLO, dirName 
         + "scan-" + to_string(curScan)
-        + "_stagePos-" + to_string(stagePos)
+        + "_stagePos-" + to_string(imgINFO[ifl].stagePos)
         + "_pixRange-266-311_Bins[" + to_string(pLO.size()) + "].dat"); 
 
     /////  Build References  /////
-    if (imgIsRef) {
+    if (imgIsRef && params.hasRef) {
+      // I0 does not have any nan values in current configuration
       for (int iq=0; iq<params.NradAzmBins; iq++) {
         refAzmAvg[iq] = (refAzmAvg[iq]*Nref + rawAzmAvg[iq])/(Nref + 1);
       }
       Nref++;
-      I0refImgs[stagePos].resize(imgI0.size());
+      I0refImgs[imgINFO[ifl].stagePos].resize(imgI0.size());
+      I0refCount += 1;
       for (uint ir=0; ir<imgI0.size(); ir++) {
-        I0refImgs[stagePos][ir].resize(imgI0[ir].size(), NANVAL);
+        I0refImgs[imgINFO[ifl].stagePos][ir].resize(imgI0[ir].size(), 0);
         for (uint ic=0; ic<imgI0.size(); ic++) {
-          if (imgI0[ir][ic] != NANVAL) {
-            imgI0ref[ir][ic] += imgI0[ir][ic];
-            imgI0refCount[ir][ic]++;
-          }
-          I0refImgs[stagePos][ir][ic] = imgI0[ir][ic];
+          imgI0ref[ir][ic] += imgI0[ir][ic];
+          I0refImgs[imgINFO[ifl].stagePos][ir][ic] = imgI0[ir][ic];
         }
       }
     }
     else if (!normI0ref) {
       for (uint ir=0; ir<imgI0.size(); ir++) {
         for (uint ic=0; ic<imgI0.size(); ic++) {
-          if (imgI0refCount[ir][ic]) {
-            imgI0ref[ir][ic] /= imgI0refCount[ir][ic];
-          }
-          else {
-            imgI0ref[ir][ic] = NANVAL;
-          }
+          imgI0ref[ir][ic] /= I0refCount;//imgI0refCount[ir][ic];
         }
       }
 
       for (auto & itr : I0refImgs) {
         for (uint ir=0; ir<imgI0.size(); ir++) {
           for (uint ic=0; ic<imgI0.size(); ic++) {
-            if ((itr.second[ir][ic] != NANVAL) && (imgI0ref[ir][ic] != NANVAL)) {
-              itr.second[ir][ic] -= imgI0ref[ir][ic];
-            }
+            itr.second[ir][ic] -= imgI0ref[ir][ic];
           }
         }
 
@@ -2003,36 +2147,38 @@ int main(int argc, char* argv[]) {
 
 
     /////  I0 Results  /////
-    save::saveDat<double>(imgI0,
-        params.preProcI0OutputDir
-        + "data-" + runName
-        + "_I0_scan-" + to_string(curScan)
-        + "_stagePos-" + to_string(stagePos)
-        + "_bins[" + to_string(imgI0.size())
-        + "," + to_string(imgI0[0].size()) + "].dat");
-
-    if (!imgIsRef) {
-      for (uint ir=0; ir<imgI0.size(); ir++) {
-        for (uint ic=0; ic<imgI0.size(); ic++) {
-          if ((imgI0[ir][ic] != NANVAL) && (imgI0ref[ir][ic] != NANVAL)) {
-            imgI0[ir][ic] -= imgI0ref[ir][ic];
-          }
-        }
-      }
-
+    if (params.hasI0) {
       save::saveDat<double>(imgI0,
           params.preProcI0OutputDir
           + "data-" + runName
-          + "_I0refSubtracted_scan-" + to_string(curScan)
-          + "_stagePos-" + to_string(stagePos)
+          + "_I0_scan-" + to_string(curScan)
+          + "_stagePos-" + to_string(imgINFO[ifl].stagePos)
           + "_bins[" + to_string(imgI0.size())
           + "," + to_string(imgI0[0].size()) + "].dat");
+
+      if (!imgIsRef) {
+        for (uint ir=0; ir<imgI0.size(); ir++) {
+          for (uint ic=0; ic<imgI0.size(); ic++) {
+            imgI0[ir][ic] -= imgI0ref[ir][ic];
+          }
+        }
+
+        save::saveDat<double>(imgI0,
+            params.preProcI0OutputDir
+            + "data-" + runName
+            + "_I0refSubtracted_scan-" + to_string(curScan)
+            + "_stagePos-" + to_string(imgINFO[ifl].stagePos)
+            + "_bins[" + to_string(imgI0.size())
+            + "," + to_string(imgI0[0].size()) + "].dat");
+      }
     }
 
     /////  Low Pass Filtering  /////
+    if (params.verbose) cout << "INFO: Starting Low Pass Filter\n";
+
     std::vector<double> tstR(filtFFToutSize);
     if (!padRange) {
-      while (rawAzmAvg[padRange] == NANVAL) {
+      while (rawAzmAvg_nanMap[padRange]) {
         padRange++;
       }
     }
@@ -2065,6 +2211,7 @@ int main(int argc, char* argv[]) {
     }
 
 
+    if (params.verbose) cout << "\tForward FFT\n";
     if (params.pltFilterVerbose) {
       std::vector<double> tst(params.NradAzmBins);
       for (int iq=0; iq<params.NradAzmBins; iq++) {
@@ -2073,12 +2220,13 @@ int main(int argc, char* argv[]) {
       pltVals[0] = "-2";
       pltVals[1] = "2";
       delete plt.print1d(tst, 
-          "./plots/filtInput_" + to_string(stagePos),
+          "./plots/filtInput_" + to_string(imgINFO[ifl].stagePos),
           pltOpts, pltVals);
     }
 
     fftw_execute(filtFFTf);
 
+    if (params.verbose) cout << "\tBackwards FFT\n";
     for (int ir=0; ir<filtFFToutSize; ir++) {
       rSpace[ir][0] *= bandPassFilter[ir]/sqrt(params.NradAzmBins);
       rSpace[ir][1] *= bandPassFilter[ir]/sqrt(params.NradAzmBins);
@@ -2087,7 +2235,7 @@ int main(int argc, char* argv[]) {
     fftw_execute(filtFFTb);
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
-      if (azmAvg[iq] != NANVAL) {
+      if (azmAvg_nanMap[iq] == 0) {
         azmAvg[iq] = qSpace[iq]*atmDiff[iq]/sqrt(params.NradAzmBins);
 
         if (iq < params.suppressBins) {
@@ -2096,12 +2244,13 @@ int main(int argc, char* argv[]) {
         azmAvg[iq] += filtBaseline;
 
         if (iq < padRange) {
-          azmAvg[iq] = NANVAL;
+          azmAvg_nanMap[iq] = 1;
         }
       }
     }
 
     ///  Send high Q to 0 for filtered results  ///
+    if (params.verbose) cout << "INFO: Send high Q to 0\n";
     filtBaseline = 0;
     for (int iq=params.readoutAzmBinStart; iq<params.readoutAzmBinEnd; iq++) {
       filtBaseline += azmAvg[iq];
@@ -2109,29 +2258,40 @@ int main(int argc, char* argv[]) {
     filtBaseline /= params.readoutAzmBinEnd - params.readoutAzmBinStart;
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
-      if (azmAvg[iq] != NANVAL) {
-        azmAvg[iq] -= filtBaseline;
+      azmAvg[iq] -= filtBaseline;
+    }
+    for (uint ir=0; ir<imgSubBkg.size(); ir++) {
+      for (uint ic=0; ic<imgSubBkg[ir].size(); ic++) {
+        imgSubBkg[ir][ic] -= filtBaseline;
       }
     }
+    res_zeroHighQ.push_back(filtBaseline);
 
     ///  Image norm filtered result ///
     double filtImgNorm = 0;
     count = 0;
     for (int i=imgNormBinMin; i<imgNormBinMax; i++) {
-      if (azmAvg[i] == NANVAL) continue;
+      if (azmAvg_nanMap[i]) continue;
       filtImgNorm += azmAvg[i]/atmDiff[i];
       count++;
     }
     filtImgNorm /= count;
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
-      if (azmAvg[iq] != NANVAL) {
+      if (azmAvg_nanMap[iq] == 0) {
         azmAvg[iq] /= filtImgNorm;
       }
     }
 
     ///  Updating and applying image norm  ///
     imgNorm *= filtImgNorm;
+    for (uint ir=0; ir<imgSubBkg.size(); ir++) {
+      for (uint ic=0; ic<imgSubBkg[ir].size(); ic++) {
+        imgSubBkg[ir][ic] /= filtImgNorm;
+      }
+    }
+
+
     /*
     for (uint i=0; i<radPixMeans.size(); i++) {
       radPixMeans[i] /= imgNorm;
@@ -2155,14 +2315,16 @@ int main(int argc, char* argv[]) {
       }
       pltVals[0] = "-0.2";
       pltVals[1] = "0.2";
-      plts[0] = plt.plot1d(tst1, "blah_" + to_string(stagePos),pltOpts, pltVals);
-      plts[1] = plt.print1d(tst2, "./plots/filtOutp_" + to_string(stagePos),pltOpts, pltVals);
+      plts[0] = plt.plot1d(tst1, "blah_" + to_string(imgINFO[ifl].stagePos),
+          pltOpts, pltVals);
+      plts[1] = plt.print1d(tst2, "./plots/filtOutp_" + to_string(imgINFO[ifl].stagePos),
+          pltOpts, pltVals);
       plts[1]->SetLineColor(4);
       plts[0]->SetMaximum(40);
-      plt.print1d(plts, "./plots/filtCompare_" + to_string(stagePos));
+      plt.print1d(plts, "./plots/filtCompare_" + to_string(imgINFO[ifl].stagePos));
       plts[0]->SetMinimum(1);
       plt.print1d(
-          plts, "./plots/filtCompareLogy_" + to_string(stagePos), 
+          plts, "./plots/filtCompareLogy_" + to_string(imgINFO[ifl].stagePos), 
           logy, "true");
       delete plts[0];
       delete plts[1];
@@ -2171,37 +2333,228 @@ int main(int argc, char* argv[]) {
     /////  Plotting results  /////
     if (params.pltVerbose) {
       //plt.print1d(rawAzmAvg, "plots/azimuthalAvg_" + to_string(imgINFO[ifl].imgNum));
-      plt.print1d(rawAzmAvg, "tazimuthalAvg_" + to_string(stagePos), logy, "true");
+      plt.print1d(rawAzmAvg, "tazimuthalAvg_" + to_string(imgINFO[ifl].stagePos),
+          logy, "true");
     }
  
-    if (imgIsRef || stagePos == 1565700) {
-      std::vector< std::vector<double> > temp(imgSubBkg.size());
-      for (uint kr=0; kr<imgSubBkg.size(); kr++) {
-        temp[kr].resize(imgSubBkg[kr].size());
-        for (uint kc=0; kc<imgSubBkg[kr].size(); kc++) {
-          if (imgSubBkg[kr][kc] != NANVAL) {
-            temp[kr][kc] = imgSubBkg[kr][kc]/(imgNorm*filtImgNorm);
-          }
-          else {
-            temp[kr][kc] = NANVAL;
-          }
-        }
+
+    //////////////////////////////////////////////////////////
+    /////  Filling image variables and filling the tree  /////
+    //////////////////////////////////////////////////////////
+
+    if (params.verbose) cout << "INFO: Filling result vectors\n";
+
+    res_imgNorm.push_back(imgNorm);
+
+    res_imgOrig[ifl].resize(imgOrig.size());
+    res_imgOrig_nanMap[ifl].resize(imgOrig.size());
+    res_imgSubBkg[ifl].resize(imgOrig.size());
+    res_imgSubBkg_nanMap[ifl].resize(imgOrig.size());
+    for (int ir=0; ir<(int)imgOrig.size(); ir++) {
+      res_imgOrig[ifl][ir].resize(imgOrig[ir].size(), 0);
+      res_imgOrig_nanMap[ifl][ir].resize(imgOrig[ir].size(), 0);
+      res_imgSubBkg[ifl][ir].resize(imgSubBkg[ir].size(), 0);
+      res_imgSubBkg_nanMap[ifl][ir].resize(imgSubBkg[ir].size(), 0);
+      for (int ic=0; ic<1024; ic++) {
+        res_imgOrig[ifl][ir][ic] = imgOrig[ir][ic];
+        res_imgOrig_nanMap[ifl][ir][ic] = imgOrig_nanMap[ir][ic];
+        res_imgSubBkg[ifl][ir][ic] = imgSubBkg[ir][ic];
+        res_imgSubBkg_nanMap[ifl][ir][ic] = imgSubBkg_nanMap[ir][ic];
       }
-      save::saveDat<double>(temp,
-          "/reg/ued/ana/scratch/nitroBenzene/refTesting/run-"
-          + runName + "_scan-" + to_string(curScan)
-          + "_stagePos-" + to_string(stagePos) + "_bins[1024,1024].dat");
+    }
+    /*
+    res_imgSubBkg[ifl].resize(params.imgSize);
+    res_imgSubBkg_nanMap[ifl].resize(params.imgSize);
+    int offset = params.imgSize/2;
+    for (int ir=-1*offset; ir<=offset; ir++) {
+      res_imgSubBkg[ifl][ir+offset].resize(imgSubBkg[ir+centerR].size(), 0);
+      res_imgSubBkg_nanMap[ifl][ir+offset].resize(imgSubBkg[ir+centerR].size(), 0);
+      for (int ic=-1*offset; ic<=offset; ic++) {
+        res_imgSubBkg[ifl][ir+offset][ic+offset] = 
+            imgSubBkg[ir+centerR][ic+centerC];
+        res_imgSubBkg_nanMap[ifl][ir+offset][ic+offset] = 
+            imgSubBkg_nanMap[ir+centerR][ic+centerC];
+
+      }
+    }
+    */
+
+    res_azmAvg[ifl].resize(azmAvg.size());
+    res_azmAvg_nanMap[ifl].resize(azmAvg.size());
+    res_rawAzmAvg[ifl].resize(rawAzmAvg.size());
+    res_rawAzmAvg_nanMap[ifl].resize(rawAzmAvg.size());
+    for (uint ir=0; ir<rawAzmAvg.size(); ir++) {
+      res_azmAvg[ifl][ir] = azmAvg[ir];
+      res_azmAvg_nanMap[ifl][ir] = azmAvg_nanMap[ir];
+      res_rawAzmAvg[ifl][ir] = rawAzmAvg[ir];
+      res_rawAzmAvg_nanMap[ifl][ir] = rawAzmAvg_nanMap[ir];
     }
 
+    
+   
+    /*
+    /////  Saving Indices/Values at Specific Radii  /////
+    std::map<int, std::vector< std::vector<int> > > img_inds;
+    std::map<int, std::vector< std::vector<int> > > rel_inds;
+    std::map<int, std::vector<double> > img_vals;
+    std::map<int, std::vector<int> >    img_nans;
+    for (int ir=0; ir<(int)imgSubBkg.size(); ir++) {
+      if (ir < params.imgEdgeBuffer 
+          || imgSubBkg.size() - ir < params.imgEdgeBuffer) continue;
+      for (int ic=0; ic<(int)imgSubBkg[ir].size(); ic++) {
+        if (ic < params.imgEdgeBuffer 
+            || imgSubBkg[ir].size() - ic < params.imgEdgeBuffer) continue;
 
-    // Save image and info to tree
-    tree->Fill();
+        radInd = std::round(std::sqrt(
+            std::pow(ir-centerR,2) + std::pow(ic-centerC,2)));
+
+        std::vector<int> iinds(2);
+        iinds[0] = ir; iinds[1] = ic;
+        img_inds[radInd].push_back(iinds);
+        
+        std::vector<int> rinds(2);
+        rinds[0] = ir - centerR; rinds[1] = ic - centerC;
+        rel_inds[radInd].push_back(rinds);
+
+        img_vals[radInd].push_back(imgSubBkg[ir][ic]);
+        img_nans[radInd].push_back(imgSubBkg_nanMap[ir][ic]);
+      }
+    }
+
+    radial_base_folder = results_folder + "/radialGrouping/Scan-"
+      + to_string(curScan);
+  
+    if (!tools::fileExists(radial_base_folder)) {
+      mkdir(radial_base_folder.c_str(), 0777);
+      mkdir((radial_base_folder+"/indices").c_str(), 0777);
+      mkdir((radial_base_folder+"/values").c_str(), 0777);
+    }
+      + "imgNum-" + to_string(imgINFO[ifl].imgNum) + "_";
+    for (auto& itr : img_vals) {
+      save::saveDat<int>(img_inds[itr.first],
+          radial_base_folder + "/indices/" 
+          + "imgNum-" + to_string(imgINFO[ifl].imgNum) + "_"
+          + "rad-" + to_string(itr.first) + "_imgInds_Shape["
+          + to_string(img_inds[itr.first].size()) + ",2].dat");
+      save::saveDat<int>(rel_inds[itr.first],
+          radial_base_folder + "/indices/" 
+          + "imgNum-" + to_string(imgINFO[ifl].imgNum) + "_"
+          + "rad-" + to_string(itr.first) + "_relInds_Shape["
+          + to_string(rel_inds[itr.first].size()) + ",2].dat");
+      save::saveDat<double>(img_vals[itr.first],
+          radial_base_folder + "/values/"
+          + "imgNum-" + to_string(imgINFO[ifl].imgNum) + "_"
+          + "rad-" + to_string(itr.first) + "_imgVals_Shape["
+          + to_string(img_nans[itr.first].size()) + "].dat");
+      save::saveDat<int>(img_nans[itr.first],
+          radial_base_folder + "/values/"
+          + "imgNum-" + to_string(imgINFO[ifl].imgNum) + "_"
+          + "rad-" + to_string(itr.first) + "_imgNans_Shape["
+          + to_string(img_nans[itr.first].size()) + "].dat");
+    }
+    */
   }
 
 
-  /////  Cleaning Up  /////
-  tree->Write();
-  file->Close();
+  ////////////////////////////
+  /////  Saving Results  /////
+  ////////////////////////////
+
+
+  results_file_prefix = results_folder + "/Scan-" + to_string(curScan) + "_";
+
+  save::saveDat<int>(res_imgNum,
+      results_file_prefix +"imgNum_Shape["
+      + to_string(res_imgNum.size()) + "].dat");
+  save::saveDat<int>(res_imgIsRef,
+      results_file_prefix +"imgIsRef_Shape["
+      + to_string(res_imgIsRef.size()) + "].dat");
+  save::saveDat<int>(res_timeStamp,
+      results_file_prefix +"timeStamp_Shape["
+      + to_string(res_timeStamp.size()) + "].dat");
+  save::saveDat<int>(res_stagePos,
+      results_file_prefix +"stagePos_Shape["
+      + to_string(res_stagePos.size()) + "].dat");
+  save::saveDat<float>(res_throttle,
+      results_file_prefix +"throttle_Shape["
+      + to_string(res_throttle.size()) + "].dat");
+  save::saveDat<int>(res_centerC,
+      results_file_prefix +"centerC_Shape["
+      + to_string(res_centerC.size()) + "].dat");
+  save::saveDat<int>(res_centerR,
+      results_file_prefix +"centerR_Shape["
+      + to_string(res_centerR.size()) + "].dat");
+  save::saveDat<float>(res_centerCstdRatio,
+      results_file_prefix +"centerCstdRatio_Shape["
+      + to_string(res_centerCstdRatio.size()) + "].dat");
+  save::saveDat<float>(res_centerRstdRatio,
+      results_file_prefix +"centerRstdRatio_Shape["
+      + to_string(res_centerRstdRatio.size()) + "].dat");
+  save::saveDat<int>(res_I0centerC,
+      results_file_prefix +"I0centerC_Shape["
+      + to_string(res_I0centerC.size()) + "].dat");
+  save::saveDat<int>(res_I0centerR,
+      results_file_prefix +"I0centerR_Shape["
+      + to_string(res_I0centerR.size()) + "].dat");
+  save::saveDat<float>(res_I0norm,
+      results_file_prefix +"I0norm_Shape["
+      + to_string(res_I0norm.size()) + "].dat");
+  save::saveDat<float>(res_imgNorm,
+      results_file_prefix +"imgNorm_Shape["
+      + to_string(res_imgNorm.size()) + "].dat");
+  save::saveDat<float>(res_readoutNoise,
+      results_file_prefix +"readoutNoise_Shape["
+      + to_string(res_readoutNoise.size()) + "].dat");
+  save::saveDat<float>(res_zeroHighQ,
+      results_file_prefix +"zeroHighQ_Shape["
+      + to_string(res_zeroHighQ.size()) + "].dat");
+
+  save::saveDat<double>(res_imgOrig,
+      results_file_prefix +"imgOrig_Shape["
+      + to_string(res_imgOrig.size()) + ","
+      + to_string(res_imgOrig[0].size()) + ","
+      + to_string(res_imgOrig[0][0].size()) + "].dat");
+  save::saveDat<int>(res_imgOrig_nanMap,
+      results_file_prefix +"imgOrig_nanMap_Shape["
+      + to_string(res_imgOrig.size()) + ","
+      + to_string(res_imgOrig[0].size()) + ","
+      + to_string(res_imgOrig[0][0].size()) + "].dat");
+  save::saveDat<double>(res_imgSubBkg,
+      results_file_prefix +"procImg_Shape["
+      + to_string(res_imgSubBkg.size()) + ","
+      + to_string(res_imgSubBkg[0].size()) + ","
+      + to_string(res_imgSubBkg[0][0].size()) + "].dat");
+  save::saveDat<int>(res_imgSubBkg_nanMap,
+      results_file_prefix +"procImg_nanMap_Shape["
+      + to_string(res_imgSubBkg.size()) + ","
+      + to_string(res_imgSubBkg[0].size()) + ","
+      + to_string(res_imgSubBkg[0][0].size()) + "].dat");
+
+  //std::vector<std::vector<float> > res_legCoeffs;
+  save::saveDat<double>(res_rawAzmAvg,
+      results_file_prefix +"rawAzmAvg_Shape["
+      + to_string(res_rawAzmAvg.size()) + ","
+      + to_string(res_rawAzmAvg[0].size()) + "].dat");
+  save::saveDat<int>(res_rawAzmAvg_nanMap,
+      results_file_prefix +"rawAzmAvg_nanMap_Shape["
+      + to_string(res_rawAzmAvg.size()) + ","
+      + to_string(res_rawAzmAvg[0].size()) + "].dat");
+  save::saveDat<double>(res_azmAvg,
+      results_file_prefix +"azmAvg_Shape["
+      + to_string(res_rawAzmAvg.size()) + ","
+      + to_string(res_rawAzmAvg[0].size()) + "].dat");
+  save::saveDat<int>(res_azmAvg_nanMap,
+      results_file_prefix +"azmAvg_nanMap_Shape["
+      + to_string(res_rawAzmAvg.size()) + ","
+      + to_string(res_rawAzmAvg[0].size()) + "].dat");
+
+  save::saveDat<double>(res_imgRadSTD,
+      results_file_prefix +"imgRadSTD_Shape["
+      + to_string(res_imgRadSTD.size()) + ","
+      + to_string(res_imgRadSTD[0].size()) + "].dat");
+
+
+
 
   if (params.xRayHitDist) {
     std::vector<PLOToptions> xOpts(2);

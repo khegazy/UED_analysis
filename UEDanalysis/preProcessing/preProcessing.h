@@ -12,6 +12,8 @@ namespace ppFunct {
 
   bool getScanRunInfo(std::vector<imgProc::imgInfoStruct> &imgINFO, 
             std::string runListName, bool verbose);
+  bool getI0RunInfo(std::map<int, std::string> &I0fileNames,
+      std::string runListName, bool verbose);
   void makeRunLists(std::vector<imgProc::imgInfoStruct> &imgINFO,
             std::string runName, std::string preProcFolder);
 
