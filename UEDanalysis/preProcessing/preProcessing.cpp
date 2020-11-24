@@ -1687,8 +1687,18 @@ int main(int argc, char* argv[]) {
 
     /////  Remove pixel outliers  /////
     cout<<"start removing outliers"<<endl;
-    /*
     outlierImage = radProc.removeOutliers(
+        imgSubBkg, imgSubBkg_nanMap, 
+        centerR, centerC, params.imgEdgeBuffer,
+        params.NradAzmBins, params.NshellOutlierLoops,
+        params.shellWidth, params.Npoly,
+        params.stdOutlierCutLeft, params.stdOutlierCutRight,
+        params.stdCutLeft, params.stdCutRight, 
+        imgINFO[ifl].stagePos, params.outlierMapSTDcut, 
+        true, params.outlierVerbose, NULL, radPixelHistos);
+
+    /*
+    outlierImage = radProc.removeOutliers_stdRatio(
         imgSubBkg, imgSubBkg_nanMap, 
         centerR, centerC, params.imgEdgeBuffer,
         params.NradAzmBins, params.NshellOutlierLoops,
