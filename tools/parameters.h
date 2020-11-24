@@ -153,6 +153,8 @@ class parameterClass {
     double stdChangeRatioRight;
     double stdAccRatioLeft;
     double stdAccRatioRight;
+    double stdOutlierCutLeft;
+    double stdOutlierCutRight;      
     double stdCutLeft;
     double stdCutRight;      
     double fracShellSTDcutLeft;
