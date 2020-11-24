@@ -102,18 +102,36 @@ namespace imgProc {
       //radProcTool(string inpIndPath);
       radProcTool(int shellWidth, int maxRad);
 
-      double getMean(vector<double> vals);
-      double getMMean(vector<double> vals, vector<int> ord, double range, bool verbose=false);
+      double getMean(
+          vector<double> vals, int leftCut=-1, int rightCut=-1);
+      double getMMean(
+          vector<double> vals, vector<int> ord,
+          double range, bool verbose=false);
       void   getSmearedDist(std::map<int, double> &smearedDist, 
                   vector<double> &vals, double stdev, bool verbose=false);
-      double getSTDev(vector<double> vals, double mean);
-      double getLeftSTDev(vector<double> vals, vector<int> ord, double mean);
+      double getSTDev(
+          vector<double> vals, double mean,
+          int leftCut=-1, int rightCut=-1);
+      double getLeftSTDev(
+          vector<double> vals, vector<int> ord, double mean, int leftCut=-1);
 
       int    getNrightEntries(vector<double> vals, vector<int> ord, double mean);
       int    getNleftEntries(vector<double> vals, vector<int> ord, double mean);
       int    getLeftOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
       int    getRightOutliers(vector<double> &vals, vector<int> &orderedInds, double mean, double stdev, double Nstdev);
       std::vector< std::vector<double> > removeOutliers(
+              vector< vector<double> > &image,
+              vector< vector<int> > &nanMap,
+              int centerR, int centerC, int buffer,
+              int maxRad, int NshellOutlierLoops,
+              int shellWidth, int Npoly,
+              double stdOutlierCutLeft, double stdOutlierCutRight,
+              double stdCutLeft, double stdCutRight,
+              int stg, double outlierMapSTDcut,   
+              bool getOutlierImage, bool verbose,
+              PLOTclass* pltVerbose, TH1F** radPixHistos=NULL);
+
+      std::vector< std::vector<double> > removeOutliers_stdRatio(
               vector< vector<double> > &image,
               vector< vector<int> > &nanMap,
               int centerR, int centerC, int buffer,
