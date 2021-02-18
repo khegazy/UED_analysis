@@ -10,36 +10,34 @@ int main(int argc, char* argv[]) {
   if (argc<2) {
     cerr<<"ERROR: Missing input arguments, must run code ./analysis.exe 'fileList.txt' !!!"<<endl;
     cerr<<"         Can also run ./analysis.exe 'fileList.txt' 'treeName'"<<endl;
-    exit(0);
+    exit(1);
   }
 
 
   ///////////////////////////////////////////////////////////
   /////  Load environment and get the number of events  /////
   ///////////////////////////////////////////////////////////
-  
-  string fileList(argv[1]);
-  string treeName("physics");
-  if (argc==3) string treeName(argv[2]);
-  analysisClass analysis(fileList, treeName);  // Use this when specifying treeName
+ 
+  std::string input_run(argv[1]);
+  analysisClass analysis(input_run);
+  std::vector<std::string> variables{
+      "imgNum", "stagePos", "timeStamp", "imgNorm", "I0norm", "imgIsRef",
+      "centerR", "centerC", "centerRstdRatio", "centerCstdRatio",
+      "I0centerR", "I0centerC", "imgRadSTD", "pressure", "UVcounts", 
+      "legCoeffs", "legCoeffs_nanMap", "azmAvg", "azmAvg_nanMap"};
+  cout<<"scan size "<<scans.size();
+  analysis.init_preProcesses_data(variables);
+  cout<<"  "<<imgNums->size()<<endl;
 
-  uint64_t Nentries;
-  Nentries = analysis.setupEnvironment();  // Alter this function as needed for specific setup
-
+  uint64_t Nentries = scans.size();
   cout.setf(ios::scientific);
   
   //////////////////////////////////
   /////  Setting up variables  /////
   //////////////////////////////////
 
-  auto iPos = fileList.find("run-");
-  if (iPos == string::npos) {
-    iPos = fileList.find("RUN-");
-  }
-  iPos += 4;
-  std::string runName = fileList.substr(iPos, 13);
-  cout<<"RunName: "<<runName<<endl;
-  mergeClass merge(runName);
+  cout<<"RunName: "<<analysis.run<<endl;
+  mergeClass merge(analysis.run);
 
   std::string prefix = "";
   bool scanSearch = false;
@@ -69,7 +67,7 @@ int main(int argc, char* argv[]) {
     }
     else {
       cerr<<"ERROR!!! Option "<<argv[iarg]<<" does not exist!"<<endl;
-      exit(0);
+      exit(1);
     }
   }
 
@@ -108,58 +106,92 @@ int main(int argc, char* argv[]) {
   std::map< string, int > runShifts;
 
   ///// Loop through events in the file and saving to maps  /////
-  //int pInd;
-  //int tmInd = 0;
-  std::vector< std::vector<double> > rpVals(merge.NradAzmBins/5);
+  std::vector<int> remove_inds;
   for (uint64_t ievt=0; ievt<Nentries; ievt++) {
-    analysis.loadEvent(ievt);
 
-
-    //if (scan >= 75 && scan < 105) {
-    //  continue;
-    //}
-    if (std::find(merge.badScans.begin(), merge.badScans.end(), scan) 
-          != merge.badScans.end()) continue;
-    auto badImgItr = merge.badImages.find(scan);
+    if (std::find(merge.badScans.begin(), merge.badScans.end(), scans[ievt]) 
+          != merge.badScans.end()) {
+      remove_inds.push_back(ievt);
+      continue;
+    }
+    auto badImgItr = merge.badImages.find(scans[ievt]);
     if (badImgItr != merge.badImages.end()) {
-      if (std::find(badImgItr->second.begin(), badImgItr->second.end(), stagePos) 
+      if (std::find(badImgItr->second.begin(), badImgItr->second.end(),
+              (*stagePos)[ievt]) 
             != badImgItr->second.end()) {
-        continue;
+        remove_inds.push_back(ievt);
       }
     }
+  }
 
+  sort(remove_inds.begin(), remove_inds.end(), greater<int>());
+  for (auto ind : remove_inds) {
+    scans.erase(scans.begin()+ind);
+    imgNums->erase(imgNums->begin()+ind);
+    stagePos->erase(stagePos->begin()+ind);
+    timeStamps->erase(timeStamps->begin()+ind);
+    imgNorms->erase(imgNorms->begin()+ind);
+    I0norms->erase(I0norms->begin()+ind);
+    imgIsRefs->erase(imgIsRefs->begin()+ind);
+    centerRs->erase(centerRs->begin()+ind);
+    centerCs->erase(centerCs->begin()+ind);
+    centerRstdRatios->erase(centerRstdRatios->begin()+ind);
+    centerCstdRatios->erase(centerCstdRatios->begin()+ind);
+    I0centerRs->erase(I0centerRs->begin()+ind);
+    I0centerCs->erase(I0centerCs->begin()+ind);
+    imgRadSTDs->erase(imgRadSTDs->begin()+ind);
+    legCoeffs->erase(legCoeffs->begin()+ind);
+    legCoeffs_nanMaps->erase(legCoeffs_nanMaps->begin()+ind);
+    azmAvgs->erase(azmAvgs->begin()+ind);
+    azmAvg_nanMaps->erase(azmAvg_nanMaps->begin()+ind);
+    pressures->erase(pressures->begin()+ind);
+    UVcounts->erase(UVcounts->begin()+ind);
+  }
+  std::cerr << "WARNING: RESHAPING LEGENDRES (HACK) SINCE PREPROC DOESN'T CALC THEM\n";
+  for (uint i=0; i<legCoeffs->size(); i++) {
+    (*legCoeffs)[i].resize(merge.NradLegBins, 0);
+    (*legCoeffs_nanMaps)[i].resize(merge.NradLegBins, 0);
+  }
+
+  Nentries = scans.size();
+  std::vector< std::vector<double> > rpVals(merge.NradAzmBins/5);
+  for (uint64_t ievt=0; ievt<Nentries; ievt++) {
     // Remove Q regions of certain stage positions
-    merge.removeBadRegions(azmAvg, stagePos);
+    merge.removeBadRegions(&(*azmAvg_nanMaps)[ievt], (*stagePos)[ievt]);
 
     bool fillLabParams = false;
 
     // Adding Reference Images
     if (std::find(merge.refSubtractStagePos.begin(), 
-            merge.refSubtractStagePos.end(), stagePos) 
+            merge.refSubtractStagePos.end(), (*stagePos)[ievt]) 
           != merge.refSubtractStagePos.end()) {
       if (merge.verbose) std::cout << "INFO: Adding reference image.\n";
-    
-      merge.addReference(scan, stagePos, timeStamp, azmAvg, legCoeffs, imgNorm);
+   
+      merge.addReference(
+          scans[ievt], (*stagePos)[ievt], (*timeStamps)[ievt],
+          &(*azmAvgs)[ievt], &(*azmAvg_nanMaps)[ievt], 
+          &(*legCoeffs)[ievt], &(*legCoeffs_nanMaps)[ievt], (*imgNorms)[ievt]);
       fillLabParams = true;
     }
 
     // Adding Time Dependent Images
-    if (!imgIsRef) {
-      merge.addEntry(scan, stagePos, timeStamp, azmAvg, legCoeffs, imgNorm);
-      /*
-      if (stagePos == 1542750) {
-        int k = 0;
-        for (int i=4; i<merge.NradAzmBins; i+=5) {
-          rpVals[k].insert(rpVals[k].end(), 
-              (*radPixDist)[i].begin(), 
-              (*radPixDist)[i].end());
-          k+=1;
-        }
-        if (k != rpVals.size()) {
-          cout<<"SIZES: "<<k<<" "<<rpVals.size()<<endl;
-        }
-      }
-      */
+    if (!(*imgIsRefs)[ievt]) {
+      merge.addEntry(
+          scans[ievt], (*stagePos)[ievt], (*timeStamps)[ievt],
+          &(*azmAvgs)[ievt], &(*azmAvg_nanMaps)[ievt],
+          &(*legCoeffs)[ievt], &(*legCoeffs_nanMaps)[ievt], (*imgNorms)[ievt]);
+      //if (stagePos == 1542750) {
+      //  int k = 0;
+      //  for (int i=4; i<merge.NradAzmBins; i+=5) {
+      //    rpVals[k].insert(rpVals[k].end(), 
+      //        (*radPixDist)[i].begin(), 
+      //        (*radPixDist)[i].end());
+      //    k+=1;
+      //  }
+      //  if (k != rpVals.size()) {
+      //    cout<<"SIZES: "<<k<<" "<<rpVals.size()<<endl;
+      //  }
+      //}
       fillLabParams = true;
     }
     
@@ -168,36 +200,36 @@ int main(int argc, char* argv[]) {
     //}
 
     // Adding image parameters
-    merge.addLabTimeParameter(timeStamp, "scan", scan);
-    merge.addLabTimeParameter(timeStamp, "stagePos", stagePos);
-    merge.addLabTimeParameter(timeStamp, "imgNorm", imgNorm);
-    merge.addLabTimeParameter(timeStamp, "I0norm", I0norm);
-    merge.addLabTimeParameter(timeStamp, "centerR", centerR);
-    merge.addLabTimeParameter(timeStamp, "centerC", centerC);
-    merge.addLabTimeParameter(timeStamp, "I0centerR", I0centerR);
-    merge.addLabTimeParameter(timeStamp, "I0centerC", I0centerC);
-    merge.addLabTimeParameter(timeStamp, "centerRstdRatio", centerRstdRatio);
-    merge.addLabTimeParameter(timeStamp, "centerCstdRatio", centerCstdRatio);
-    for (uint i=0; i<imgRadSTD->size(); i++) {
+    merge.addLabTimeParameter((*timeStamps)[ievt], "scan", scans[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "stagePos", (*stagePos)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "imgNorm", (*imgNorms)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "I0norm", (*I0norms)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "centerR", (*centerRs)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "centerC", (*centerCs)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "I0centerR", (*I0centerRs)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "I0centerC", (*I0centerCs)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "centerRstdRatio", (*centerRstdRatios)[ievt]);
+    merge.addLabTimeParameter((*timeStamps)[ievt], "centerCstdRatio", (*centerCstdRatios)[ievt]);
+    // FIX preproc calculation then uncomment
+    for (uint i=0; i<(*imgRadSTDs)[ievt].size(); i++) {
       merge.addLabTimeParameter(
-          timeStamp, 
+          (*timeStamps)[ievt], 
           "imgRadSTD" + to_string(i), 
-          (*imgRadSTD)[i]);
-
+          (*imgRadSTDs)[ievt][i]);
     }
     // Adding lab/setup parameters
     for (auto const & pvInd : merge.pvMap) {
       if (pvInd.first.compare("pressure") == 0) {
-        merge.addLabTimeParameter(timeStamp, "pressure", pressure);
+        merge.addLabTimeParameter((*timeStamps)[ievt], "pressure", (*pressures)[ievt]);
       }
       else if (pvInd.first.compare("UVcounts") == 0) {
-        merge.addLabTimeParameter(timeStamp, "UVcounts", UVcounts);
+        merge.addLabTimeParameter((*timeStamps)[ievt], "UVcounts", (*UVcounts)[ievt]);
       }
       else if (pvInd.first.compare("bunkerTemp") == 0) {
-        merge.addLabTimeParameter(timeStamp, "bunkerTemp", bunkerTemp);
+        merge.addLabTimeParameter((*timeStamps)[ievt], "bunkerTemp", (*bunkerTemps)[ievt]);
       }
       else if (pvInd.first.compare("highBayTemp") == 0) {
-        merge.addLabTimeParameter(timeStamp, "highBayTemp", bunkerTemp);
+        merge.addLabTimeParameter((*timeStamps)[ievt], "highBayTemp", (*bunkerTemps)[ievt]);
       }
       else {
         std::cerr << "ERROR: Do not know how to add PV " 
@@ -208,24 +240,22 @@ int main(int argc, char* argv[]) {
 
     if (merge.saveMergeIntermediates) {
       save::saveDat<double>(
-          (*imgOrig),
+          (*imgOrigs)[ievt],
           merge.saveMergeInterFolder 
-            + "/imgOrig-" + runName + "_scan-" + to_string(scan)
-            + "_stagePos-" + to_string(stagePos) + ".dat");
+            + "/imgOrig-" + merge.run + "_scan-" + to_string(scans[ievt])
+            + "_stagePos-" + to_string((*stagePos)[ievt]) + ".dat");
       save::saveDat<double>(
-          (*imgSubBkg),
+          (*imgSubBkgs)[ievt],
           merge.saveMergeInterFolder 
-            + "/imgSubBkg-" + runName + "_scan-" + to_string(scan)
-            + "_stagePos-" + to_string(stagePos) + ".dat");
+            + "/imgSubBkg-" + merge.run + "_scan-" + to_string(scans[ievt])
+            + "_stagePos-" + to_string((*stagePos)[ievt]) + ".dat");
     }
 
   }
 
-  cout<<"computing if I0 moved"<<endl;
   ///  Check if I0 moved within this time frame  ///
   for (auto& itr : merge.labTimeParams) {
     labTimeStamps.push_back(itr.first);
-    cout<<"time: "<<itr.first<<endl;
   }
 
   long int tm, tm1;
@@ -267,25 +297,22 @@ int main(int argc, char* argv[]) {
   }
   tempGasShift[labTimeStamps.size()-1] = 1;
   std::vector<TH1*> hists(2);
-  hists[0] = plt.print1d(plotI0Shift[0], "plots/data-" + runName + "_I0centerR");
-  hists[1] = plt.print1d(plotI0Shift[1], "plots/data-" + runName + "_I0centerC");
-  hists[0] = plt.print1d(plotShift[0], "plots/data-" + runName + "_centerR");
-  hists[1] = plt.print1d(plotShift[1], "plots/data-" + runName + "_centerC");
+  hists[0] = plt.print1d(plotI0Shift[0], "plots/data-" + merge.run + "_I0centerR");
+  hists[1] = plt.print1d(plotI0Shift[1], "plots/data-" + merge.run + "_I0centerC");
+  hists[0] = plt.print1d(plotShift[0], "plots/data-" + merge.run + "_centerR");
+  hists[1] = plt.print1d(plotShift[1], "plots/data-" + merge.run + "_centerC");
 
-  cout<<"adding gasShift"<<endl;
   // Want to remove both images before and after nozzle changed
-  /*
-  for (int itm=0; itm<(int)labTimeStamps.size() - 1; itm++) {
-    tm  = labTimeStamps[itm];
-    merge.labTimeParams[tm]["gasShift"] = std::max(
-        tempGasShift[itm],
-        tempGasShift[itm+1]);
-  }
-  save::saveDat<double>(tempGasShift,
-      merge.saveMergeInterFolder
-      + "/gasShift_run-" + runName + "_distribution["
-      + to_string(tempGasShift.size()) + "].dat");
-  */
+  //for (int itm=0; itm<(int)labTimeStamps.size() - 1; itm++) {
+  //  tm  = labTimeStamps[itm];
+  //  merge.labTimeParams[tm]["gasShift"] = std::max(
+  //      tempGasShift[itm],
+  //      tempGasShift[itm+1]);
+  //}
+  //save::saveDat<double>(tempGasShift,
+  //    merge.saveMergeInterFolder
+  //    + "/gasShift_run-" + run + "_distribution["
+  //    + to_string(tempGasShift.size()) + "].dat");
 
   ///  Cut on lab time parameters  ///
   
@@ -300,7 +327,7 @@ int main(int argc, char* argv[]) {
   //merge.stdParamCut("imgNorm", 3);
   //merge.stdParamCut("imgNorm", 3);
   merge.stdParamCut("I0norm", 3);
-  for (uint i=0; i<imgRadSTD->size(); i++) {
+  for (uint i=0; i<imgRadSTDs->size(); i++) {
     merge.stdParamCut("imgRadSTD" + to_string(i), 3);
   }
 
@@ -335,6 +362,13 @@ int main(int argc, char* argv[]) {
   }
 
   merge.mergeScans();
+  int Nnans = 0;
+  for (int i=0; i<merge.azimuthalAvg.size(); i++) {
+    for (int j=0; j<merge.azimuthalAvg[i].size(); j++) {
+      if (std::isnan(merge.azimuthalAvg[i][j])) Nnans++;
+    }
+  }
+
 
   // Normalize line outs
   //merge.normalizeScansResults();
@@ -364,34 +398,32 @@ int main(int argc, char* argv[]) {
   // References
   save::saveDat<double>(merge.azmReference,
       merge.mergeScansOutputDir + 
-      "/data-" + runName + "-" + prefix+ 
+      "/data-" + merge.run + "-" + prefix+ 
       "referenceAzm[" +
       to_string(merge.NradAzmBins) + "].dat");
   save::saveDat<double>(merge.legReference,
       merge.mergeScansOutputDir + 
-      "/data-" + runName + "-" + prefix+ 
+      "/data-" + merge.run + "-" + prefix+ 
       "referenceLeg[" + 
       to_string(merge.Nlegendres) + 
       "," + to_string(merge.NradLegBins) + "].dat");
 
-  /*
-  for (int i=0; i<rpVals.size(); i++) {
-    double mean = std::accumulate(rpVals[i].begin(), rpVals[i].end(), 0);
-    mean /= rpVals[i].size();
+  //for (int i=0; i<rpVals.size(); i++) {
+  //  double mean = std::accumulate(rpVals[i].begin(), rpVals[i].end(), 0);
+  //  mean /= rpVals[i].size();
 
-    double var = 0;
-    for (int k=0; k<rpVals[i].size(); k++) {
-      var += std::pow(mean - rpVals[i][k], 2);
-    }
-    var /= rpVals[i].size();
-    var = std::sqrt(var);
-    var /= std::sqrt((float)rpVals[i].size());
+  //  double var = 0;
+  //  for (int k=0; k<rpVals[i].size(); k++) {
+  //    var += std::pow(mean - rpVals[i][k], 2);
+  //  }
+  //  var /= rpVals[i].size();
+  //  var = std::sqrt(var);
+  //  var /= std::sqrt((float)rpVals[i].size());
 
-    cout<<"SEM check radius "<<i
-      <<" SEM / STD/sqrt(N) / ratio: "<<merge.runAzmSEM[tmInd][4+i*5]
-      <<"  "<<var<<"  "<<merge.runAzmSEM[tmInd][4+i*5]/var<<"  "<<rpVals[i].size()<<endl;
-  }
-  */
+  //  cout<<"SEM check radius "<<i
+  //    <<" SEM / STD/sqrt(N) / ratio: "<<merge.runAzmSEM[tmInd][4+i*5]
+  //    <<"  "<<var<<"  "<<merge.runAzmSEM[tmInd][4+i*5]/var<<"  "<<rpVals[i].size()<<endl;
+  //}
 
 
   /////  Time Domain Changes  /////
@@ -469,7 +501,7 @@ int main(int argc, char* argv[]) {
       << "SEMisBootstrap do not align!!!\n";
   }
 
-  if (merge.pltVerbose) {
+  if (merge.pltVerbose || true) {
     std::vector<double> test(merge.azimuthalsMs[0].size());
     plt.print1d(merge.azmReference, "./plots/reference");
     plt.printRC(merge.azimuthalAvg, "./plots/azmAvg");
@@ -487,25 +519,25 @@ int main(int argc, char* argv[]) {
 
   save::saveDat<double>(merge.azimuthalAvg, 
       merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "azmAvgDiff["
+      + merge.run + "-" + prefix + "azmAvgDiff["
       + to_string(merge.azimuthalAvg.size()) + ","
       + to_string(merge.azimuthalAvg[0].size()) + "].dat");
   if (merge.computeBootstrapSEM || !merge.useBootstrapSEM) {
     save::saveDat<double>(merge.runAzmSEM,
         merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "azmAvgSEM[" 
+        + merge.run + "-" + prefix + "azmAvgSEM[" 
         + to_string(merge.runAzmSEM.size()) + ","
         + to_string(merge.runAzmSEM[0].size()) + "].dat");
   }
 
   save::saveDat<double>(merge.azmReference,
       merge.mergeScansOutputDir + "data-"
-      + runName + "-" + prefix + "azmReference[" 
+      + merge.run + "-" + prefix + "azmReference[" 
       + to_string(merge.azmReference.size()) + "].dat");
   for (auto & aItr : merge.azmIndReference) {
     save::saveDat<double>(aItr.second,
         merge.mergeScansOutputDir + "data-"
-        + runName + "_" + prefix + "reference-"
+        + merge.run + "_" + prefix + "reference-"
         + to_string(aItr.first) + "_bins[" 
         + to_string(merge.NradAzmBins) + "].dat");
   }
@@ -513,7 +545,7 @@ int main(int argc, char* argv[]) {
   if (merge.smearedTime) {
     save::saveDat<double>(merge.smearedAzmAvg, 
         merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "tSmeared-"
+        + merge.run + "-" + prefix + "tSmeared-"
         + to_string(merge.timeSmearSTD) + "-azmAvgDiff["
         + to_string(merge.smearedAzmAvg.size()) + ","
         + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
@@ -521,7 +553,7 @@ int main(int argc, char* argv[]) {
     if (merge.didSMSnormalize) {
       save::saveDat<double>(merge.smearedAzmsMs, 
         merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "tSmeared-"
+        + merge.run + "-" + prefix + "tSmeared-"
         + to_string(merge.timeSmearSTD) + "-sMsAzmAvgDiff["
         + to_string(merge.smearedAzmAvg.size()) + ","
         + to_string(merge.smearedAzmAvg[0].size()) + "].dat");
@@ -531,31 +563,31 @@ int main(int argc, char* argv[]) {
   if (merge.didSMSnormalize) {
     save::saveDat<double>(merge.azimuthalsMs, 
         merge.mergeScansOutputDir + "data-"
-        + runName + "-" + prefix + "sMsAzmAvgDiff["
+        + merge.run + "-" + prefix + "sMsAzmAvgDiff["
         + to_string(merge.azimuthalAvg.size()) + ","
         + to_string(merge.azimuthalAvg[0].size()) + "].dat");
     if (merge.computeBootstrapSEM || !merge.useBootstrapSEM) {
       save::saveDat<double>(merge.runsMsMeans,
           merge.mergeScansOutputDir + "data-"
-          + runName + "-" + prefix + "sMsMean[" 
+          + merge.run + "-" + prefix + "sMsMean[" 
           + to_string(merge.runAzmMeans.size()) + ","
           + to_string(merge.runAzmMeans[0].size()) + "].dat");
 
       save::saveDat<double>(merge.runsMsSEM,
           merge.mergeScansOutputDir + "data-"
-          + runName + "-" + prefix + "sMsSEM[" 
+          + merge.run + "-" + prefix + "sMsSEM[" 
           + to_string(merge.runAzmSEM.size()) + ","
           + to_string(merge.runAzmSEM[0].size()) + "].dat");
 
       save::saveDat<double>(merge.runsMsRefMean,
           merge.mergeScansOutputDir + "data-"
-          + runName + "-" + prefix
+          + merge.run + "-" + prefix
           + "referenceAzmsMsMean[" 
           + to_string(merge.NradAzmBins) + "].dat");
 
       save::saveDat<double>(merge.runsMsRefSEM,
           merge.mergeScansOutputDir + "data-"
-          + runName + "-" + prefix
+          + merge.run + "-" + prefix
           + "referenceAzmsMsSEM[" 
           + to_string(merge.NradAzmBins) + "].dat");
     }
@@ -565,7 +597,7 @@ int main(int argc, char* argv[]) {
     if (merge.computeBootstrapSEM || !merge.useBootstrapSEM) {
       save::saveDat<double>(merge.runPCorrSEM,
           merge.mergeScansOutputDir + "data-"
-          + runName + "-" + prefix + "pairCorrSEM["
+          + merge.run + "-" + prefix + "pairCorrSEM["
           + to_string(merge.runPCorrSEM.size()) + ","
           + to_string(merge.runPCorrSEM[0].size()) + "].dat");
     }
@@ -578,7 +610,7 @@ int main(int argc, char* argv[]) {
           save::saveDat<double>(
               pItr.second.azmRef, 
               merge.saveMergeInterFolder 
-                + "/azmAvgRef-" + runName + "_scan-" + to_string(sRitr.first)
+                + "/azmAvgRef-" + merge.run + "_scan-" + to_string(sRitr.first)
                 + "_stagePos-" + to_string(pItr.first) + ".dat");
         }
       }
@@ -590,7 +622,7 @@ int main(int argc, char* argv[]) {
           save::saveDat<double>(
               sAzml.second[pItr.second],
               merge.saveMergeInterFolder 
-                + "/azmAvg-" + runName + "_scan-" + to_string(sAzml.first)
+                + "/azmAvg-" + merge.run + "_scan-" + to_string(sAzml.first)
                 + "_stagePos-" + to_string(pItr.first) + ".dat");
         }
       }
@@ -601,7 +633,7 @@ int main(int argc, char* argv[]) {
   if (scanSearch) {
     plt.printRC(merge.azimuthalAvg, 
         merge.mergeScansOutputDir + "/plots/data-"
-        + runName + "-" + prefix + "azmAvgDiff", opts, vals);
+        + merge.run + "-" + prefix + "azmAvgDiff", opts, vals);
   }
 
 
@@ -613,5 +645,5 @@ int main(int argc, char* argv[]) {
     std::cout << "Cleaning up" << endl;
   }
 
-  return 1;
+  return 0;
 }
