@@ -25,6 +25,7 @@ std::vector<int> save::getShape(std::string folder, std::string filePrefix) {
       break;
     }
   }
+  closedir(dir);
 
   if (fileName.length() == 0) {
     std::cerr << 
@@ -36,15 +37,12 @@ std::vector<int> save::getShape(std::string folder, std::string filePrefix) {
   std::vector<int> inds;
   int iPos = fileName.find("[") + 1;
   int fPos = fileName.find(",", iPos);
-  cout<<"fileName: "<<fileName<<endl;
   while (fPos != string::npos) {
-    cout<<"  "<<fileName.substr(iPos, fPos-iPos)<<endl;
     inds.push_back(stoi(fileName.substr(iPos, fPos-iPos)));
     iPos = fPos + 1;
     fPos = fileName.find(",", iPos);
   }
   fPos = fileName.find("]", iPos);
-  cout<<"  "<<fileName.substr(iPos, fPos-iPos)<<endl;
   inds.push_back(stoi(fileName.substr(iPos, fPos-iPos)));
 
   return inds;
