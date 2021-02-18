@@ -9,7 +9,7 @@
 #include <cmath>
 #include <map>
 #include <stdlib.h>
-#include "/reg/neh/home/khegazy/baseTools/tools/constants.h"
+#include "constants.h"
 
 
 class parameterClass {
@@ -28,6 +28,7 @@ class parameterClass {
          finalState5};
     radicalEnum molecule;
     std::string molName;
+    std::string home, scratch;
 
     std::vector<int> badScans;
     std::map< int, std::vector<int> > badImages;
@@ -150,15 +151,18 @@ class parameterClass {
     int    shellWidth;
     int    Npoly;
     double stdChangeRatioLeft;
-    double stdChangeRatioRight;
     double stdAccRatioLeft;
-    double stdAccRatioRight;
     double stdOutlierCutLeft;
-    double stdOutlierCutRight;      
     double stdCutLeft;
-    double stdCutRight;      
     double fracShellSTDcutLeft;
+    double stdChangeRatioRight;
+    double stdAccRatioRight;
+    double stdOutlierCutRight;      
+    double stdCutRight;      
     double fracShellSTDcutRight;
+    double meanBinSize;
+    double stdChangeRatio;
+    double outlierSTDcut;
     bool   plotRadPixDist;
 
     double stdIncludeLeft;
