@@ -6,7 +6,7 @@ from scipy.sparse import csr_matrix
 from numpy.polynomial import Legendre
 
 
-def normal_eqn(X, Y, W, var):
+def normal_eqn_vects(X, Y, W, var):
     overlap = np.einsum('bai,bi,bci->bac', X, W, X, optimize='greedy')
     if np.any(np.linalg.det(overlap) == 0.0):
         print("Overlap matrix is singular, should figure out why")
@@ -17,7 +17,7 @@ def normal_eqn(X, Y, W, var):
     numer = np.einsum('bai,bi,bi->ba', X, W, Y, optimize='greedy')
     
     # Covariance
-    cov = np.einsum('bai,bij,bj,bj,bj,bkj,bkc->bac', overlap, X, W, var, W, X, overlap, optimize='greedy')
+    cov = np.einsum('bai,bij,bj,bj,bj,bkj,bkc->bac', denom, X, W, var, W, X, denom, optimize='greedy')
     
     return np.einsum('abi,ai->ab', denom, numer, optimize='greedy'), cov
 
@@ -134,7 +134,6 @@ def fit_legendres_images(images, centers, lg_inds, rad_inds, maxPixel, rotate=0,
                 
                 img_pixels[np.isnan(img_pixels)] = 0
                 
-                tic = time.time()
                 img_pix = np.transpose(merge_indices.dot(np.transpose(img_pix)))
                 img_var = np.transpose(merge_indices.dot(np.transpose(img_var)))               
                 
@@ -195,7 +194,9 @@ def fit_legendres_images(images, centers, lg_inds, rad_inds, maxPixel, rotate=0,
             
             empty_scan = np.sum(img_weights.astype(bool), -1) < 2
             overlap = np.einsum('bai,bi,bci->bac',
-                    lgndrs[np.invert(empty_scan)], img_weights[np.invert(empty_scan)], lgndrs[np.invert(empty_scan)],
+                    lgndrs[np.invert(empty_scan)],
+                    img_weights[np.invert(empty_scan)],
+                    lgndrs[np.invert(empty_scan)],
                     optimize='greedy')
             empty_scan[np.invert(empty_scan)] = (np.linalg.det(overlap) == 0.0)
         
@@ -209,9 +210,10 @@ def fit_legendres_images(images, centers, lg_inds, rad_inds, maxPixel, rotate=0,
                     img_vars    = img_vars[np.invert(empty_scan)]
                     lgndrs      = lgndrs[np.invert(empty_scan)]
                     
-                    fit[np.invert(empty_scan)], cov[np.invert(empty_scan)] = normal_eqn(lgndrs, img_pixels, img_weights, img_vars)
+                    fit[np.invert(empty_scan)], cov[np.invert(empty_scan)] =\
+                        normal_eqn_vects(lgndrs, img_pixels, img_weights, img_vars)
             else:
-                fit, cov = normal_eqn(lgndrs, img_pixels, img_weights, img_vars)
+                fit, cov = normal_eqn_vects(lgndrs, img_pixels, img_weights, img_vars)
             img_fits[im].append(np.expand_dims(fit, 1))
             img_covs[im].append(np.expand_dims(cov, 1))
         
