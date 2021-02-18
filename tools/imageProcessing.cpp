@@ -3890,6 +3890,9 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
         vals[orderedInds[0]] = NAN;
         nanMap[indices[orderedInds[0]][0]][indices[orderedInds[0]][1]] = 1;
         orderedInds.erase(orderedInds.begin());
+        if (!orderedInds.size()) {
+          break;
+        }
       }
 
       stdevLeft = getLeftSTDev(vals, orderedInds, meanLeft);
@@ -3899,6 +3902,9 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
         vals[orderedInds[0]] = NAN;
         nanMap[indices[orderedInds[0]][0]][indices[orderedInds[0]][1]] = 1;
         orderedInds.erase(orderedInds.begin());
+        if (!orderedInds.size()) {
+          break;
+        }
       }
     }
 
@@ -3934,25 +3940,31 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliers(
                       << meanRight << "\t" << stdevRight << endl; 
     if (orderedInds.size() > 100) {
       int ind = orderedInds.size() - 1;
-      while (vals[orderedInds[ind]] > meanRight + stdOutlierCutRight*stdevRight) {
+      for (int ind = orderedInds.size() - 1;
+          (vals[orderedInds[ind]] > meanRight + stdOutlierCutRight*stdevRight)
+            && ind > 0;
+          ind--) {
         removedVals.push_back(vals[orderedInds[ind]]);
         removedInds.push_back(orderedInds[ind]);
         vals[orderedInds[ind]] = NAN;
         nanMap[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = 1;
         orderedInds.erase(orderedInds.begin() + ind);
-        ind = orderedInds.size() - 1;
+        //ind = orderedInds.size() - 1;
       }
 
       meanRight = getMean(vals);
       stdevRight = getSTDev(vals, meanRight);
       ind = orderedInds.size() - 1;
-      while (vals[orderedInds[ind]] > meanRight + stdCutRight*stdevRight) {
+      for (int ind = orderedInds.size() - 1;
+          (vals[orderedInds[ind]] > meanRight + stdCutRight*stdevRight)
+            && ind > 0;
+          ind--) {
         removedVals.push_back(vals[orderedInds[ind]]);
         removedInds.push_back(orderedInds[ind]);
         vals[orderedInds[ind]] = NAN;
         nanMap[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = 1;
         orderedInds.erase(orderedInds.begin() + ind);
-        ind = orderedInds.size() - 1;
+        //ind = orderedInds.size() - 1;
       }
     }
 
@@ -4153,7 +4165,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
   vector<double> vals, angles;
   vector< vector<int> > indices;
   vector< vector<int> >* INDS;
-    cerr<<"WARNING: not subtracting low poly"<<endl;
+  cerr<<"WARNING: not subtracting low poly"<<endl;
   for (int rad=0; rad<maxRad; rad+=shellWidth) {
 
     // Check if indices have been imported
@@ -4226,7 +4238,6 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     ///////////////////////////////////
 
     /////  Remove left outliers  /////
-    //cout<<"111"<<endl;
     //cout<<"CHECKING: "<<stg<<"  "<<rad<<"  "<<vals.size()<<endl;
 
     double mean = getMean(vals);
@@ -4237,25 +4248,29 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     }
     */
 
-    int ind = 0;
+    //int ind = 0;
     vector<double> rms;
-    while (fabs(vals[orderedInds[ind]] - mean) > stdCut*stdev) {
+    for (int ind=0; 
+        fabs(vals[orderedInds[ind]] - mean) > stdCut*stdev
+        && ind < (int)orderedInds.size() - 1; ind++) {
       removedInds.push_back(orderedInds[ind]);
       removedVals.push_back(vals[orderedInds[ind]]);
       rms.push_back(vals[orderedInds[ind]]);
       vals[orderedInds[ind]] = NAN;
       nanMap[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = 1;
-      ind++;
+      //ind++;
     }
- 
-    ind = orderedInds.size() - 1;
-    while (fabs(vals[orderedInds[ind]] - mean) > stdCut*stdev) {
+
+    //ind = orderedInds.size() - 1;
+    for (int ind=(int)orderedInds.size() - 1; 
+        fabs(vals[orderedInds[ind]] - mean) > stdCut*stdev
+        && ind > 0; ind--) {
       removedInds.push_back(orderedInds[ind]);
       removedVals.push_back(vals[orderedInds[ind]]);
       rms.push_back(vals[orderedInds[ind]]);
       vals[orderedInds[ind]] = NAN;
       nanMap[indices[orderedInds[ind]][0]][indices[orderedInds[ind]][1]] = 1;
-      ind--;
+      //ind--;
     }
 
     //if (rad % 25 == 0) {
@@ -4269,6 +4284,7 @@ std::vector< std::vector<double> > imgProc::radProcTool::removeOutliersSimple(
     //}
 
 
+    // did not pass exit(0);
     /////  Outlier images  /////
     
     // Image of outliers cut on right end
