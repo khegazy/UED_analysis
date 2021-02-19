@@ -11,12 +11,12 @@
 #include <ctime>
 
 //Home Grown
-#include "/reg/neh/home/khegazy/baseTools/tools/tools.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/imageProcessing.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/plotClass.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/saveClass.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/saving.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
+#include "/cds/home/k/khegazy/baseTools/tools/tools.h"
+#include "/cds/home/k/khegazy/baseTools/tools/imageProcessing.h"
+#include "/cds/home/k/khegazy/baseTools/tools/plotClass.h"
+//#include "/cds/home/k/khegazy/baseTools/tools/saveClass.h"
+#include "/cds/home/k/khegazy/baseTools/tools/saving.h"
+#include "/cds/home/k/khegazy/baseTools/tools/parameters.h"
 
 
 class mergeClass : public parameterClass {
@@ -128,17 +128,17 @@ class mergeClass : public parameterClass {
     std::vector<double> smoothImgNorm, smoothImgNormSTD;
 
     void compareSimulations(std::vector<std::string> radicals);
-    void removeBadRegions(std::vector<double>* azmAvg, int64_t stagePos);
+    void removeBadRegions(std::vector<int>* azmAvg, int64_t stagePos);
     void addEntry(int scan, int64_t stagePos, int timeStamp,
-                  std::vector<double>* azmAvg, 
-                  std::vector<double>* legCoeffs,
-                  double imgNorm);
+        std::vector<double>* azmAvg, std::vector<int>* azmAvg_nanMap,
+        std::vector<double>* legCoeffs, std::vector<int>* legCoeffs_nanMap,
+        double imgNorm);
     void addLabTimeParameter(long int timeStamp,
                   std::string name, double value);
     void addReference(int scan, int64_t stagePos, int timeStamp,
-                  std::vector<double>* azmAvg,
-                  std::vector<double>* legCoeffs,
-                  double imgNorm);
+        std::vector<double>* azmAvg, std::vector<int>* azmAvg_nanMap,
+        std::vector<double>* legCoeffs, std::vector<int>* legCoeffs_nanMap,
+        double imgNorm);
     void saveInitialData();
     void reloadInitialData();
    
