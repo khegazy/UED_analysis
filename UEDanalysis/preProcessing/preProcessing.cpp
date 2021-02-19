@@ -1,5 +1,5 @@
 #include "preProcessing.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
+#include "/cds/home/k/khegazy/baseTools/tools/parameters.h"
 
 using namespace std;
 
@@ -248,7 +248,7 @@ int main(int argc, char* argv[]) {
     num = num.substr(0, 5);
     save::importDat<double>(atmDiff, params.simOutputDir 
       + "/" + params.molName 
-      + "_sim_atmDiffraction-lineout_align-random_Qmax-" + num
+      + "_sim_atmDiffraction-azmAvg_Qmax-" + num
       + "_Bins[" + to_string(params.NradAzmBins) + "].dat");
 
     for (int iq=0; iq<params.NradAzmBins; iq++) {
@@ -266,7 +266,7 @@ int main(int argc, char* argv[]) {
   ppFunct::getScanRunInfo(imgINFO, runListName, params.verbose);
   
   if (params.hasI0) {
-    ppFunct::getI0RunInfo(I0fileNames, runListName, params.verbose);
+    ppFunct::getI0RunInfo(imgINFO, I0fileNames, runListName, params.verbose);
   }
 
   curRun  = imgINFO[0].run;
@@ -357,14 +357,14 @@ int main(int argc, char* argv[]) {
       Nrows = imgMat.rows;
       Ncols = imgMat.cols;
       std::vector< std::vector<int> > img_nanMap(Nrows);
-      for (uint ir=0; ir<Nrows; ir++) {
+      for (int ir=0; ir<Nrows; ir++) {
         img_nanMap[ir].resize(Ncols, 0);
       }
 
       if (ifl == 0) {
         bkgCount.resize(Nrows);
         bkg_nanMap.resize(Nrows);;
-        for (uint ir=0; ir<Nrows; ir++) {
+        for (int ir=0; ir<Nrows; ir++) {
           bkgCount[ir].resize(Ncols, 0);
           bkg_nanMap[ir].resize(Ncols, 0);
         }
@@ -818,7 +818,7 @@ int main(int argc, char* argv[]) {
       allIndsC[ifl].resize(params.meanInds.size());
       allCentVals[ifl].resize(params.meanInds.size());
       allMedVals[ifl].resize(params.meanInds.size());
-      for (int i=0; i<params.meanInds.size(); i++) {
+      for (int i=0; i<(int)params.meanInds.size(); i++) {
         meanCentVal = 0;
         meanCentCount = 0;
         if (centImg_nanMap[centersCOM[0]+params.meanInds[i]][centersCOM[1]] == 0) {
@@ -975,7 +975,7 @@ int main(int argc, char* argv[]) {
       centerR_float = 0;
       centerC_float = 0;
       Ncents  = 0;
-      for (int k=0; k<params.meanInds.size(); k++) {
+      for (int k=0; k<(int)params.meanInds.size(); k++) {
         if ((std::fabs(resultsR[k]-meanR) <= 2*stdR) 
             && (std::fabs(resultsC[k]-meanC) <= 2*stdC)) {
 
@@ -1056,7 +1056,7 @@ int main(int argc, char* argv[]) {
         << centerCmean << " / " << centerCstd << std::endl;
     }
     for (ifl=0; ifl<imgINFO.size(); ifl++) {
-      for (int i=0; i<params.meanInds.size(); i++) {
+      for (int i=0; i<(int)params.meanInds.size(); i++) {
         centfnctr.radProc     = &radProc;
         centfnctr.fxnType     = params.centerFxnType;
         centfnctr.meanVal     = allMedVals[ifl][i];
@@ -1102,7 +1102,7 @@ int main(int argc, char* argv[]) {
       centerR_float = 0;
       centerC_float = 0;
       Ncents  = 0;
-      for (int k=0; k<params.meanInds.size(); k++) {
+      for (int k=0; k<(int)params.meanInds.size(); k++) {
         if ((std::fabs(resultsR[k]-meanR) <= 2.5*stdR) 
             && (std::fabs(resultsC[k]-meanC) <= 2.5*stdC)) {
 
@@ -1117,6 +1117,7 @@ int main(int argc, char* argv[]) {
 
 
     }
+
 
     std::string I0centers_filename = params.centerDir
         + "I0-centers_run-" + curRun + "_scan-" + to_string(curScan)
@@ -1447,7 +1448,7 @@ int main(int argc, char* argv[]) {
   std::vector<std::vector<int> > res_rawAzmAvg_nanMap(imgINFO.size());
   std::vector<std::vector<double> > res_azmAvg(imgINFO.size());
   std::vector<std::vector<int> > res_azmAvg_nanMap(imgINFO.size());
-  std::vector<std::vector<double> > res_imgRadSTD(imgINFO.size());
+  std::vector<std::vector<double> > res_imgRadSTD;
 
 
   for (auto const & pv : params.pvMap) {
@@ -1463,6 +1464,7 @@ int main(int argc, char* argv[]) {
  
   for (ifl=0; ifl<imgINFO.size(); ifl++) {
     std::cout << "INFO: processing image: " << imgINFO[ifl].fileName << endl;
+    I0refImgs.clear();
 
 
     /////  Check we are in the same run/scan  /////
@@ -1632,7 +1634,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Making new nanMaps //
-    cout<<"starting to make the map"<<endl;
+    if (params.verbose) std::cout << "INFO: Starting to make the map\n";
     std::vector< std::vector<int> > imgOrig_nanMap(imgOrig.size());
     std::vector< std::vector<int> > imgSubBkg_nanMap(imgOrig.size());
     for (uint ir=0; ir<imgOrig.size(); ir++) {
@@ -1646,34 +1648,33 @@ int main(int argc, char* argv[]) {
    
 
     // Remove Xray hits
-    cout<<"start removing xray"<<endl;
+    if (params.verbose) std::cout << "INFO: Start removing xray\n";
     imgOrig_nanMap = imgProc::removeXrayHits(
           &imgOrig, imgOrig_nanMap,
           params.XrayHighCut, params.XrayLowCut, 
           params.XraySTDcut, params.XrayWindow);
-    cout<<"start removing xray"<<endl;
+    if (params.verbose) std::cout << "start removing xray\n";
     imgSubBkg_nanMap = imgProc::removeXrayHits(
           &imgSubBkg, imgSubBkg_nanMap,
           params.XrayHighCut, params.XrayLowCut, 
           params.XraySTDcut, params.XrayWindow,
           xRayHitHistos);
-    cout<<"end removing xray"<<endl;
 
     if (params.pltVerbose) {
       plt.printRC(imgSubBkg, "./plots/imgSubBkg_original");
       std::vector< std::vector<double> > tst;
-      for (int ir=0; ir<imgSubBkg_nanMap.size(); ir++) {
+      for (int ir=0; ir<(int)imgSubBkg_nanMap.size(); ir++) {
         tst[ir].resize(imgSubBkg_nanMap[ir].size());
-        for (int ic=0; ic<imgSubBkg_nanMap[ir].size(); ic++) {
+        for (int ic=0; ic<(int)imgSubBkg_nanMap[ir].size(); ic++) {
           tst[ir][ic] = imgSubBkg_nanMap[ir][ic];
         }
       }
       plt.printRC(tst, "./plots/imgSubBkg_nanMap_original");
 
       std::vector< vector<double> > testplot(imgSubBkg.size());
-      for (int ir=0; ir<imgSubBkg.size(); ir++) {
+      for (int ir=0; ir<(int)imgSubBkg.size(); ir++) {
         testplot[ir].resize(imgSubBkg[ir].size(), 0);
-        for (int ic=0; ic<imgSubBkg[ir].size(); ic++) {
+        for (int ic=0; ic<(int)imgSubBkg[ir].size(); ic++) {
           testplot[ir][ic] = imgSubBkg[ir][ic];
           if (fabs(ir-centerR) < 7 && fabs(ic-centerC) < 7) {
             testplot[ir][ic] = -1;
@@ -1686,7 +1687,7 @@ int main(int argc, char* argv[]) {
 
 
     /////  Remove pixel outliers  /////
-    cout<<"start removing outliers"<<endl;
+    if (params.verbose) std::cout << "INFO: Start removing outliers\n";
     outlierImage = radProc.removeOutliers(
         imgSubBkg, imgSubBkg_nanMap, 
         centerR, centerC, params.imgEdgeBuffer,
@@ -1727,7 +1728,6 @@ int main(int argc, char* argv[]) {
     */
 
 
-    cout<<"start removing outliers"<<endl;
     if (params.outlierSimpleSTDcut > 0) {
       outlierImage = radProc.removeOutliersSimple(
           imgSubBkg, imgSubBkg_nanMap,
@@ -1735,9 +1735,8 @@ int main(int argc, char* argv[]) {
           params.NradAzmBins, params.shellWidth,
           false, params.Npoly, params.outlierSimpleSTDcut, 
           imgINFO[ifl].stagePos, params.outlierMapSTDcut,
-          true, (false || params.outlierVerbose), NULL);//, &plt);
+          params.verbose, (false || params.outlierVerbose), NULL);//, &plt);
     }
-    cout<<"end removing outliers"<<endl;
         
     /*
     radProc.removeOutliers(imgOrig,  
@@ -2019,7 +2018,7 @@ int main(int argc, char* argv[]) {
     //}
     for (int ir=0; ir<(int)imgSubBkg.size(); ir++) {
       if (ir < params.imgEdgeBuffer 
-          || imgSubBkg.size() - ir < params.imgEdgeBuffer) continue;
+          || (int)imgSubBkg.size() - ir < (int)params.imgEdgeBuffer) continue;
       for (int ic=0; ic<(int)imgSubBkg[ir].size(); ic++) {
         if (ic < params.imgEdgeBuffer 
             || imgSubBkg[ir].size() - ic < params.imgEdgeBuffer) continue;
@@ -2061,6 +2060,7 @@ int main(int argc, char* argv[]) {
     }
     imgNorm /= count;
 
+    // Normalize images and azmAvgs
     for (uint ir=0; ir<imgSubBkg.size(); ir++) {
       for (uint ic=0; ic<imgSubBkg[ir].size(); ic++) {
         imgSubBkg[ir][ic] /= imgNorm;
@@ -2075,12 +2075,11 @@ int main(int argc, char* argv[]) {
 
     /////  Plotting azm lines  /////
     cout<<"NORM: "<<imgINFO[ifl].stagePos<<"  "<<imgNorm<<endl;
-    std::string dirName = "/reg/ued/ana/scratch/"
+    std::string dirName = params.scratch
         + params.molName + "/" + params.experiment + "/polarLineOutTest/";
     pLO = radProc.getPolarLineOut(&imgSubBkg,
     //pLO = radProc.getPolarLineOut(&imgOrig,
             centerR, centerC, 168, 45, 200);
-    cout<<"made it"<<endl;
     for (int k=0; k<pLO.size(); k++) {
       pLO[k] /= imgNorm;
     }
@@ -2472,6 +2471,7 @@ int main(int argc, char* argv[]) {
 
 
   results_file_prefix = results_folder + "/Scan-" + to_string(curScan) + "_";
+  cout<<"SAVING NOW "<<results_file_prefix<<endl;
 
   save::saveDat<int>(res_imgNum,
       results_file_prefix +"imgNum_Shape["
@@ -2564,7 +2564,16 @@ int main(int argc, char* argv[]) {
       + to_string(res_imgRadSTD[0].size()) + "].dat");
 
 
-
+  if (params.getPVs) {
+    for (auto const & pv : params.pvMap) {
+      save::saveDat<double>(pvVals[pv.first],
+          results_file_prefix + pv.first + "_Shape["
+          + to_string(pvVals[pv.first].size()) + "].dat");
+      save::saveDat<double>(pvValsDer[pv.first],
+          results_file_prefix + pv.first + "Der_Shape["
+          + to_string(pvValsDer[pv.first].size()) + "].dat");
+    }
+  }
 
   if (params.xRayHitDist) {
     std::vector<PLOToptions> xOpts(2);
