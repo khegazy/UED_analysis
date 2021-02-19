@@ -428,30 +428,25 @@ int main(int argc, char* argv[]) {
   /////////////////////////////////////////////////
 
   ///  Import Simulations  ///
-  std::string simRefName =
-      params.simOutputDir 
-      + params.radicalNames[params.initialState]
-      + "_molDiffractionPatternLineOut_Qmax-"
-      + to_string(params.maxQazm) + "_Ieb-"
-      + to_string(params.Iebeam) + "_scrnD-"
-      + to_string(params.screenDist) + "_elE-"
-      + to_string(params.elEnergy) + "_Bins["
-      + to_string(shape[1]) + "].dat";
-
-  std::string simSMSrefName =
-      params.simOutputDir 
-      + params.radicalNames[params.initialState]
-      + "_sMsPatternLineOut_Qmax-"
-      + to_string(params.maxQazm) + "_Ieb-"
-      + to_string(params.Iebeam) + "_scrnD-"
-      + to_string(params.screenDist) + "_elE-"
-      + to_string(params.elEnergy) + "_Bins["
-      + to_string(shape[1]) + "].dat";
-
   std::vector<double> reference(shape[1]);
   std::vector<double> sMsReference(shape[1]);
-  save::importDat<double>(reference, simRefName);
-  save::importDat<double>(sMsReference, simSMSrefName);
+  std::string num = to_string(params.maxQazm);
+  num = num.substr(0, 5);
+  std::string simFileNameSuffix = "_Qmax-" + num
+      + "_Bins[" + to_string(params.NradAzmBins) + "].dat";
+
+  save::importDat<double>(reference, 
+      params.simOutputDir + "/" 
+      + params.radicalNames[params.initialState]
+      + "_sim_molDiffraction-azmAvg"
+      + simFileNameSuffix);
+  save::importDat<double>(sMsReference, 
+      params.simOutputDir + "/" 
+      + params.radicalNames[params.initialState]
+      + "_sim_smsDiffraction-azmAvg"
+      + simFileNameSuffix);
+  //save::importDat<double>(reference, simRefName);
+  //save::importDat<double>(sMsReference, simSMSrefName);
 
 
   // Simulated final states
@@ -469,26 +464,16 @@ int main(int argc, char* argv[]) {
   }
   for (int ifs=0; ifs<(int)params.finalStates.size(); ifs++) {
     std::string fsName = params.finalStates[ifs];
-    std::string simFinalName =
-        params.simOutputDir + fsName 
-        + "_molDiffractionPatternLineOut_Qmax-" 
-        + to_string(params.maxQazm) + "_Ieb-"
-        + to_string(params.Iebeam) + "_scrnD-"
-        + to_string(params.screenDist) + "_elE-"
-        + to_string(params.elEnergy) + "_Bins["
-        + to_string(shape[1]) + "].dat";
 
-    std::string simSMSfinalName =
-        params.simOutputDir + fsName 
-        + "_sMsPatternLineOut_Qmax-" 
-        + to_string(params.maxQazm) + "_Ieb-"
-        + to_string(params.Iebeam) + "_scrnD-"
-        + to_string(params.screenDist) + "_elE-"
-        + to_string(params.elEnergy) + "_Bins["
-        + to_string(shape[1]) + "].dat";
+    save::importDat<double>(simFinalDiffractions[ifs], 
+        params.simOutputDir + "/" + fsName 
+        + "_sim_molDiffraction-azmAvg"
+        + simFileNameSuffix);
+    save::importDat<double>(simFinalSMSs[ifs], 
+        params.simOutputDir + "/" + fsName
+        + "_sim_smsDiffraction-azmAvg"
+        + simFileNameSuffix);
 
-    save::importDat<double>(simFinalDiffractions[ifs], simFinalName);
-    save::importDat<double>(simFinalSMSs[ifs], simSMSfinalName);
 
 
     // Simulation final state difference diffraction
@@ -958,7 +943,6 @@ int main(int argc, char* argv[]) {
     <<"Coeff: "<<allScales[best_sc1]<<" / "
     <<allScales[best_sc2]<<" / "<<allScales[best_sc3]<<endl
     <<"Chi Sq: "<<best_chi_sq<<endl<<endl;
-
 
 
   ////////////////////////////////////////////////////////////
