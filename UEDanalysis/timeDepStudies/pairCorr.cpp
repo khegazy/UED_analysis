@@ -1,5 +1,5 @@
 #include "../analysis.h"
-#include "/reg/neh/home/khegazy/baseTools/tools/parameters.h"
+#include "/cds/home/k/khegazy/baseTools/tools/parameters.h"
 
 using namespace std;
 
@@ -7,8 +7,7 @@ using namespace std;
 int main(int argc, char* argv[]) {
 
   if (argc<2) {
-    cerr<<"ERROR: Missing input arguments, must run code ./analysis.exe 'runName' !!!"<<endl;
-    cerr<<"         Can also run ./analysis.exe 'fileList.txt' 'treeName'"<<endl;
+    cerr<<"ERROR: Missing input arguments, must run code ./analysis.exe 'runName'!!!\n";
     exit(0);
   }
 
@@ -198,7 +197,19 @@ int main(int argc, char* argv[]) {
    
   double pCorrQcut = 8;
   int NqBins = (int)(pCorrQcut*params.NradAzmBins/params.maxQazm);
+  std::vector<int> lowq_start;
+  lowq_start.resize(tmdDiff.size(), -1);
   for (uint tm=0; tm<tmdDiff.size(); tm++) {
+    int Nnans = 0;
+    for (uint ir=0; ir<tmdDiff[tm].size(); ir++) {
+      if (std::isnan(tmdDiff[tm][ir])) {
+        tmdDiff[tm][ir] = 0;
+        Nnans++;
+      }
+      else if (lowq_start[ir] < 0) {
+        lowq_start[ir] = Nnans;
+      }
+    }
     tmdDiff[tm].resize(NqBins);
   }
 
